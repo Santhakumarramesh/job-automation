@@ -33,3 +33,6 @@ dev = [
     "ruff",
     "mypy"
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*", "agents*", "dashboard*", "config*"]
