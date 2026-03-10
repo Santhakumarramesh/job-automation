@@ -12,3 +12,5 @@ candidate_resumes/
 .agent/
 .agents/
 tp/
+build/
+*.egg-info/
