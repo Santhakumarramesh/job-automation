@@ -1,11 +1,13 @@
+
+import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from humanize_cover_letter import CoverLetterHumanizer
 
 def generate_cover_letter(state: AgentState):
     """
-    Acts as a professional Career Coach to generate a hyper-targeted 
-    Cover Letter based on the generated AI/ML resume and the job description.
+    Generates a targeted Cover Letter and then runs it through a humanizer.
     """
     if not state.get("is_eligible", True) or not state.get("tailored_resume_text", ""):
         return {"cover_letter_text": ""}
@@ -40,8 +42,19 @@ Candidate Final Tailored Resume:
         HumanMessage(content=human_prompt)
     ]
     
+    # Initial AI generation
     response = llm.invoke(messages)
+    ai_generated_text = response.content
+
+    # Get Apify key and humanize the text
+    apify_key = os.getenv("APIFY_API_KEY")
+    if apify_key:
+        humanizer = CoverLetterHumanizer(apify_key)
+        final_text = humanizer.humanize_text(ai_generated_text)
+    else:
+        print("⚠️ APIFY_API_KEY not found. Skipping cover letter humanization.")
+        final_text = ai_generated_text
     
     return {
-        "cover_letter_text": response.content
+        "cover_letter_text": final_text
     }

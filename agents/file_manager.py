@@ -1,127 +1,123 @@
+
 import os
-import markdown
 import re
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.units import inch
+from reportlab.lib import colors
 
 from agents.state import AgentState
 
-def save_resume(state: AgentState):
+def save_documents(state: AgentState):
     """
-    Compiles the tailored resume and project into a single 1-page ATS-compliant PDF 
-    using ReportLab (strict fonts, no weird columns, machine-readable).
+    Compiles the final resume and cover letter into styled, ATS-compliant PDFs.
+    Uses a clear naming convention: {Name}_{Title}_at_{Company}_{Type}.pdf
+    and saves them into a company-specific folder under `generated_resumes`.
     """
     if not state.get("is_eligible", True):
-        return {"final_pdf_path": ""}
+        return {"final_pdf_path": "", "cover_letter_pdf_path": ""}
 
-    final_md = state.get("tailored_resume_text", "")
-    project_md = state.get("generated_project_text", "")
-    
-    if project_md:
-        final_md += "\n\n## Custom Projects\n" + project_md
+    # --- Sanitize inputs for filename ---
+    name = re.sub(r'[^\w-]', '_', state.get("candidate_name", "Candidate"))
+    pos = re.sub(r'[^\w-]', '_', state.get("target_position", "Role"))
+    comp = re.sub(r'[^\w-]', '_', state.get("target_company", "Company"))
 
-    # Strip markdown syntax for ATS text processing (very basic parsing for MVP)
-    # In a fully robust system, use a proper Markdown -> Platypus Flowable converter.
-    clean_text = final_md.replace('*', '').replace('# ', '').replace('## ', '')
-    lines = clean_text.split('\n')
-
-    name = state.get("candidate_name", "Candidate").replace(" ", "_")
-    pos = state.get("target_position", "Role").replace(" ", "_")
-    comp = state.get("target_company", "Company").replace(" ", "_")
-    loc = state.get("target_location", "Location").replace(" ", "_")
-    
-    filename = f"{name}_{pos}_{comp}_{loc}.pdf"
+    base_filename = f"{name}_{pos}_at_{comp}"
     output_dir = os.path.join("generated_resumes", comp)
     os.makedirs(output_dir, exist_ok=True)
-    filepath = os.path.join(output_dir, filename)
 
-    # Setup ReportLab Document (Very tight margins to ensure 1-page fit)
-    doc = SimpleDocTemplate(
-        filepath, 
-        pagesize=letter,
-        rightMargin=0.5*inch, leftMargin=0.5*inch,
-        topMargin=0.5*inch, bottomMargin=0.5*inch
-    )
+    # --- 1. Save the Tailored & Humanized Resume PDF ---
+    resume_md = state.get("humanized_resume_text", state.get("tailored_resume_text", ""))
+    project_md = state.get("generated_project_text", "")
+    if project_md and "No new projects are necessary" not in project_md:
+        resume_md += "\n\n## Custom Projects\n" + project_md
 
+    resume_filepath = os.path.join(output_dir, f"{base_filename}_Resume.pdf")
+    
+    try:
+        # Use the new styled PDF builder
+        build_styled_resume_pdf(resume_md, resume_filepath, state.get("candidate_name", ""))
+        print(f"📄 Resume saved to: {resume_filepath}")
+    except Exception as e:
+        print(f"❌ Resume PDF Build Error: {e}")
+        resume_filepath = "" 
+
+    # --- 2. Save the Humanized Cover Letter PDF ---
+    cover_letter_text = state.get("humanized_cover_letter_text", "")
+    cl_filepath = ""
+    if cover_letter_text:
+        cl_filepath = os.path.join(output_dir, f"{base_filename}_Cover_Letter.pdf")
+        try:
+            build_styled_cover_letter_pdf(cover_letter_text, cl_filepath)
+            print(f"✉️ Cover Letter saved to: {cl_filepath}")
+        except Exception as e:
+            print(f"❌ Cover Letter PDF Build Error: {e}")
+            cl_filepath = ""
+
+    return {
+        "final_pdf_path": resume_filepath,
+        "cover_letter_pdf_path": cl_filepath
+    }
+
+def build_styled_resume_pdf(markdown_text, filepath, candidate_name):
+    doc = SimpleDocTemplate(filepath, pagesize=letter, leftMargin=0.6*inch, rightMargin=0.6*inch, topMargin=0.6*inch, bottomMargin=0.6*inch)
     styles = getSampleStyleSheet()
-    
-    # Define ATS-Friendly Styles
-    body_style = ParagraphStyle(
-        'Body',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=9,  # Small font to fit on 1 page
-        leading=11,  # Tight leading
-        spaceAfter=3,
-        alignment=TA_LEFT
-    )
-    
-    header_style = ParagraphStyle(
-        'Header',
-        parent=styles['Heading2'],
-        fontName='Helvetica-Bold',
-        fontSize=11,
-        spaceAfter=2,
-        spaceBefore=6,
-        alignment=TA_LEFT
-    )
+
+    # --- Custom Styles based on "Santha Kumar" resume ---
+    name_style = ParagraphStyle('Name', parent=styles['h1'], fontName='Helvetica-Bold', fontSize=18, alignment=TA_CENTER, spaceAfter=2)
+    contact_style = ParagraphStyle('Contact', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=TA_CENTER, spaceAfter=12)
+    section_title_style = ParagraphStyle('SectionTitle', parent=styles['h2'], fontName='Helvetica-Bold', fontSize=11, alignment=TA_LEFT, spaceBefore=8, spaceAfter=4, textColor=colors.darkblue)
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=12, spaceAfter=2, alignment=TA_LEFT)
+    bullet_style = ParagraphStyle('Bullet', parent=body_style, leftIndent=0.25*inch, bulletIndent=0.1*inch)
 
     Story = []
     
+    # Add Name and Contact Info first
+    # This part is tricky as we need to extract it from the markdown text
+    lines = markdown_text.split('\n')
+    name_and_contact = []
+    resume_body_lines = []
+    header_found = False
     for line in lines:
-        if not line.strip():
-            continue
-            
-        if line.isupper() and len(line) < 30: # Heuristic for section headers
-             Story.append(Paragraph(line, header_style))
-             Story.append(HRFlowable(width="100%", thickness=1, color="black", spaceBefore=1, spaceAfter=2))
+        if candidate_name in line and not header_found:
+             name_and_contact.append(Paragraph(line, name_style))
+             header_found = True
+        elif header_found and ("EXPERIENCE" not in line.upper() and "SKILLS" not in line.upper() and "EDUCATION" not in line.upper()) and len(line.strip()) > 0:
+            name_and_contact.append(Paragraph(line, contact_style))
         else:
-             Story.append(Paragraph(line, body_style))
-        
-    try:
-        doc.build(Story)
-    except Exception as e:
-        print(f"PDF Build Error: {e}")
-        
-    # --- Generate Cover Letter PDF ---
-    cover_letter_text = state.get("cover_letter_text", "")
-    cl_filepath = ""
+            resume_body_lines.append(line)
     
-    if cover_letter_text:
-        cl_filename = f"{name}_{pos}_{comp}_{loc}_Cover_Letter.pdf"
-        cl_filepath = os.path.join(output_dir, cl_filename)
-        
-        cl_doc = SimpleDocTemplate(
-            cl_filepath, 
-            pagesize=letter,
-            rightMargin=1*inch, leftMargin=1*inch,
-            topMargin=1*inch, bottomMargin=1*inch
-        )
-        
-        cl_Story = []
-        cl_body_style = ParagraphStyle(
-            'CL_Body',
-            parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=11,
-            leading=14,
-            spaceAfter=10,
-            alignment=TA_LEFT
-        )
-        
-        for line in cover_letter_text.split('\n'):
-            if line.strip():
-                cl_Story.append(Paragraph(line.replace('*', ''), cl_body_style))
-                
-        try:
-            cl_doc.build(cl_Story)
-        except Exception as e:
-            print(f"Cover Letter PDF Build Error: {e}")
+    Story.extend(name_and_contact)
+    Story.append(Spacer(1, 0.1*inch))
 
-    return {
-        "final_pdf_path": filepath,
-        "cover_letter_pdf_path": cl_filepath
-    }
+    for line in resume_body_lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        if line.startswith('## '):
+            Story.append(Paragraph(line.replace('## ', ''), section_title_style))
+            Story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey, spaceAfter=4))
+        elif line.isupper() and len(line) < 50:
+            Story.append(Paragraph(line, section_title_style))
+            Story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey, spaceAfter=4))
+        elif line.startswith('-') or line.startswith('*'):
+            Story.append(Paragraph(line, style=bullet_style, bulletText='•'))
+        else:
+            Story.append(Paragraph(line, body_style))
+            
+    doc.build(Story)
+
+def build_styled_cover_letter_pdf(text, filepath):
+    doc = SimpleDocTemplate(filepath, pagesize=letter, leftMargin=1*inch, rightMargin=1*inch, topMargin=1*inch, bottomMargin=1*inch)
+    styles = getSampleStyleSheet()
+    cl_body_style = ParagraphStyle('CL_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10.5, leading=14, spaceAfter=12, alignment=TA_LEFT)
+    
+    Story = []
+    for line in text.split('\n'):
+        if line.strip():
+            Story.append(Paragraph(line, cl_body_style))
+            
+    doc.build(Story)

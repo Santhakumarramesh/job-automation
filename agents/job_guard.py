@@ -55,13 +55,17 @@ def preprocess_text(text):
     return text
 
 def extract_meta(text: str) -> np.ndarray:
+    # Ensure caps_ratio is between 0 and 1
+    caps_ratio = sum(1 for c in text if c.isupper()) / max(len(text), 1)
+    caps_ratio = min(caps_ratio, 1.0)
+
     feats = {
         'text_length': len(text),
         'word_count': len(text.split()),
         'has_email': int(bool(re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text))),
         'has_url': int(bool(re.search(r'https?://', text))),
         'exclamation_count': text.count('!'),
-        'caps_ratio': sum(1 for c in text if c.isupper()) / max(len(text), 1),
+        'caps_ratio': caps_ratio,
         'telecommuting': 0,
         'has_company_logo': 0,
         'has_questions': 0,
@@ -88,17 +92,26 @@ def guard_job_quality(state: AgentState):
     if not MODEL_LOADED:
         return {"is_eligible": True}  # Gracefully fallback if no artifacts
 
-    clean_text = preprocess_text(jd_text)
-    X_text = tfidf.transform([clean_text])
-    X_meta = scaler.transform(extract_meta(jd_text))
-    X_in = hstack([X_text, csr_matrix(X_meta)])
-    
-    # 1 is fraudulent, 0 is legitimate
-    fraud_prob = classifier.predict_proba(X_in)[0][1]
-    
-    # If the Guard rejects it, we immediately set is_eligible to False so the pipeline skips it.
-    if fraud_prob >= THRESHOLD:
-        state["eligibility_reason"] = f"Job Guard ML blocked as Fraud/Spam (Risk: {fraud_prob*100:.1f}%)"
-        return {"is_eligible": False}
+    try:
+        clean_text = preprocess_text(jd_text)
+        X_text = tfidf.transform([clean_text])
+        X_meta = scaler.transform(extract_meta(jd_text))
+        X_in = hstack([X_text, csr_matrix(X_meta)])
+        
+        # 1 is fraudulent, 0 is legitimate
+        fraud_prob = classifier.predict_proba(X_in)[0][1]
+        
+        # If the Guard rejects it, we immediately set is_eligible to False so the pipeline skips it.
+        if fraud_prob >= THRESHOLD:
+            state["eligibility_reason"] = f"Job Guard ML blocked as Fraud/Spam (Risk: {fraud_prob*100:.1f}%)"
+            return {"is_eligible": False}
+    except AttributeError as e:
+        if "'MaxAbsScaler' object has no attribute 'clip'" in str(e):
+            print("⚠️ Job Guard Warning: ML model is incompatible. Fraud detection is temporarily offline. Allowing job to proceed.")
+        else:
+            # If it's a different AttributeError, we should still know about it
+            print(f"Job Guard encountered an unexpected AttributeError: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred in Job Guard: {e}")
         
     return {"is_eligible": True}
