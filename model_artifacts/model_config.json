@@ -1,1 +1,1 @@
-{"meta_features": ["text_length", "word_count", "has_email", "has_url", "exclamation_count", "caps_ratio", "telecommuting", "has_company_logo", "has_questions"], "threshold": 0.72}
+{"meta_features": ["text_length", "word_count", "has_email", "has_url", "exclamation_count", "caps_ratio", "telecommuting", "has_company_logo", "has_questions"], "threshold": 0.5}

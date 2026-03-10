@@ -25,10 +25,11 @@ def humanize_resume(state: AgentState):
     2.  **Avoid AI Buzzwords:** Replace common AI-generated phrases (e.g., "leveraging synergies," "passionate and results-oriented") with more grounded, natural language.
     3.  **Introduce Nuance:** Do not just list skills. Frame them within the context of achievements. Show, don't just tell.
     4.  **Maintain Professionalism:** The tone must remain highly professional and suitable for a resume.
-    5.  **Output ONLY the rewritten text.** Do not add any commentary before or after.
+    5.  **PRESERVE THE PROFESSIONAL SUMMARY:** The Professional Summary has been tailored to a specific job. Do NOT change its meaning, company/role mentions, or key keywords. Only improve phrasing for natural flow. Keep the summary intact.
+    6.  **Output ONLY the rewritten text.** Do not add any commentary before or after.
     """
 
-    human_prompt = f"Please rewrite the following resume text to make it sound as if it were written by a human expert. Increase the perplexity and burstiness of the language while retaining all key information and professional tone:\n\n---\n\n{resume_text}"
+    human_prompt = f"Please rewrite the following resume text to make it sound as if it were written by a human expert. Increase the perplexity and burstiness of the language while retaining all key information and professional tone. IMPORTANT: Preserve the Professional Summary content (company, role, keywords) — only refine its phrasing:\n\n---\n\n{resume_text}"
 
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
     

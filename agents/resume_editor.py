@@ -22,7 +22,8 @@ CRITICAL CONSTRAINTS:
 3. The candidate is an F1 OPT student. Frame their experience highlighting their immediate availability without sponsorship.
 4. Do not make up fake companies. Only enhance existing experience with the missing technical keywords contexts.
 5. The candidate MUST appear as a local candidate. You MUST change the location in their contact header to perfectly match the TARGET LOCATION.
-6. Output the updated resume in a clean Markdown format. Include a strong Professional Summary, Skills Section, and Experience section.
+6. **YOU MUST REWRITE THE PROFESSIONAL SUMMARY** — Do NOT keep the original summary. Write a NEW 2–4 sentence summary that: (a) opens with the TARGET ROLE and TARGET COMPANY, (b) weaves in key skills/requirements from the job description, (c) includes MISSING SKILLS naturally, (d) mentions years of experience and work authorization. The summary must sound tailored to this specific job, not generic.
+7. Output the updated resume in a clean Markdown format. Include the rewritten Professional Summary, Skills Section, and Experience section.
 
 Missing Skills to Weave In: {missing_skills}
 Target Role: {target_position} at {target_company}

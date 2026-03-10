@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+node_modules/
+generated_resumes/
+ATS_Report_*.xlsx
+job_applications.csv
+candidate_resumes/
+.gemini/
+.agent/
+.agents/
+tp/

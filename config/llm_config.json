@@ -1,0 +1,51 @@
+{
+  "description": "LLM model configuration for Career Co-Pilot Pro. Edit to switch models.",
+  "models": {
+    "ats_scorer": {
+      "model": "gpt-4o",
+      "temperature": 0.0,
+      "purpose": "Semantic ATS scoring - needs consistency"
+    },
+    "resume_editor": {
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "purpose": "Resume tailoring - balanced creativity"
+    },
+    "cover_letter": {
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "purpose": "Cover letter generation"
+    },
+    "job_guard": {
+      "model": "gpt-4o",
+      "temperature": 0.0,
+      "purpose": "Fraud/scam detection - deterministic"
+    },
+    "job_analyzer": {
+      "model": "gpt-4o",
+      "temperature": 0.0,
+      "purpose": "JD analysis - structured extraction"
+    },
+    "project_generator": {
+      "model": "gpt-4o",
+      "temperature": 0.8,
+      "purpose": "Project ideas - creative"
+    },
+    "interview_prep": {
+      "model": "gpt-4o",
+      "temperature": 0.5,
+      "purpose": "Interview prep - balanced"
+    },
+    "fast_scoring": {
+      "model": "gpt-4o-mini",
+      "temperature": 0.0,
+      "purpose": "Quick ATS score (OpenClaw) - lower cost"
+    }
+  },
+  "accuracy_tips": [
+    "Use temperature=0 for scoring/analysis (deterministic)",
+    "Use gpt-4o for critical paths (ATS, Job Guard)",
+    "Use gpt-4o-mini for high-volume, low-stakes tasks",
+    "JobGuard sklearn model: run python model_training/train_enhanced.py --tune"
+  ]
+}

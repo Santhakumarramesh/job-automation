@@ -1,117 +1,56 @@
-import os
-import json
+
 import re
-import numpy as np
-import joblib
-from scipy.sparse import hstack, csr_matrix
-
+import json
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
-
-# Load ML Artifacts once to avoid latency
-MODEL_DIR = 'model_artifacts'
-try:
-    classifier = joblib.load(os.path.join(MODEL_DIR, 'classifier.pkl'))
-    tfidf = joblib.load(os.path.join(MODEL_DIR, 'tfidf_vectorizer.pkl'))
-    scaler = joblib.load(os.path.join(MODEL_DIR, 'meta_scaler.pkl'))
-    
-    with open(os.path.join(MODEL_DIR, 'model_config.json'), 'r') as f:
-        config = json.load(f)
-        META_FEATURES = config['meta_features']
-        # The dataset logic treats 1 as fraudulent, 0 as legit.
-        THRESHOLD = config['threshold']
-    MODEL_LOADED = True
-except Exception as e:
-    print(f"Job Guard DB Warning: {e}")
-    MODEL_LOADED = False
-
-# NLTK imports
-try:
-    from nltk.tokenize import word_tokenize
-    from nltk.corpus import stopwords
-    from nltk.stem import WordNetLemmatizer
-    import nltk
-    USE_NLTK = True
-except:
-    USE_NLTK = False
-
-def preprocess_text(text):
-    if not isinstance(text, str): return ""
-    text = str(text).lower().strip()
-    text = re.sub(r'https?://\S+|www\.\S+', '', text)
-    text = re.sub(r'[\w.+-]+@[\w-]+\.[\w.-]+', '', text)
-    text = re.sub(r'<[^>]+>', '', text)
-    text = re.sub(r'[^a-z\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    if USE_NLTK:
-        try:
-            words = word_tokenize(text)
-            stop = set(stopwords.words('english'))
-            words = [w for w in words if w not in stop and len(w) > 1]
-            lemmatizer = WordNetLemmatizer()
-            words = [lemmatizer.lemmatize(w) for w in words]
-            return ' '.join(words) if words else 'empty'
-        except:
-            return text
-    return text
-
-def extract_meta(text: str) -> np.ndarray:
-    # Ensure caps_ratio is between 0 and 1
-    caps_ratio = sum(1 for c in text if c.isupper()) / max(len(text), 1)
-    caps_ratio = min(caps_ratio, 1.0)
-
-    feats = {
-        'text_length': len(text),
-        'word_count': len(text.split()),
-        'has_email': int(bool(re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text))),
-        'has_url': int(bool(re.search(r'https?://', text))),
-        'exclamation_count': text.count('!'),
-        'caps_ratio': caps_ratio,
-        'telecommuting': 0,
-        'has_company_logo': 0,
-        'has_questions': 0,
-    }
-    return np.array([[feats.get(n, 0) for n in META_FEATURES]], dtype=float)
 
 def guard_job_quality(state: AgentState):
     """
-    Evaluates raw job descriptions natively using a trained Scikit-learn
-    fraud detection model to instantly reject scams or garbage posts.
+    Evaluates raw job descriptions using an LLM to instantly reject scams,
+    low-quality posts, or jobs with absurd requirements.
+    This replaces the old, brittle scikit-learn model.
     """
-    # Initialize basic validation flags implicitly
-    if "job_description" not in state or not state["job_description"].strip():
-        return {"is_eligible": False}
+    print("🛡️ Running LLM-Powered Job Guard...")
+    
+    jd_text = state.get("job_description", "")
+    if not jd_text.strip():
+        return {"is_eligible": False, "eligibility_reason": "Job description is empty."}
 
-    jd_text = state["job_description"]
-
-    # F1 OPT Security Clearance / Extreme Seniority Heuristic
+    # First, run the simple heuristic checks for extreme seniority or security clearances
     if re.search(r'(10\+|12\+|15\+)\s*years?', jd_text, re.IGNORECASE) or \
        re.search(r'(top secret|ts/sci|dod clearance|security clearance)', jd_text, re.IGNORECASE):
-        state["eligibility_reason"] = "Required Security Clearance or 10+ YOE"
-        return {"is_eligible": False}
+        reason = "Inferred requirement for Security Clearance or 10+ YOE"
+        print(f"🛡️ Job Guard blocked: {reason}")
+        return {"is_eligible": False, "eligibility_reason": reason}
 
-    if not MODEL_LOADED:
-        return {"is_eligible": True}  # Gracefully fallback if no artifacts
+    # Now, use the LLM to check for more subtle red flags
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
+    
+    system_prompt = """You are an expert fraud detection model. Your task is to analyze a job description and determine if it is a scam, a multi-level marketing scheme, or has absurd requirements (e.g., 10+ years of experience for an entry-level role). 
+
+    You must respond in a valid JSON format with two keys:
+    1.  `"is_scam"`: a boolean (`true` if it is a scam/low-quality, `false` otherwise).
+    2.  `"reason"`: a brief, one-sentence explanation for your decision.
+    """
+
+    human_prompt = f"Analyze the following job description:\n\n---\n{jd_text}"
+
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
 
     try:
-        clean_text = preprocess_text(jd_text)
-        X_text = tfidf.transform([clean_text])
-        X_meta = scaler.transform(extract_meta(jd_text))
-        X_in = hstack([X_text, csr_matrix(X_meta)])
+        response = llm.invoke(messages)
+        result = json.loads(response.content)
+
+        if result.get("is_scam", False):
+            reason = result.get("reason", "LLM detected it as low-quality or potential scam.")
+            print(f"🛡️ Job Guard blocked: {reason}")
+            return {"is_eligible": False, "eligibility_reason": reason}
         
-        # 1 is fraudulent, 0 is legitimate
-        fraud_prob = classifier.predict_proba(X_in)[0][1]
-        
-        # If the Guard rejects it, we immediately set is_eligible to False so the pipeline skips it.
-        if fraud_prob >= THRESHOLD:
-            state["eligibility_reason"] = f"Job Guard ML blocked as Fraud/Spam (Risk: {fraud_prob*100:.1f}%)"
-            return {"is_eligible": False}
-    except AttributeError as e:
-        if "'MaxAbsScaler' object has no attribute 'clip'" in str(e):
-            print("⚠️ Job Guard Warning: ML model is incompatible. Fraud detection is temporarily offline. Allowing job to proceed.")
-        else:
-            # If it's a different AttributeError, we should still know about it
-            print(f"Job Guard encountered an unexpected AttributeError: {e}")
+        print("✅ Job Guard passed.")
+        return {"is_eligible": True}
+
     except Exception as e:
-        print(f"An unexpected error occurred in Job Guard: {e}")
-        
-    return {"is_eligible": True}
+        print(f"⚠️ Job Guard LLM failed: {e}. Allowing job to proceed as a fallback.")
+        # Gracefully fallback if the LLM fails for any reason
+        return {"is_eligible": True}
