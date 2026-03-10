@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-automation"
+version = "0.1.0"
+description = "AI-powered job application automation system"
+dependencies = [
+    "fastapi>=0.95",
+    "uvicorn[standard]>=0.22",
+    "celery[redis]>=5.3",
+    "pydantic>=1.10",
+    "redis>=4.5",
+    "langchain-openai",
+    "langgraph",
+    "streamlit",
+    "pandas",
+    "reportlab",
+    "bs4",
+    "requests",
+    "python-dotenv",
+    "PyMuPDF",
+    "apify-client",
+    "scikit-learn",
+    "joblib",
+    "nltk"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy"
+]
