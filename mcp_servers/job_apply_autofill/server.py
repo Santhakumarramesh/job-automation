@@ -88,7 +88,7 @@ def get_autofill_values(
             "linkedin_url": profile.get("linkedin_url", ""),
             "github_url": profile.get("github_url", ""),
             "portfolio_url": profile.get("portfolio_url", ""),
-            "work_authorization": profile.get("work_authorization_note", "") or "Authorized to work. No sponsorship required.",
+            "work_authorization": profile.get("work_authorization_note", "") or "",
             "relocation": profile.get("relocation_preference", ""),
             "salary": profile.get("salary_expectation_rule", "Negotiable"),
             "availability": profile.get("notice_period", "Immediate") or "Immediate",
@@ -117,7 +117,7 @@ def apply_to_jobs(
 ) -> dict:
     """
     Apply to jobs from JSON. By default: Easy Apply only, no external ATS.
-    jobs_json: JSON string, list of {title, company, url, easy_apply?, fit_decision?, ats_score?, unsupported_requirements?}.
+    jobs_json: JSON string, list of {title, company, url, easy_apply?, easy_apply_confirmed?, apply_mode?, fit_decision?, ats_score?, unsupported_requirements?}.
     dry_run: if True, fill forms but do not submit. Recommended for first run.
     rate_limit_seconds: min seconds between applications (default 90).
     manual_assist: if True, allow external ATS (Greenhouse, Lever, Workday). Default False = Easy Apply only.
@@ -143,7 +143,7 @@ def apply_to_jobs(
     if not jobs:
         return {"status": "error", "message": "No jobs in JSON"}
 
-    # Filter: when not manual_assist, only LinkedIn Easy Apply
+    # Filter: when not manual_assist, only LinkedIn Easy Apply with easy_apply_confirmed
     if not manual_assist:
         filtered = []
         for j in jobs:
@@ -151,11 +151,14 @@ def apply_to_jobs(
             url = str(jdict.get("url") or jdict.get("applyUrl") or "")
             if "linkedin.com" not in url.lower():
                 continue
-            if not jdict.get("easy_apply", jdict.get("easyApply", False)):
+            if not jdict.get("easy_apply_confirmed", False):
+                continue
+            apply_mode = jdict.get("apply_mode", "")
+            if apply_mode == "skip":
                 continue
             filtered.append(j)
         if not filtered:
-            return {"status": "error", "message": "No Easy Apply jobs in JSON. Set manual_assist=True for external ATS, or export Easy Apply jobs only."}
+            return {"status": "error", "message": "No Easy Apply jobs (easy_apply_confirmed=True) in JSON. Set manual_assist=True for external ATS, or export confirmed Easy Apply jobs only."}
         jobs = filtered
 
     # Filter: require_safeguards - skip jobs that don't meet fit/ATS bar when metadata present

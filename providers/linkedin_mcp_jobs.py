@@ -30,6 +30,23 @@ def _extract_from_sections(sections: dict, key: str) -> str:
     return ""
 
 
+def _extract_easy_apply_confirmed(detail: dict, sections: dict, first_entity: dict) -> bool:
+    """Try to get per-job Easy Apply from MCP response. Returns False if not confirmed."""
+    for d in [detail or {}, first_entity or {}]:
+        for key in ("easyApply", "easy_apply", "applyMethod", "isEasyApply"):
+            v = d.get(key)
+            if v is True or (isinstance(v, str) and v.lower() in ("true", "yes", "1", "easy")):
+                return True
+            if v is False:
+                return False
+    for name, data in (sections or {}).items():
+        if isinstance(data, dict):
+            v = data.get("easyApply") or data.get("easy_apply")
+            if v is True:
+                return True
+    return False
+
+
 def _call_mcp_tool(tool: str, arguments: dict, url: str = LINKEDIN_MCP_URL) -> dict | list | None:
     """Call MCP tool and return parsed result."""
     try:
@@ -121,7 +138,9 @@ def fetch_linkedin_mcp_jobs(
         if isinstance(job_posting, dict):
             entities = job_posting.get("entities") or job_posting.get("items") or [job_posting]
             first = entities[0] if entities else job_posting
+            easy_apply_confirmed = _extract_easy_apply_confirmed(detail, sections, first if isinstance(first, dict) else None)
             if isinstance(first, dict):
+                # Use per-job confirmation when available; else fall back to filter assumption
                 raw = {
                     "title": first.get("title") or first.get("name") or _extract_from_sections(sections, "title"),
                     "company": first.get("company") or first.get("company_name") or _extract_from_sections(sections, "company"),
@@ -129,13 +148,14 @@ def fetch_linkedin_mcp_jobs(
                     "description": first.get("description") or first.get("details") or _extract_from_sections(sections, "description"),
                     "url": url,
                     "job_id": str(jid),
-                    "easy_apply": easy_apply,
-                    "easy_apply_filter_used": easy_apply,  # We used filter; easy_apply is assumed, not per-job confirmed
+                    "easy_apply": easy_apply_confirmed,  # Only True when MCP confirms; prevents false auto-apply
+                    "easy_apply_filter_used": easy_apply,
+                    "easy_apply_confirmed": easy_apply_confirmed,
                 }
             else:
-                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply}
+                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply, "easy_apply_confirmed": False}
         else:
-            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply}
+            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply, "easy_apply_confirmed": False}
         jobs.append(normalize_to_schema(raw, "linkedin_mcp"))
     return jobs
 

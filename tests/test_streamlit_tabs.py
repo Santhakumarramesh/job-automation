@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Test all app tabs for errors. Run: python test_all_tabs.py
+Test all Streamlit app tabs for errors.
+Run from project root: python tests/test_streamlit_tabs.py
 """
 import os
 import sys
+from pathlib import Path
+
+# Ensure project root is on path
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
 # Load env
 from dotenv import load_dotenv
@@ -43,7 +50,7 @@ except Exception as e:
 # Tab 2: Batch URL - test scrape
 print("Tab 2: Batch URL...")
 try:
-    from app import scrape_job_url
+    from ui.streamlit_app import scrape_job_url
     r = scrape_job_url("https://example.com")
     assert isinstance(r, str), "scrape_job_url should return str"
     print("  ✓ Scrape OK")

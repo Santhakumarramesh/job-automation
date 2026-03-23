@@ -51,6 +51,13 @@ def load_profile(path: Optional[str] = None) -> dict:
         return {}
 
 
+# Required fields for auto-apply
+AUTO_APPLY_REQUIRED = [
+    "full_name", "email", "phone", "linkedin_url",
+    "work_authorization_note", "notice_period",
+]
+
+
 def validate_profile(profile: dict) -> list[str]:
     """
     Validate profile and return list of warnings (missing fields, invalid formats).
@@ -76,6 +83,17 @@ def validate_profile(profile: dict) -> list[str]:
         warnings.append("short_answers should be an object")
 
     return warnings
+
+
+def is_auto_apply_ready(profile: dict) -> bool:
+    """
+    True if profile has all required fields for auto-apply.
+    """
+    profile = profile or {}
+    for k in AUTO_APPLY_REQUIRED:
+        if not profile.get(k) or not str(profile.get(k)).strip():
+            return False
+    return True
 
 
 def get_short_answer(profile: dict, key: str, job_context: Optional[dict] = None) -> str:

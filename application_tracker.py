@@ -16,7 +16,7 @@ import pandas as pd
 _SCRIPT_DIR = Path(__file__).resolve().parent
 APPLICATION_FILE = _SCRIPT_DIR / "job_applications.csv"
 
-# Rich schema columns (Phase 6)
+# Rich schema columns (Phase 6+)
 TRACKER_COLUMNS = [
     "id",
     "source",           # apify, linkedin_mcp, url
@@ -25,8 +25,12 @@ TRACKER_COLUMNS = [
     "apply_url",
     "company",
     "position",
-    "status",           # applied, screening, interview, offer, rejected
-    "submission_status",  # submitted, failed, partial
+    "status",           # Applied, Interviewing, Offer, Rejected
+    "submission_status",  # Applied, Manual Assist Ready, Skipped – Low Fit, Skipped – Unsupported Requirements, Dry Run Complete, Failed – Login Challenge, Failed – Form Unmapped
+    "easy_apply_confirmed",
+    "apply_mode",       # auto_easy_apply, manual_assist, skip
+    "fit_decision",
+    "ats_score",
     "resume_path",
     "cover_letter_path",
     "job_description",
@@ -84,6 +88,10 @@ def log_application(state: dict):
         "position": state.get("target_position", "N/A"),
         "status": "Applied",
         "submission_status": "submitted",
+        "easy_apply_confirmed": state.get("easy_apply_confirmed", ""),
+        "apply_mode": state.get("apply_mode", ""),
+        "fit_decision": state.get("fit_decision", ""),
+        "ats_score": state.get("final_ats_score", state.get("initial_ats_score", "")),
         "resume_path": state.get("final_pdf_path", ""),
         "cover_letter_path": state.get("cover_letter_pdf_path", ""),
         "job_description": state.get("job_description", ""),
@@ -110,6 +118,14 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     initialize_tracker()
     screenshots_json = json.dumps(run_result.screenshot_paths) if run_result.screenshot_paths else ""
     qa_json = json.dumps(run_result.qa_audit) if run_result.qa_audit else ""
+    status_map = {
+        "applied": "Applied",
+        "manual_assist_ready": "Manual Assist Ready",
+        "skipped": "Skipped – Low Fit",
+        "dry_run": "Dry Run Complete",
+        "failed": "Failed – Form Unmapped",
+    }
+
     row = {
         "id": str(uuid.uuid4()),
         "source": "linkedin_mcp",
@@ -118,8 +134,8 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "apply_url": run_result.job_url,
         "company": run_result.company,
         "position": run_result.position,
-        "status": "Applied" if run_result.status == "applied" else "Rejected",
-        "submission_status": run_result.status,
+        "status": "Applied" if run_result.status == "applied" else ("Interviewing" if run_result.status == "manual_assist_ready" else "Rejected"),
+        "submission_status": status_map.get(run_result.status, run_result.status),
         "resume_path": resume_path,
         "cover_letter_path": cover_path,
         "job_description": "",

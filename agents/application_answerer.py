@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 
 MAX_ANSWER_LENGTH = 150
+MAX_ANSWER_LENGTH_LONG = 280  # For why_role, why_company when needed
 
 # Question type keywords for auto-classification
 QUESTION_PATTERNS = [
@@ -62,14 +63,16 @@ def answer_question(
 
     if qtype == "sponsorship":
         answer = profile.get("work_authorization_note") or profile.get("short_answers", {}).get("sponsorship", "")
+        if not answer and profile.get("visa_status"):
+            answer = str(profile.get("visa_status", "")).strip()
         if not answer:
-            answer = f"{profile.get('visa_status', '')}. No sponsorship required." if profile.get("visa_status") else "Authorized to work in the US. No sponsorship required."
+            return "Please review manually"
 
     elif qtype == "relocation":
         answer = profile.get("relocation_preference", "")
 
     elif qtype == "salary":
-        answer = profile.get("salary_expectation_rule", "Negotiable")
+        answer = profile.get("salary_expectation_rule", "")
 
     elif qtype == "years":
         # Try to extract skill from question
@@ -87,20 +90,20 @@ def answer_question(
         if role and answer and use_llm:
             answer = _tailor_with_llm(question_text, answer, profile, job_description, company, role, max_len=MAX_ANSWER_LENGTH)
         elif not answer:
-            answer = "Excited to apply my skills to this role."
+            return "Please review manually"
 
     elif qtype == "why_company":
         answer = profile.get("short_answers", {}).get("why_this_company", "")
         if company and answer:
             answer = answer.replace("the company", company).replace("this company", company)
         if not answer:
-            answer = f"Interested in {company}'s mission and growth." if company else "Interested in the company's mission."
+            return "Please review manually"
 
     elif qtype == "availability":
-        answer = profile.get("short_answers", {}).get("availability") or profile.get("notice_period", "Immediate")
+        answer = profile.get("short_answers", {}).get("availability") or profile.get("notice_period", "")
 
     elif qtype == "notice_period":
-        answer = profile.get("notice_period", "Immediate")
+        answer = profile.get("notice_period", "")
 
     elif qtype == "linkedin_url":
         answer = profile.get("linkedin_url", "")
@@ -120,8 +123,11 @@ def answer_question(
         answer = profile.get("short_answers", {}).get(key, "")
 
     answer = str(answer).strip()
-    if len(answer) > MAX_ANSWER_LENGTH:
-        answer = answer[:MAX_ANSWER_LENGTH - 3].rsplit(" ", 1)[0] + "..."
+    if not answer:
+        return ""
+    max_len = MAX_ANSWER_LENGTH_LONG if qtype in ("why_role", "why_company") else MAX_ANSWER_LENGTH
+    if len(answer) > max_len:
+        answer = answer[:max_len - 3].rsplit(" ", 1)[0] + "..."
     return answer
 
 

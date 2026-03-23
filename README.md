@@ -13,6 +13,15 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
 - **Job Apply Autofill MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). Resumes renamed per job: `{Name}_{Position}_at_{Company}_Resume.pdf`. See [JOB_APPLY_AUTOFILL_MCP_SETUP.md](JOB_APPLY_AUTOFILL_MCP_SETUP.md).
+- **Production status**: Strong prototype, not production-ready. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
+
+### Automation Rules (explicit)
+
+- **Auto-apply**: LinkedIn Easy Apply only, `easy_apply_confirmed=True`, high-fit, ATS ≥ 85, no unsupported requirements.
+- **Manual-assist**: Greenhouse / Lever / Workday / non–Easy Apply LinkedIn. System prepares docs and fills forms; you submit manually.
+- **Skip**: Low-fit jobs, unsupported requirements, or ATS below threshold.
+
+No guarantees: ATS pass, shortlist, or job placement. This is a prototype.
 
 ## 🏗️ Architecture
 

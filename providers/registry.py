@@ -85,6 +85,15 @@ def get_jobs(
     if not jobs:
         return pd.DataFrame(), []
 
+    # Compute apply_mode for each job (central policy)
+    try:
+        from services.policy_service import decide_apply_mode
+        for j in jobs:
+            job_dict = {"url": j.url, "apply_url": j.apply_url or j.url, "easy_apply_confirmed": j.easy_apply_confirmed}
+            j.apply_mode = decide_apply_mode(job_dict)
+    except ImportError:
+        pass
+
     df = jobs_to_dataframe(jobs)
     df["resume_match_score"] = [_match_score(j, kw) for j in jobs]
     df["search_date"] = datetime.now()

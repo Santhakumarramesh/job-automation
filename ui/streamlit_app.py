@@ -243,8 +243,9 @@ def run():
     if not openai_api_key:
         st.error("Please provide OpenAI API key in the sidebar.")
         st.stop()
+    # Apify required only for Apify / Both; LinkedIn MCP only does not need it
     if not apify_api_key:
-        st.warning("Apify key missing. Job Finder with Apify/Both and Live ATS with Apify will be disabled.")
+        st.warning("Apify key missing. Job Finder with Apify/Both and Live ATS with Apify will be disabled. LinkedIn MCP works without it.")
 
     os.environ["OPENAI_API_KEY"] = openai_api_key
     os.environ["APIFY_API_KEY"] = apify_api_key
@@ -409,6 +410,10 @@ def run():
                 df["easy_apply"] = False
             if "easy_apply_filter_used" not in df.columns:
                 df["easy_apply_filter_used"] = False
+            if "easy_apply_confirmed" not in df.columns:
+                df["easy_apply_confirmed"] = False
+            if "apply_mode" not in df.columns:
+                df["apply_mode"] = "manual_assist"
             for col in ["title", "company", "location", "description"]:
                 if col not in df.columns:
                     df[col] = "Not Available"
@@ -443,10 +448,22 @@ def run():
 
             sel_for_gen = st.session_state.jobs_df.get("Select")
             selected_for_gen = st.session_state.jobs_df[sel_for_gen == True] if sel_for_gen is not None and hasattr(sel_for_gen, "any") else pd.DataFrame()
-            if not selected_for_gen.empty and "easy_apply" in selected_for_gen.columns:
-                n_manual = (selected_for_gen["easy_apply"] == False).sum()
+            if not selected_for_gen.empty:
+                apply_mode_col = selected_for_gen.get("apply_mode", pd.Series(["manual_assist"] * len(selected_for_gen)))
+                n_auto = (apply_mode_col == "auto_easy_apply").sum() if hasattr(apply_mode_col, "sum") else 0
+                n_manual = len(selected_for_gen) - n_auto
                 if n_manual > 0:
-                    st.caption(f"📋 {n_manual} of {len(selected_for_gen)} selected are non–Easy Apply → docs prepared for **manual apply**.")
+                    st.caption(f"📋 {n_manual} of {len(selected_for_gen)} selected are manual-assist (apply_mode≠auto_easy_apply). {n_auto} ready for auto-apply.")
+                if not selected_for_gen.empty:
+                    with st.expander("📊 Blocker summary for selected jobs"):
+                        for _, row in selected_for_gen.head(10).iterrows():
+                            comp = row.get("company", "")
+                            tit = row.get("title", "")
+                            am = row.get("apply_mode", "—")
+                            fd = row.get("fit_decision", "—")
+                            ats = row.get("ats_score", row.get("final_ats_score", "—"))
+                            unsup = row.get("unsupported_requirements", [])
+                            st.caption(f"**{comp} / {tit}** — apply_mode: {am} | fit: {fd} | ATS: {ats} | unsupported: {unsup if unsup else '—'}")
             if st.button("🌟 Generate Documents for Selected Jobs (Premium)", type="primary"):
                 sel = st.session_state.jobs_df.get("Select")
                 selected_jobs = st.session_state.jobs_df[sel == True] if sel is not None and hasattr(sel, "any") else pd.DataFrame()
@@ -499,17 +516,19 @@ def run():
                     - Non–Easy Apply (Workday, Greenhouse, Lever) → prepare docs only
                     - Use "Generate Documents" above, then apply manually
                     """)
-                easy_apply_col = linkedin_jobs["easy_apply"] if "easy_apply" in linkedin_jobs.columns else pd.Series([False] * len(linkedin_jobs))
-                auto_apply_jobs = linkedin_jobs[easy_apply_col == True] if easy_apply_col.any() else pd.DataFrame()
-                manual_lane_jobs = linkedin_jobs[easy_apply_col == False]
+                apply_mode_col = linkedin_jobs["apply_mode"] if "apply_mode" in linkedin_jobs.columns else pd.Series(["manual_assist"] * len(linkedin_jobs))
+                auto_apply_jobs = linkedin_jobs[apply_mode_col == "auto_easy_apply"] if (apply_mode_col == "auto_easy_apply").any() else pd.DataFrame()
+                manual_lane_jobs = linkedin_jobs[apply_mode_col != "auto_easy_apply"]
                 if not auto_apply_jobs.empty:
                     st.caption(f"✅ **{len(auto_apply_jobs)} Easy Apply** job(s) ready for auto-apply.")
-                    cols_export = ["title", "company", "location", "description", "url"]
+                    cols_export = ["title", "company", "location", "description", "url", "apply_mode", "easy_apply_confirmed"]
                     cols_export = [c for c in cols_export if c in auto_apply_jobs.columns]
                     jobs_export = auto_apply_jobs[cols_export].to_dict(orient="records")
                     for r in jobs_export:
                         r["applyUrl"] = r.get("url", "")
                         r["easy_apply"] = True
+                        r["easy_apply_confirmed"] = True
+                        r["apply_mode"] = "auto_easy_apply"
                     json_bytes = json.dumps(jobs_export, indent=2).encode()
                     st.download_button("📤 Export Easy Apply jobs for auto-apply (JSON)", json_bytes, "linkedin_easy_apply_jobs.json", "application/json", key="export_linkedin")
                     st.code("python apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")

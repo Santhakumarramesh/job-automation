@@ -9,15 +9,9 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 
-# Paths - support both with/without trailing space in folder names
+# Paths - use root job_applications.csv (from application_tracker)
 BASE = Path(__file__).resolve().parent.parent
-def _find_csv():
-    for p in [BASE / "job applications automation" / "job_applications.csv",
-              BASE / "job applications automation " / "job_applications.csv"]:
-        if p.exists():
-            return p
-    return BASE / "job applications automation" / "job_applications.csv"
-CSV_PATH = _find_csv()
+CSV_PATH = BASE / "job_applications.csv"
 EXCEL_PATH = BASE / "dashboard" / "dashboard_data.xlsx"
 ATS_REPORTS = BASE / "dashboard" / "ats_reports"
 CANDIDATE_RESUMES = BASE / "candidate_resumes"

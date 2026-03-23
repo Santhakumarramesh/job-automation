@@ -418,42 +418,16 @@ async def fill_external_ats_form(
                 unmapped_fields=unmapped,
             )
 
-        # Submit
-        for sel in [
-            "button[type='submit']",
-            "input[type='submit']",
-            "button:has-text('Submit')",
-            "button:has-text('Submit Application')",
-            "button:has-text('Apply')",
-            "[data-action='submit']",
-        ]:
-            try:
-                btn = await page.query_selector(sel)
-                if btn and await btn.is_visible():
-                    await btn.click()
-                    await page.wait_for_timeout(3000)
-                    return RunResult(
-                        status="applied",
-                        company=company,
-                        position=position,
-                        job_url=url,
-                        applied_at=datetime.now().isoformat(),
-                        screenshot_paths=screenshot_paths,
-                        qa_audit=qa_audit,
-                        unmapped_fields=unmapped,
-                    )
-            except Exception:
-                continue
-
+        # Never auto-submit external ATS; form filled for manual review
         return RunResult(
-            status="skipped",
+            status="manual_assist_ready",
             company=company,
             position=position,
             job_url=url,
             screenshot_paths=screenshot_paths,
             qa_audit=qa_audit,
             unmapped_fields=unmapped,
-            error="Submit button not found",
+            error="External ATS: form filled. Review and submit manually.",
         )
 
     except Exception as e:
@@ -469,6 +443,25 @@ async def fill_external_ats_form(
         return RunResult(status="failed", company=company, position=position, job_url=url, error=err, screenshot_paths=screenshot_paths)
 
 
+def _policy_blocked(job: dict) -> Optional[str]:
+    """Check strict gate. Returns error string if blocked, None if allowed."""
+    apply_mode = job.get("apply_mode", "")
+    if apply_mode == "skip":
+        return "policy_blocked: apply_mode=skip"
+    if apply_mode and apply_mode != "auto_easy_apply":
+        return f"policy_blocked: apply_mode={apply_mode}"
+    fit = job.get("fit_decision", "")
+    if fit and str(fit).lower() != "apply":
+        return f"policy_blocked: fit_decision={fit}"
+    ats = job.get("ats_score", job.get("final_ats_score"))
+    if ats is not None and int(ats) < 85:
+        return f"policy_blocked: ats_score={ats}<85"
+    unsup = job.get("unsupported_requirements", [])
+    if unsup:
+        return "policy_blocked: unsupported_requirements"
+    return None
+
+
 async def run_application(
     page: "Page",
     job: dict,
@@ -478,14 +471,21 @@ async def run_application(
     """
     Run application for one job. Detects form type (LinkedIn vs external ATS) and routes.
     When easy_apply_only=True (default), only LinkedIn Easy Apply; external ATS is skipped.
+    Strict gate: apply_mode=auto_easy_apply, fit_decision=apply, ats>=85, no unsupported.
     """
     url = job.get("url") or job.get("applyUrl") or ""
+    company = job.get("company") or job.get("companyName", "")
+    position = job.get("title") or job.get("jobTitle", "")
     form_type = detect_form_type(url)
+
+    # Strict gate before LinkedIn auto-apply only
     if form_type == "linkedin":
+        blocked = _policy_blocked(job)
+        if blocked:
+            return RunResult(status="skipped", company=company, position=position, job_url=url, error=blocked)
         return await run_linkedin_application(page, job, config, screenshot_dir)
+
     if config.easy_apply_only:
-        company = job.get("company") or job.get("companyName", "")
-        position = job.get("title") or job.get("jobTitle", "")
         return RunResult(
             status="skipped",
             company=company,
@@ -493,6 +493,7 @@ async def run_application(
             job_url=url,
             error="easy_apply_only: external ATS (Greenhouse/Lever/Workday) not processed. Use manual_assist mode.",
         )
+    # External ATS: fill for manual review, never auto-submit
     return await fill_external_ats_form(page, job, config, form_type, screenshot_dir)
 
 
