@@ -1,12 +1,15 @@
 """
 Robust ATS Checker - Combines rule-based validation with LLM semantic analysis.
 Designed to maximize resume pass rate on real ATS systems.
+Adds: target_score, unsupported_requirements, truthful_missing_keywords,
+job_fit_score, ats_format_score when master_resume_text is provided.
 """
 
 import re
 import json
 import pandas as pd
 from datetime import datetime
+from typing import Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -172,8 +175,20 @@ Return ONLY the JSON object, no markdown or extra text."""
                     return None
         return None
 
-    def comprehensive_ats_check(self, resume_text, job_description, job_title, company_name, location):
-        """Robust ATS check: rule-based + LLM, weighted combined score."""
+    def comprehensive_ats_check(
+        self,
+        resume_text,
+        job_description,
+        job_title,
+        company_name,
+        location,
+        target_score: int = 100,
+        master_resume_text: Optional[str] = None,
+    ):
+        """Robust ATS check: rule-based + LLM, weighted combined score.
+        When master_resume_text is provided: adds unsupported_requirements,
+        truthful_missing_keywords, job_fit_score, ats_format_score.
+        """
         print("🔬 Running robust ATS analysis (rule-based + semantic)...")
 
         resume_text = resume_text or ""
@@ -202,7 +217,30 @@ Return ONLY the JSON object, no markdown or extra text."""
         )
         ats_score = min(100, max(0, round(combined)))
 
-        # 4. Build feedback
+        # ATS format score: formatting + structure (separate from keyword/semantic)
+        ats_format_score = round((fmt_score + struct_score) / 2)
+
+        # 4. Truth-safe outputs (when master resume provided)
+        unsupported_requirements = []
+        truthful_missing_keywords = []
+        job_fit_score = None
+        if master_resume_text and master_resume_text.strip():
+            try:
+                from agents.master_resume_guard import (
+                    parse_master_resume,
+                    get_truthful_missing_keywords,
+                    get_unsupported_requirements,
+                    compute_job_fit_score,
+                )
+                master_inv = parse_master_resume(master_resume_text)
+                unsupported_requirements = get_unsupported_requirements(missing_keywords, master_inv)
+                truthful_missing_keywords = get_truthful_missing_keywords(master_inv, missing_keywords)
+                fit = compute_job_fit_score(job_description, master_inv, ats_score=ats_score)
+                job_fit_score = fit.get("score", 0)
+            except Exception as e:
+                print(f"⚠️ Master resume guard failed: {e}")
+
+        # 5. Build feedback
         feedback = []
         if llm_result:
             feedback.append(f"- **Overall Assessment:** {llm_result.get('overall_assessment', 'N/A')}")
@@ -213,14 +251,21 @@ Return ONLY the JSON object, no markdown or extra text."""
         feedback.append(f"- **Action Verbs & Metrics:** {avm_score}% — {avm_details['action_verbs']} action verbs, {avm_details['metrics']} metrics in {avm_details['total_bullets']} bullets")
         if missing_sections:
             feedback.append(f"- **Missing Sections:** {', '.join(missing_sections)}")
+        if unsupported_requirements:
+            feedback.append(f"- **Unsupported JD requirements (do not add):** {', '.join(unsupported_requirements[:5])}")
 
         keyword_matches = {kw: False for kw in missing_keywords}
         formatting_issues = fmt_issues + ([f"Missing: {s}" for s in missing_sections] if missing_sections else [])
 
         print(f"✅ ATS Analysis complete. Score: {ats_score}% (semantic={semantic_score}, keywords={kw_score}, format={fmt_score})")
 
-        return {
+        result = {
             'ats_score': ats_score,
+            'target_score': target_score,
+            'ats_format_score': ats_format_score,
+            'job_fit_score': job_fit_score,
+            'unsupported_requirements': unsupported_requirements,
+            'truthful_missing_keywords': truthful_missing_keywords,
             'feedback': feedback,
             'keyword_matches': keyword_matches,
             'formatting_issues': formatting_issues,
@@ -234,6 +279,7 @@ Return ONLY the JSON object, no markdown or extra text."""
                 'missing_sections': missing_sections,
             }
         }
+        return result
 
     def save_ats_results_to_excel(self, results, filename='ats_check_results.xlsx'):
         """Save comprehensive ATS results to Excel with full breakdown."""

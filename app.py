@@ -43,6 +43,8 @@ from agents.file_manager import save_documents
 # Import the new, upgraded modules
 from enhanced_job_finder import EnhancedJobFinder
 from enhanced_ats_checker import EnhancedATSChecker
+from agents.iterative_ats_optimizer import run_iterative_ats_optimizer
+from agents.master_resume_guard import parse_master_resume, compute_job_fit_score
 import application_tracker
 from application_tracker import log_application, load_applications
 from interview_prep_agent import generate_interview_prep
@@ -124,27 +126,81 @@ def _save_creds(openai_key: str, apify_key: str, name: str):
 def enhanced_ats_scorer_node(state: AgentState):
     st.write(f"🔬 Running Semantic ATS Analysis for {state['target_company']}...")
     checker = EnhancedATSChecker()
+    master_text = state.get("base_resume_text", "")
     ats_results = checker.comprehensive_ats_check(
         resume_text=state['base_resume_text'],
         job_description=state['job_description'],
         job_title=state['target_position'],
         company_name=state['target_company'],
-        location=state['target_location']
+        location=state['target_location'],
+        target_score=100,
+        master_resume_text=master_text,
     )
     report_filename = f"ATS_Report_{state['target_company']}.xlsx".replace('/', '_')
     ats_report_path = checker.save_ats_results_to_excel(ats_results, filename=report_filename)
     st.write(f"Semantic ATS Score for {state['target_company']}: {ats_results['ats_score']}%")
+    missing = ats_results.get("detailed_breakdown", {}).get("missing_keywords", [])
     return {
         "initial_ats_score": ats_results['ats_score'],
-        "feedback": "\n".join(ats_results['feedback']),
+        "feedback": "\n".join(ats_results['feedback']) if isinstance(ats_results['feedback'], list) else ats_results['feedback'],
         "ats_report_path": ats_report_path,
+        "missing_skills": missing,
     }
 
-def build_graph():
+
+def iterative_ats_optimizer_node(state: AgentState):
+    """Iterative loop until ATS=100 or no truthful improvement. Truth-safe mode."""
+    st.write(f"🔄 Running iterative ATS optimizer (target 100, truth-safe) for {state['target_company']}...")
+    checker = EnhancedATSChecker()
+    opt_result = run_iterative_ats_optimizer(
+        state=state,
+        ats_checker=checker,
+        tailor_fn=tailor_resume,
+        humanize_fn=humanize_resume,
+        target_score=100,
+        max_attempts=5,
+        truth_safe=True,
+    )
+    # Compute job-fit
+    master_inv = parse_master_resume(state.get("base_resume_text", ""))
+    fit = compute_job_fit_score(
+        state.get("job_description", ""),
+        master_inv,
+        ats_score=opt_result.get("final_ats_score", 0),
+    )
+    ats_results = checker.comprehensive_ats_check(
+        resume_text=opt_result["humanized_resume_text"],
+        job_description=state.get("job_description", ""),
+        job_title=state.get("target_position", ""),
+        company_name=state.get("target_company", ""),
+        location=state.get("target_location", ""),
+        target_score=100,
+        master_resume_text=state.get("base_resume_text", ""),
+    )
+    report_filename = f"ATS_Report_{state['target_company']}.xlsx".replace('/', '_')
+    ats_report_path = checker.save_ats_results_to_excel(ats_results, filename=report_filename)
+
+    st.write(f"✅ Iterative ATS complete after {opt_result.get('attempts', 0)} attempts. Score: {opt_result['final_ats_score']}%")
+    fit_decision = "Apply" if fit.get("apply") else ("Reject" if fit.get("reject") else "Review")
+    return {
+        "tailored_resume_text": opt_result["tailored_resume_text"],
+        "humanized_resume_text": opt_result["humanized_resume_text"],
+        "initial_ats_score": opt_result["final_ats_score"],
+        "final_ats_score": opt_result["final_ats_score"],
+        "feedback": "\n".join(opt_result.get("feedback", [])) if isinstance(opt_result.get("feedback"), list) else str(opt_result.get("feedback", "")),
+        "ats_report_path": ats_report_path,
+        "job_fit_score": fit.get("score"),
+        "fit_decision": fit_decision,
+        "unsupported_requirements": fit.get("unsupported_requirements", []),
+    }
+
+
+def build_graph(use_iterative_ats: bool = False):
     workflow = StateGraph(AgentState)
     workflow.add_node("guard_job", guard_job_quality)
     workflow.add_node("analyze_jd", analyze_job_description)
     workflow.add_node("score_resume_enhanced", enhanced_ats_scorer_node)
+    workflow.add_node("iterative_ats", iterative_ats_optimizer_node)
     workflow.add_node("edit_resume", tailor_resume)
     workflow.add_node("humanize_resume", humanize_resume)
     workflow.add_node("generate_project_intelligent", intelligent_project_generator)
@@ -158,18 +214,20 @@ def build_graph():
 
     workflow.set_entry_point("guard_job")
     workflow.add_conditional_edges("guard_job", check_guard, {"analyze_jd": "analyze_jd", END: END})
-    workflow.add_edge("analyze_jd", "score_resume_enhanced")
-    workflow.add_conditional_edges("score_resume_enhanced", check_ats_score, {"generate_project_intelligent": "generate_project_intelligent", "edit_resume": "edit_resume"})
-    workflow.add_edge("edit_resume", "humanize_resume")
-    workflow.add_edge("humanize_resume", "generate_project_intelligent")
+    if use_iterative_ats:
+        workflow.add_edge("analyze_jd", "iterative_ats")
+        workflow.add_edge("iterative_ats", "generate_project_intelligent")
+    else:
+        workflow.add_edge("analyze_jd", "score_resume_enhanced")
+        workflow.add_conditional_edges("score_resume_enhanced", check_ats_score, {"generate_project_intelligent": "generate_project_intelligent", "edit_resume": "edit_resume"})
+        workflow.add_edge("edit_resume", "humanize_resume")
+        workflow.add_edge("humanize_resume", "generate_project_intelligent")
     workflow.add_edge("generate_project_intelligent", "generate_cover_letter")
     workflow.add_edge("generate_cover_letter", "humanize_cover_letter")
     workflow.add_edge("humanize_cover_letter", "save_final_documents")
     workflow.add_edge("save_final_documents", "log_application_node")
     workflow.add_edge("log_application_node", END)
     return workflow.compile()
-
-graph = build_graph()
 
 def extract_text_from_pdf(pdf_bytes):
     if pdf_bytes is None:
@@ -206,6 +264,12 @@ if st.sidebar.button("💾 Save credentials (no re-enter next time)", use_contai
     _save_creds(openai_api_key, apify_api_key, candidate_name)
     st.sidebar.success("Saved to .env – reload the page to confirm.")
 
+use_iterative_ats = st.sidebar.checkbox(
+    "Use iterative ATS (target 100, truth-safe)",
+    value=True,
+    help="Loop until internal ATS score = 100, using only skills from master resume. Auto-apply only when job is a full fit.",
+)
+
 st.sidebar.markdown("---")
 if not all([openai_api_key, apify_api_key]):
     st.error("Please provide all required API keys in the sidebar to activate the portal.")
@@ -214,8 +278,10 @@ if not all([openai_api_key, apify_api_key]):
 os.environ["OPENAI_API_KEY"] = openai_api_key
 os.environ["APIFY_API_KEY"] = apify_api_key
 
+graph = build_graph(use_iterative_ats=use_iterative_ats)
+
 # --- TABS ---
-tab1, tab2, tab3, tab4 = st.tabs(["📄 Single Job", "🚀 Batch URL Processor", "🤖 AI Job Finder", "💼 My Applications"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📄 Single Job", "🚀 Batch URL Processor", "🤖 AI Job Finder", "🎯 Live ATS Optimizer", "💼 My Applications"])
 
 with tab1:
     st.header("Single Job Application")
@@ -237,7 +303,12 @@ with tab1:
                     final_state = graph.invoke(initial_state)
                     st.success("Pipeline Complete!")
                     
-                    st.metric("Final Semantic ATS Score", f"{final_state.get('initial_ats_score', 0)}%")
+                    st.metric("Final Semantic ATS Score", f"{final_state.get('initial_ats_score', final_state.get('final_ats_score', 0))}%")
+                    if final_state.get("fit_decision"):
+                        st.metric("Fit Decision", final_state["fit_decision"])
+                    if final_state.get("unsupported_requirements"):
+                        with st.expander("⚠️ Unsupported JD requirements (not added)"):
+                            st.write(", ".join(final_state["unsupported_requirements"]))
                     with st.expander("💡 Suggested Project to Fill Skill Gaps"):
                         st.markdown(final_state.get("generated_project_text", "No project suggestion."))
                     
@@ -433,8 +504,101 @@ with tab3:
             st.download_button("📤 Export jobs for LinkedIn apply (JSON)", json_bytes, "linkedin_jobs_to_apply.json", "application/json", key="export_linkedin")
             st.code("python apply_linkedin_jobs.py linkedin_jobs_to_apply.json --no-headless", language="bash")
             st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Add resume PDF to Master_Resumes/ or set RESUME_PATH.")
+            st.caption("⚠️ Only apply to jobs with Fit Decision = Apply (job strongly matches your verified background).")
 
 with tab4:
+    st.header("🎯 Live ATS Optimizer")
+    st.markdown("""
+    **Master Resume → Job → ATS scan → rewrite → re-scan** until internal score = 100.
+    Only applies truthful skills from your master resume. Auto-apply only when job is a full fit.
+    """)
+    live_master_pdf = st.file_uploader("Upload Master Resume (PDF)", type=["pdf"], key="live_master")
+    job_source_live = st.selectbox("Job source", ["Manual (paste JD)", "Job URL", "LinkedIn MCP", "Apify"], key="live_source")
+    job_url_or_jd = ""
+    if job_source_live == "Job URL":
+        url_in = st.text_input("Job URL", key="live_url")
+        if url_in:
+            jd_from_url = scrape_job_url(url_in)
+            if not jd_from_url.startswith("Error:"):
+                job_url_or_jd = jd_from_url
+            else:
+                job_url_or_jd = url_in
+    elif job_source_live == "Manual (paste JD)":
+        job_url_or_jd = st.text_area("Paste Job Description", height=200, key="live_jd")
+    else:
+        job_url_or_jd = st.text_area("Paste JD (or leave blank to fetch from source)", height=150, key="live_jd_alt")
+    target_ats = st.number_input("Target ATS score", min_value=75, max_value=100, value=100, key="live_target")
+    truth_safe_live = st.checkbox("Truth-safe mode (only add skills from master resume)", value=True, key="live_truth")
+    auto_apply_full_match = st.checkbox("Auto-apply only on full match", value=True, key="live_auto")
+
+    if st.button("🎯 Run Live ATS Optimizer", type="primary", key="live_optimizer_btn"):
+        master_bytes = live_master_pdf.read() if live_master_pdf else st.session_state.get("base_resume_bytes")
+        if not master_bytes:
+            st.error("Upload master resume first (or use one from the sidebar).")
+        elif not job_url_or_jd and job_source_live in ("Manual (paste JD)", "Job URL"):
+            st.error("Provide job URL or paste JD.")
+        else:
+            master_text = extract_text_from_pdf(master_bytes)
+            if job_source_live == "LinkedIn MCP":
+                from providers.linkedin_mcp_jobs import fetch_linkedin_mcp_jobs
+                jobs = fetch_linkedin_mcp_jobs(["AI Engineer", "Machine Learning"], max_results=5)
+                if not jobs:
+                    st.warning("No LinkedIn jobs found. Paste a JD manually in the Job Description area above.")
+                else:
+                    job_url_or_jd = jobs[0].get("description", "") or str(jobs[0])
+                    st.info(f"Using first job: {jobs[0].get('title', '')} at {jobs[0].get('company', '')}")
+            elif job_source_live == "Apify":
+                finder = EnhancedJobFinder(apify_api_key or "", provider="apify")
+                jobs_df = finder.find_jobs_with_apify(master_text, 5)
+                if jobs_df.empty:
+                    st.warning("No Apify jobs found. Paste a JD manually.")
+                else:
+                    row = jobs_df.iloc[0]
+                    job_url_or_jd = row.get("description", row.get("description_snippet", ""))
+                    st.info(f"Using first job: {row.get('title', row.get('position', ''))} at {row.get('company', row.get('companyName', ''))}")
+
+            if job_url_or_jd and job_url_or_jd.strip():
+                with st.spinner("Running iterative ATS optimizer..."):
+                    try:
+                        state = {
+                            "candidate_name": candidate_name, "target_position": "AI/ML Engineer", "target_company": "Target",
+                            "target_location": "USA", "base_resume_text": master_text, "job_description": str(job_url_or_jd)[:15000],
+                            "is_eligible": True,
+                        }
+                        opt_result = run_iterative_ats_optimizer(
+                            state=state, ats_checker=EnhancedATSChecker(),
+                            tailor_fn=tailor_resume, humanize_fn=humanize_resume,
+                            target_score=int(target_ats), max_attempts=5, truth_safe=truth_safe_live,
+                        )
+                        master_inv = parse_master_resume(master_text)
+                        fit = compute_job_fit_score(str(job_url_or_jd), master_inv, ats_score=opt_result.get("final_ats_score", 0))
+
+                        st.metric("Current ATS Score", f"{opt_result.get('final_ats_score', 0)}%")
+                        with st.expander("Missing keywords"):
+                            st.write(", ".join(opt_result.get("missing_keywords", [])))
+                        with st.expander("Unsupported JD requirements (do not add)"):
+                            unsup = fit.get("unsupported_requirements", [])
+                            st.write(", ".join(unsup) if unsup else "None")
+                        fit_decision = "Apply" if fit.get("apply") else ("Reject" if fit.get("reject") else "Review")
+                        st.metric("Fit Decision", fit_decision)
+                        if fit.get("reasons"):
+                            st.caption("; ".join(fit["reasons"][:3]))
+
+                        st.subheader("Final Tailored Resume")
+                        st.text_area("Resume (Markdown)", value=opt_result.get("humanized_resume_text", ""), height=400, disabled=True, key="live_resume_out")
+                        # Generate cover letter
+                        cl_state = {**state, "tailored_resume_text": opt_result.get("humanized_resume_text", ""), "humanized_resume_text": opt_result.get("humanized_resume_text", "")}
+                        cover_letter = generate_cover_letter(cl_state)
+                        st.subheader("Cover Letter")
+                        st.text_area("Cover Letter", value=cover_letter.get("cover_letter_text", ""), height=200, disabled=True, key="live_cl_out")
+                        st.session_state.live_ats_result = opt_result
+                        st.session_state.live_fit = fit
+                    except Exception as e:
+                        st.error(str(e))
+                        import traceback
+                        st.code(traceback.format_exc())
+
+with tab5:
     st.header("💼 My Application Tracker")
     st.markdown("Track all processed jobs and prepare for interviews.")
 
