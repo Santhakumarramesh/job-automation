@@ -12,3 +12,8 @@ beautifulsoup4
 requests
 openpyxl
 reportlab
+# Optional: for LinkedIn MCP job source
+# mcp
+
+# For Apply on LinkedIn (python apply_linkedin_jobs.py)
+# playwright  # then: playwright install chromium

@@ -1,0 +1,121 @@
+"""
+LinkedIn MCP job provider using linkedin-mcp-server.
+Search flow: search_jobs -> job_ids -> get_job_details for each -> JobListing.
+Requires: pip install mcp, linkedin-mcp-server running (uv run linkedin-mcp-server --transport streamable-http --port 8000)
+"""
+
+import asyncio
+import json
+import os
+from typing import Any
+
+from providers.common_schema import JobListing, normalize_to_schema
+
+LINKEDIN_MCP_URL = os.getenv("LINKEDIN_MCP_URL", "http://127.0.0.1:8000/mcp")
+
+
+def _extract_from_sections(sections: dict, key: str) -> str:
+    """Extract value from nested sections (job_posting or page_N)."""
+    for name, data in (sections or {}).items():
+        if isinstance(data, dict):
+            v = data.get(key) or data.get(key.replace("_", ""))
+            if v:
+                return str(v)
+            entities = data.get("entities") or data.get("items") or []
+            for e in entities[:1]:
+                if isinstance(e, dict) and e.get(key):
+                    return str(e.get(key, ""))
+    return ""
+
+
+def _call_mcp_tool(tool: str, arguments: dict, url: str = LINKEDIN_MCP_URL) -> dict | list | None:
+    """Call MCP tool and return parsed result."""
+    try:
+        from mcp.client.session import ClientSession
+        from mcp.client.streamable_http import StreamableHTTPTransport
+    except ImportError:
+        try:
+            from mcp import ClientSession
+            from mcp.client.streamable_http import StreamableHTTPTransport
+        except ImportError:
+            print("⚠️ LinkedIn MCP: pip install mcp")
+            return None
+
+    async def _run():
+        transport = StreamableHTTPTransport(url)
+        async with ClientSession(transport) as session:
+            await session.initialize()
+            result = await session.call_tool(tool, arguments=arguments)
+            out = None
+            if result.content:
+                for block in result.content:
+                    txt = getattr(block, "text", None)
+                    if txt:
+                        try:
+                            out = json.loads(txt)
+                            break
+                        except json.JSONDecodeError:
+                            pass
+            return out
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        print(f"⚠️ LinkedIn MCP ({tool}): {e}")
+        return None
+
+
+def fetch_linkedin_mcp_jobs(
+    keywords: str | list[str],
+    location: str = "United States",
+    work_type: str = "remote",
+    max_results: int = 25,
+    easy_apply: bool = False,
+) -> list[JobListing]:
+    """
+    Fetch jobs from LinkedIn via MCP.
+    1. search_jobs(keywords, location, work_type) -> job_ids
+    2. get_job_details(job_id) for each -> full job
+    3. Build JobListing with url = https://linkedin.com/jobs/view/{id}/
+    """
+    if isinstance(keywords, list):
+        keywords = " ".join(keywords[:5])
+
+    search_result = _call_mcp_tool("search_jobs", {
+        "keywords": keywords,
+        "location": location or "United States",
+        "work_type": work_type,
+        "max_pages": min(3, (max_results // 25) + 1),
+        "easy_apply": easy_apply,
+    })
+    if not search_result or not isinstance(search_result, dict):
+        return []
+
+    job_ids = search_result.get("job_ids") or []
+    jobs = []
+    for jid in job_ids[:max_results]:
+        if not jid:
+            continue
+        detail = _call_mcp_tool("get_job_details", {"job_id": str(jid)})
+        if not detail or not isinstance(detail, dict):
+            continue
+        url = detail.get("url") or f"https://www.linkedin.com/jobs/view/{jid}/"
+        sections = detail.get("sections") or {}
+        job_posting = sections.get("job_posting") or {}
+        if isinstance(job_posting, dict):
+            entities = job_posting.get("entities") or job_posting.get("items") or [job_posting]
+            first = entities[0] if entities else job_posting
+            if isinstance(first, dict):
+                raw = {
+                    "title": first.get("title") or first.get("name") or _extract_from_sections(sections, "title"),
+                    "company": first.get("company") or first.get("company_name") or _extract_from_sections(sections, "company"),
+                    "location": first.get("location") or first.get("place") or _extract_from_sections(sections, "location"),
+                    "description": first.get("description") or first.get("details") or _extract_from_sections(sections, "description"),
+                    "url": url,
+                }
+            else:
+                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url}
+        else:
+            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url}
+        jobs.append(normalize_to_schema(raw, "linkedin_mcp"))
+    return jobs

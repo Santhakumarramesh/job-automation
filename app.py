@@ -1,6 +1,8 @@
 
 import streamlit as st
+import json
 import os
+import pathlib
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -186,6 +188,17 @@ apify_api_key = st.sidebar.text_input("Apify API Key", type="password", value=sa
 st.sidebar.markdown("---")
 st.sidebar.subheader("👤 Candidate Information")
 candidate_name = st.sidebar.text_input("Your Name", value=saved["name"], key="candidate_name")
+
+# Master_Resumes folder: quick-select from saved PDFs
+MASTER_RESUMES_DIR = pathlib.Path(__file__).resolve().parent / "Master_Resumes"
+master_pdfs = list(MASTER_RESUMES_DIR.glob("*.pdf")) if MASTER_RESUMES_DIR.exists() else []
+if master_pdfs:
+    master_choice = st.sidebar.selectbox("Or pick from Master_Resumes", ["— Upload below —"] + [p.name for p in master_pdfs])
+    if master_choice != "— Upload below —":
+        sel_path = MASTER_RESUMES_DIR / master_choice
+        if sel_path.exists():
+            st.session_state.base_resume_bytes = sel_path.read_bytes()
+
 base_resume = st.sidebar.file_uploader("Upload Your Base Resume (PDF)", type=["pdf"])
 if base_resume: st.session_state.base_resume_bytes = base_resume.read()
 
@@ -295,14 +308,25 @@ with tab2:
                 st.download_button("📥 Download All Batch Files (ZIP)", zip_buffer.getvalue(), "batch_documents.zip", "application/zip", use_container_width=True)
 
 with tab3:
-    st.header("🤖 AI Job Finder (Apify)")
+    st.header("🤖 AI Job Finder")
+    job_source = st.selectbox(
+        "Job source",
+        ["Apify", "LinkedIn MCP", "Both"],
+        help="Apify: AI Deep Job Search. LinkedIn MCP: requires linkedin-mcp-server running (see providers/linkedin_mcp_jobs.py).",
+    )
+    provider_map = {"Apify": "apify", "LinkedIn MCP": "linkedin_mcp", "Both": "both"}
+    provider = provider_map[job_source]
     max_jobs = st.slider("Max jobs to find", 10, 200, 50)
-    if st.button("Find Jobs with Apify", type="primary"):
+    needs_apify = provider in ("apify", "both")
+    if needs_apify and not apify_api_key:
+        st.warning("Apify API key required for this source.")
+    btn_disabled = (needs_apify and not apify_api_key)
+    if st.button("Find Jobs", type="primary", disabled=btn_disabled):
         if not st.session_state.get("base_resume_bytes"): 
             st.error("Upload resume first.")
         else:
-            with st.spinner("Finding jobs..."):
-                finder = EnhancedJobFinder(apify_api_key)
+            with st.spinner(f"Finding jobs via {job_source}..."):
+                finder = EnhancedJobFinder(apify_api_key or "", provider=provider)
                 jobs_df = finder.find_jobs_with_apify(extract_text_from_pdf(st.session_state.base_resume_bytes), max_jobs)
                 if not jobs_df.empty:
                     st.success(f"Found {len(jobs_df)} jobs!")
@@ -390,6 +414,25 @@ with tab3:
                             if file_path and os.path.isfile(file_path):
                                 zip_f.write(file_path, os.path.basename(file_path))
                     st.download_button("📥 Download All Premium Files (ZIP)", zip_buffer.getvalue(), "premium_documents.zip", "application/zip", use_container_width=True)
+
+        # LinkedIn Apply: export selected jobs and run apply script
+        sel = st.session_state.jobs_df.get("Select")
+        selected = st.session_state.jobs_df[sel == True] if sel is not None and hasattr(sel, 'any') else pd.DataFrame()
+        linkedin_jobs = pd.DataFrame()
+        if not selected.empty and "url" in selected.columns:
+            urls = selected["url"].fillna("").astype(str)
+            linkedin_jobs = selected[urls.str.contains("linkedin.com", na=False)]
+        if not linkedin_jobs.empty:
+            st.markdown("---")
+            st.subheader("🔗 Apply on LinkedIn")
+            st.caption("Export selected LinkedIn jobs and apply using [linkedin-mcp-server](https://github.com/eliasbiondo/linkedin-mcp-server) flow.")
+            jobs_export = linkedin_jobs[["title", "company", "location", "description", "url"]].to_dict(orient="records")
+            for r in jobs_export:
+                r["applyUrl"] = r.get("url", "")
+            json_bytes = json.dumps(jobs_export, indent=2).encode()
+            st.download_button("📤 Export jobs for LinkedIn apply (JSON)", json_bytes, "linkedin_jobs_to_apply.json", "application/json", key="export_linkedin")
+            st.code("python apply_linkedin_jobs.py linkedin_jobs_to_apply.json --no-headless", language="bash")
+            st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Add resume PDF to Master_Resumes/ or set RESUME_PATH.")
 
 with tab4:
     st.header("💼 My Application Tracker")
