@@ -21,4 +21,4 @@ def get_jobs(
     Returns DataFrame with title, company, location, description, url, etc.
     """
     finder = EnhancedJobFinder(apify_api_key or "", provider=provider)
-    return finder.find_jobs_with_apify(resume_text, max_results=max_results, filters=filters)
+    return finder.find_jobs(resume_text, max_results=max_results, filters=filters)

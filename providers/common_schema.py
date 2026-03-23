@@ -21,6 +21,7 @@ class JobListing:
     job_type: str = ""         # full_time, part_time, contract, internship
     experience_level: str = "" # entry, mid, senior, etc.
     easy_apply: bool = False
+    easy_apply_filter_used: bool = False  # True when search used easy_apply filter (not per-job confirmation)
     posted_at: str = ""
     apply_url: str = ""        # Dedicated apply URL if different from url
     source: str = ""           # apify, linkedin_mcp, url
@@ -39,6 +40,7 @@ class JobListing:
             "job_type": self.job_type,
             "experience_level": self.experience_level,
             "easy_apply": self.easy_apply,
+            "easy_apply_filter_used": self.easy_apply_filter_used,
             "posted_at": self.posted_at,
             "apply_url": self.apply_url or self.url,
             "source": self.source,
@@ -101,6 +103,9 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
     easy_apply = raw.get("easy_apply", raw.get("easyApply", False))
     if isinstance(easy_apply, str):
         easy_apply = easy_apply.lower() in ("true", "1", "yes")
+    easy_apply_filter_used = raw.get("easy_apply_filter_used", False)
+    if isinstance(easy_apply_filter_used, str):
+        easy_apply_filter_used = easy_apply_filter_used.lower() in ("true", "1", "yes")
     apply_url = raw.get("apply_url") or raw.get("applyUrl") or ""
 
     return JobListing(
@@ -114,6 +119,7 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
         job_type=str(job_type),
         experience_level=str(experience_level),
         easy_apply=bool(easy_apply),
+        easy_apply_filter_used=bool(easy_apply_filter_used),
         posted_at=str(posted_at),
         apply_url=str(apply_url),
         source=source,
@@ -121,7 +127,7 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
         extra={k: v for k, v in raw.items() if k not in {
             "title", "company", "location", "description", "url",
             "job_id", "work_type", "job_type", "experience_level",
-            "easy_apply", "posted_at", "apply_url", "salary",
+            "easy_apply", "easy_apply_filter_used", "posted_at", "apply_url", "salary",
             "jobTitle", "companyName", "jobDescription", "jobUrl",
             "workType", "postedAt", "datePosted", "salaryRange",
             "jobId", "easyApply", "applyUrl", "experienceLevel",

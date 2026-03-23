@@ -34,6 +34,7 @@ class RunConfig:
     confirm_before_submit: bool = True
     screenshots_dir: str = ""
     use_answerer: bool = True
+    easy_apply_only: bool = True  # When True, only LinkedIn Easy Apply; reject external ATS
 
 
 @dataclass
@@ -476,12 +477,22 @@ async def run_application(
 ) -> RunResult:
     """
     Run application for one job. Detects form type (LinkedIn vs external ATS) and routes.
-    Uses job-specific resume naming when tailored resume exists.
+    When easy_apply_only=True (default), only LinkedIn Easy Apply; external ATS is skipped.
     """
     url = job.get("url") or job.get("applyUrl") or ""
     form_type = detect_form_type(url)
     if form_type == "linkedin":
         return await run_linkedin_application(page, job, config, screenshot_dir)
+    if config.easy_apply_only:
+        company = job.get("company") or job.get("companyName", "")
+        position = job.get("title") or job.get("jobTitle", "")
+        return RunResult(
+            status="skipped",
+            company=company,
+            position=position,
+            job_url=url,
+            error="easy_apply_only: external ATS (Greenhouse/Lever/Workday) not processed. Use manual_assist mode.",
+        )
     return await fill_external_ats_form(page, job, config, form_type, screenshot_dir)
 
 

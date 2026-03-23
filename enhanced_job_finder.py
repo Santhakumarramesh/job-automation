@@ -26,7 +26,7 @@ class EnhancedJobFinder:
             "preferred_locations": kw["locations"],
         }
 
-    def find_jobs_with_apify(self, resume_text: str, max_results: int = 50, filters=None) -> pd.DataFrame:
+    def find_jobs(self, resume_text: str, max_results: int = 50, filters=None) -> pd.DataFrame:
         """Find jobs. Uses Apify, LinkedIn MCP, or both based on self.provider.
         filters: optional SearchFilters for date_posted, easy_apply, etc. (LinkedIn MCP).
         """
@@ -38,6 +38,10 @@ class EnhancedJobFinder:
             filters=filters,
         )
         return df
+
+    def find_jobs_with_apify(self, resume_text: str, max_results: int = 50, filters=None) -> pd.DataFrame:
+        """Deprecated. Use find_jobs()."""
+        return self.find_jobs(resume_text, max_results, filters)
 
     def save_results_to_excel(self, jobs_df: pd.DataFrame, filename: str = "job_search_results.xlsx") -> str | None:
         """Save job results to Excel."""
@@ -77,7 +81,7 @@ if __name__ == "__main__":
     else:
         finder = EnhancedJobFinder(apify_key, provider="apify")
         sample = "AI/ML Engineer with Python, TensorFlow, AWS. USA, Remote."
-        df = finder.find_jobs_with_apify(sample, max_results=20)
+        df = finder.find_jobs(sample, max_results=20)
         if not df.empty:
             finder.save_results_to_excel(df)
             print(df[["title", "company", "location", "resume_match_score"]].head())

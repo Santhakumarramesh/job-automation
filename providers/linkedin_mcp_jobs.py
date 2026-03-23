@@ -130,11 +130,12 @@ def fetch_linkedin_mcp_jobs(
                     "url": url,
                     "job_id": str(jid),
                     "easy_apply": easy_apply,
+                    "easy_apply_filter_used": easy_apply,  # We used filter; easy_apply is assumed, not per-job confirmed
                 }
             else:
-                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid)}
+                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply}
         else:
-            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid)}
+            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid), "easy_apply_filter_used": easy_apply}
         jobs.append(normalize_to_schema(raw, "linkedin_mcp"))
     return jobs
 

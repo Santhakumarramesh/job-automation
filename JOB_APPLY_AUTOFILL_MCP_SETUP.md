@@ -106,10 +106,11 @@ Replace `/path/to/career-co-pilot-pro` with your project root.
 4. **Detect form type**  
    Call `detect_form_type` with a URL to see if it’s LinkedIn, Greenhouse, Lever, or Workday.
 
-## Two-Lane Strategy
+## Two-Lane Strategy (Enforced in Code)
 
-- **Auto-apply:** Only for LinkedIn Easy Apply jobs. Use `apply_to_jobs` with a JSON of Easy Apply jobs.
-- **Manual-assist:** For Greenhouse, Lever, Workday, or non–Easy Apply. Use `prepare_resume_for_job` and `get_autofill_values` to prepare; apply manually.
+- **Auto-apply (default):** Only LinkedIn Easy Apply. `apply_to_jobs` rejects non–Easy Apply unless `manual_assist=True`.
+- **Submission safeguards:** `require_safeguards=True` (default) skips jobs without fit_decision=Apply, ats_score≥85 when metadata present.
+- **Manual-assist:** Set `manual_assist=True` for Greenhouse, Lever, Workday. Use `prepare_resume_for_job` and `get_autofill_values` to prepare; apply manually.
 
 See [docs/TWO_LANE_APPLY_STRATEGY.md](docs/TWO_LANE_APPLY_STRATEGY.md) for details.
 

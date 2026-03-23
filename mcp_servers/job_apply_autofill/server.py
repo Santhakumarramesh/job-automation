@@ -112,12 +112,16 @@ def apply_to_jobs(
     jobs_json: str,
     dry_run: bool = False,
     rate_limit_seconds: float = 90.0,
+    manual_assist: bool = False,
+    require_safeguards: bool = True,
 ) -> dict:
     """
-    Apply to jobs from JSON. Supports LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday).
-    jobs_json: JSON string, list of {title, company, url} or {title, company, applyUrl}.
-    dry_run: if True, fill forms but do not submit.
+    Apply to jobs from JSON. By default: Easy Apply only, no external ATS.
+    jobs_json: JSON string, list of {title, company, url, easy_apply?, fit_decision?, ats_score?, unsupported_requirements?}.
+    dry_run: if True, fill forms but do not submit. Recommended for first run.
     rate_limit_seconds: min seconds between applications (default 90).
+    manual_assist: if True, allow external ATS (Greenhouse, Lever, Workday). Default False = Easy Apply only.
+    require_safeguards: if True, skip jobs without fit_decision=Apply and ats_score>=85 when provided.
     Requires LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Resume from Master_Resumes or RESUME_PATH.
     """
     try:
@@ -138,6 +142,43 @@ def apply_to_jobs(
 
     if not jobs:
         return {"status": "error", "message": "No jobs in JSON"}
+
+    # Filter: when not manual_assist, only LinkedIn Easy Apply
+    if not manual_assist:
+        filtered = []
+        for j in jobs:
+            jdict = j if isinstance(j, dict) else {}
+            url = str(jdict.get("url") or jdict.get("applyUrl") or "")
+            if "linkedin.com" not in url.lower():
+                continue
+            if not jdict.get("easy_apply", jdict.get("easyApply", False)):
+                continue
+            filtered.append(j)
+        if not filtered:
+            return {"status": "error", "message": "No Easy Apply jobs in JSON. Set manual_assist=True for external ATS, or export Easy Apply jobs only."}
+        jobs = filtered
+
+    # Filter: require_safeguards - skip jobs that don't meet fit/ATS bar when metadata present
+    if require_safeguards:
+        filtered = []
+        for j in jobs:
+            jdict = j if isinstance(j, dict) else {}
+            fit = jdict.get("fit_decision", "")
+            ats = jdict.get("ats_score")
+            unsup = jdict.get("unsupported_requirements", [])
+            if not fit and ats is None:
+                filtered.append(j)  # No metadata: allow (UI didn't provide)
+            elif fit and fit.lower() != "apply":
+                continue  # Skip: fit not Apply
+            elif ats is not None and int(ats) < 85:
+                continue  # Skip: ATS below threshold
+            elif unsup and len(unsup) > 0:
+                continue  # Skip: has unsupported requirements
+            else:
+                filtered.append(j)
+        jobs = filtered
+        if not jobs:
+            return {"status": "error", "message": "No jobs pass safeguards (fit_decision=Apply, ats_score>=85, no unsupported)."}
 
     try:
         profile = load_profile()
@@ -162,6 +203,7 @@ def apply_to_jobs(
         confirm_before_submit=not dry_run,
         screenshots_dir=str(PROJECT_ROOT / "application_runs" / "screenshots"),
         use_answerer=True,
+        easy_apply_only=not manual_assist,
     )
 
     email = os.getenv("LINKEDIN_EMAIL") or os.getenv("EMAIL")

@@ -240,9 +240,11 @@ def run():
     )
 
     st.sidebar.markdown("---")
-    if not all([openai_api_key, apify_api_key]):
-        st.error("Please provide all required API keys in the sidebar to activate the portal.")
+    if not openai_api_key:
+        st.error("Please provide OpenAI API key in the sidebar.")
         st.stop()
+    if not apify_api_key:
+        st.warning("Apify key missing. Job Finder with Apify/Both and Live ATS with Apify will be disabled.")
 
     os.environ["OPENAI_API_KEY"] = openai_api_key
     os.environ["APIFY_API_KEY"] = apify_api_key
@@ -405,6 +407,8 @@ def run():
                 df["Select"] = False
             if "easy_apply" not in df.columns:
                 df["easy_apply"] = False
+            if "easy_apply_filter_used" not in df.columns:
+                df["easy_apply_filter_used"] = False
             for col in ["title", "company", "location", "description"]:
                 if col not in df.columns:
                     df[col] = "Not Available"
@@ -505,6 +509,7 @@ def run():
                     jobs_export = auto_apply_jobs[cols_export].to_dict(orient="records")
                     for r in jobs_export:
                         r["applyUrl"] = r.get("url", "")
+                        r["easy_apply"] = True
                     json_bytes = json.dumps(jobs_export, indent=2).encode()
                     st.download_button("📤 Export Easy Apply jobs for auto-apply (JSON)", json_bytes, "linkedin_easy_apply_jobs.json", "application/json", key="export_linkedin")
                     st.code("python apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")

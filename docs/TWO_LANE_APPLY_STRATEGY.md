@@ -1,6 +1,7 @@
 # Two-Lane Apply Strategy
 
 The pipeline uses two lanes to balance automation speed with application quality.
+**Easy Apply only is enforced in code** (not just UI): `apply_to_jobs` and `run_application` reject external ATS by default.
 
 ## Lane 1 — Auto-apply (Easy Apply only)
 
