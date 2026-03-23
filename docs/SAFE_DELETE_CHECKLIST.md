@@ -48,13 +48,10 @@ git rm -r --cached model_artifacts/
 # Add model_artifacts/ to .gitignore
 ```
 
-### `model_training/`
+### `model_training/` ✓ Removed
 
-**Recommendation: KEEP or move to separate repo**
-
-- `job_guard` used to rely on a scikit-learn model; it now uses LLM
-- Training code is self-contained and can stay for experimentation
-- Option: Move to a separate `career-co-pilot-training` repo
+- `job_guard` uses LLM; sklearn training code was obsolete
+- Removed in cleanup (Oct 2025)
 
 ### `test_all_tabs.py` ✓ Done
 

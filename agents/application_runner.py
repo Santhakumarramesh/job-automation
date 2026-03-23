@@ -93,10 +93,15 @@ def _resolve_resume_path(config: RunConfig, job: Optional[dict] = None) -> str:
     path = os.getenv("RESUME_PATH")
     if path and os.path.isfile(path):
         return path
-    for base in [proj / "Master_Resumes", proj / "generated_resumes", proj / "candidate_resumes"]:
-        if base.exists():
-            for f in base.rglob("*.pdf"):
-                return str(f)
+    # Last resort: single primary from Master_Resumes only (not generated_resumes — those are job-specific)
+    master_dir = proj / "Master_Resumes"
+    if master_dir.exists():
+        preferred = master_dir / "Master_Resume.pdf"
+        if preferred.exists():
+            return str(preferred)
+        pdfs = sorted(master_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if pdfs:
+            return str(pdfs[0])
     return ""
 
 

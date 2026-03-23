@@ -111,11 +111,13 @@ def log_application(state: dict):
     return state
 
 
-def log_application_from_result(run_result, resume_path: str = "", cover_path: str = ""):
+def log_application_from_result(run_result, resume_path: str = "", cover_path: str = "", job_metadata: dict = None):
     """
     Log from ApplicationRunner RunResult. Used by apply_linkedin_jobs.py.
+    job_metadata: optional dict with fit_decision, ats_score, apply_mode, easy_apply_confirmed, unsupported_requirements.
     """
     initialize_tracker()
+    job_metadata = job_metadata or {}
     screenshots_json = json.dumps(run_result.screenshot_paths) if run_result.screenshot_paths else ""
     qa_json = json.dumps(run_result.qa_audit) if run_result.qa_audit else ""
     status_map = {
@@ -129,16 +131,20 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     row = {
         "id": str(uuid.uuid4()),
         "source": "linkedin_mcp",
-        "job_id": "",
+        "job_id": job_metadata.get("job_id", ""),
         "job_url": run_result.job_url,
         "apply_url": run_result.job_url,
         "company": run_result.company,
         "position": run_result.position,
         "status": "Applied" if run_result.status == "applied" else ("Interviewing" if run_result.status == "manual_assist_ready" else "Rejected"),
         "submission_status": status_map.get(run_result.status, run_result.status),
+        "easy_apply_confirmed": job_metadata.get("easy_apply_confirmed", ""),
+        "apply_mode": job_metadata.get("apply_mode", ""),
+        "fit_decision": job_metadata.get("fit_decision", ""),
+        "ats_score": job_metadata.get("ats_score", job_metadata.get("final_ats_score", "")),
         "resume_path": resume_path,
         "cover_letter_path": cover_path,
-        "job_description": "",
+        "job_description": job_metadata.get("description", ""),
         "applied_at": run_result.applied_at or datetime.now().isoformat(),
         "recruiter_response": "Pending",
         "screenshots_path": screenshots_json,

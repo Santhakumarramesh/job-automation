@@ -239,7 +239,10 @@ def apply_to_jobs(
             await page.wait_for_load_state("networkidle", timeout=15000)
             if "checkpoint" in page.url or "challenge" in page.url:
                 await browser.close()
-                return {"status": "error", "message": "LinkedIn verification required. Complete login manually, then retry."}
+                return {
+                    "status": "error",
+                    "message": "LinkedIn verification required. Complete login manually in a browser (https://linkedin.com), then retry. See docs/JOB_APPLY_AUTOFILL_MCP_SETUP.md#login-challenges for troubleshooting.",
+                }
             await page.wait_for_timeout(2000)
 
             for i, job in enumerate(jobs):
@@ -262,7 +265,15 @@ def apply_to_jobs(
                 if result.status == "applied":
                     applied += 1
                     try:
-                        log_application_from_result(result, resume_path=config.resume_path or "")
+                        meta = {
+                            "job_id": j.get("job_id", ""),
+                            "fit_decision": j.get("fit_decision", ""),
+                            "ats_score": j.get("ats_score", j.get("final_ats_score")),
+                            "apply_mode": j.get("apply_mode", ""),
+                            "easy_apply_confirmed": j.get("easy_apply_confirmed"),
+                            "description": j.get("description", "")[:2000],
+                        }
+                        log_application_from_result(result, resume_path=config.resume_path or "", job_metadata=meta)
                     except Exception:
                         pass
 
@@ -297,6 +308,418 @@ def detect_form_type(url: str) -> dict:
         return {"url": url, "form_type": ft}
     except Exception as e:
         return {"url": url, "form_type": "generic", "error": str(e)[:100]}
+
+
+# --- Decision tools ---
+
+@mcp.tool()
+def decide_apply_mode(
+    job_json: str,
+    fit_decision: str = "",
+    ats_score: str = "",
+    unsupported_requirements_json: str = "[]",
+) -> dict:
+    """
+    Central decision: auto_easy_apply | manual_assist | skip.
+    job_json: JSON object with url, easy_apply_confirmed.
+    Returns apply_mode and reason.
+    """
+    try:
+        from services.policy_service import decide_apply_mode as _decide
+
+        job = json.loads(job_json) if isinstance(job_json, str) else (job_json or {})
+        ats = int(ats_score) if ats_score and str(ats_score).strip() else None
+        unsup = json.loads(unsupported_requirements_json) if isinstance(unsupported_requirements_json, str) else []
+        mode = _decide(job, fit_decision or "", ats, unsup)
+        return {"apply_mode": mode, "status": "ok"}
+    except Exception as e:
+        return {"apply_mode": "manual_assist", "status": "error", "message": str(e)[:150]}
+
+
+@mcp.tool()
+def validate_candidate_profile(profile_path: str = "") -> dict:
+    """
+    Validate candidate profile. Checks full_name, email, phone, linkedin_url,
+    github_url, portfolio_url, work_authorization_note, notice_period, short_answers.
+    Returns warnings, auto_apply_ready, and suggested fixes.
+    """
+    try:
+        from services.profile_service import load_profile, validate_profile, is_auto_apply_ready
+
+        profile = load_profile(profile_path or None)
+        if not profile:
+            return {
+                "status": "no_profile",
+                "auto_apply_ready": False,
+                "warnings": ["No profile found. Copy config/candidate_profile.example.json to candidate_profile.json"],
+                "suggested_fixes": ["Create config/candidate_profile.json with full_name, email, phone, linkedin_url, work_authorization_note, notice_period"],
+            }
+        warnings = validate_profile(profile)
+        short = profile.get("short_answers", {}) or {}
+        for k in ["sponsorship", "why_this_role", "why_this_company", "availability"]:
+            if not short.get(k) or not str(short.get(k)).strip():
+                warnings.append(f"short_answers.{k} is empty")
+        auto_ready = is_auto_apply_ready(profile)
+        suggested = []
+        for k in ["full_name", "email", "phone", "linkedin_url", "work_authorization_note", "notice_period"]:
+            if not profile.get(k) or not str(profile.get(k)).strip():
+                suggested.append(f"Add {k}")
+        return {
+            "status": "ok",
+            "auto_apply_ready": auto_ready,
+            "warnings": warnings,
+            "suggested_fixes": suggested[:10],
+        }
+    except Exception as e:
+        return {"status": "error", "auto_apply_ready": False, "message": str(e)[:200]}
+
+
+@mcp.tool()
+def score_job_fit(
+    job_description: str,
+    master_resume_text: str,
+    job_title: str = "",
+    company: str = "",
+    location: str = "USA",
+) -> dict:
+    """
+    Score job fit before applying. Returns fit_score, fit_decision, missing_keywords,
+    unsupported_requirements, ats_feasibility. Uses master resume guard + ATS checker.
+    """
+    try:
+        from services.ats_service import check_fit_gate
+        from enhanced_ats_checker import EnhancedATSChecker
+
+        state = {
+            "base_resume_text": master_resume_text,
+            "job_description": job_description,
+            "target_position": job_title or "Role",
+            "target_company": company or "Company",
+            "target_location": location or "USA",
+        }
+        fit_result = check_fit_gate(state)
+        checker = EnhancedATSChecker()
+        ats_results = checker.comprehensive_ats_check(
+            resume_text=master_resume_text,
+            job_description=job_description,
+            job_title=job_title or "Role",
+            company_name=company or "Company",
+            location=location or "USA",
+            target_truthful_score=100,
+            master_resume_text=master_resume_text,
+        )
+        missing = ats_results.get("detailed_breakdown", {}).get("missing_keywords", [])
+        return {
+            "status": "ok",
+            "fit_score": fit_result.get("job_fit_score", 0),
+            "fit_decision": fit_result.get("fit_decision", "Review"),
+            "ats_score": ats_results.get("ats_score", 0),
+            "missing_keywords": missing[:15],
+            "unsupported_requirements": fit_result.get("unsupported_requirements", [])[:10],
+            "ats_feasible": ats_results.get("ats_score", 0) >= 85,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@mcp.tool()
+def confirm_easy_apply(job_url: str) -> dict:
+    """
+    Open job page (after LinkedIn login) and confirm Easy Apply button exists.
+    Returns easy_apply_confirmed. Requires LINKEDIN_EMAIL, LINKEDIN_PASSWORD.
+    """
+    if not job_url or "linkedin.com" not in str(job_url).lower():
+        return {"easy_apply_confirmed": False, "status": "error", "message": "URL must be a LinkedIn job URL"}
+    try:
+        from playwright.async_api import async_playwright
+        import random
+
+        email = os.getenv("LINKEDIN_EMAIL") or os.getenv("EMAIL")
+        password = os.getenv("LINKEDIN_PASSWORD")
+        if not email or not password:
+            return {"easy_apply_confirmed": False, "status": "error", "message": "Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD"}
+
+        async def _check():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+                )
+                page = await context.new_page()
+                await page.goto("https://www.linkedin.com/login", wait_until="networkidle", timeout=30000)
+                await page.fill('input[name="session_key"]', email)
+                await page.wait_for_timeout(random.randint(300, 600))
+                await page.fill('input[name="session_password"]', password)
+                await page.click('button[type="submit"]')
+                await page.wait_for_load_state("networkidle", timeout=15000)
+                if "checkpoint" in page.url or "challenge" in page.url:
+                    await browser.close()
+                    return False, "login_challenge"
+                await page.wait_for_timeout(1500)
+                await page.goto(job_url, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(2000)
+                found = False
+                for sel in [
+                    "button[aria-label*='Easy Apply']",
+                    "button:has-text('Easy Apply')",
+                    "button:has-text('Apply now')",
+                    "[data-control-name='apply_from_job_card']",
+                ]:
+                    btn = await page.query_selector(sel)
+                    if btn and await btn.is_visible():
+                        found = True
+                        break
+                await browser.close()
+                return found, None
+
+        found, err = asyncio.run(_check())
+        if err == "login_challenge":
+            return {"easy_apply_confirmed": False, "status": "login_challenge", "message": "LinkedIn verification required. Complete login manually, then retry."}
+        return {"easy_apply_confirmed": found, "status": "ok", "url": job_url}
+    except Exception as e:
+        return {"easy_apply_confirmed": False, "status": "error", "message": str(e)[:200]}
+
+
+# --- Execution tools ---
+
+@mcp.tool()
+def prepare_application_package(
+    job_title: str,
+    company: str,
+    job_description: str = "",
+    master_resume_text: str = "",
+) -> dict:
+    """
+    Prepare full application package for manual-assist lane: job-specific resume path,
+    cover letter path (if generated), autofill values, short answers, fit decision, ATS score.
+    """
+    try:
+        from services.resume_naming import ensure_resume_exists_for_job
+        from services.profile_service import load_profile
+        from agents.application_answerer import answer_question
+
+        job = {"title": job_title, "company": company, "description": job_description}
+        resume_path = ensure_resume_exists_for_job(
+            job,
+            resume_content_path=os.getenv("RESUME_PATH"),
+            output_dir=str(PROJECT_ROOT / "generated_resumes"),
+        )
+        profile = load_profile()
+        values = {
+            "first_name": (profile.get("full_name", "") or "").split()[0] or "",
+            "last_name": " ".join((profile.get("full_name", "") or "").split()[1:]) or "",
+            "email": profile.get("email", ""),
+            "phone": profile.get("phone", ""),
+            "linkedin_url": profile.get("linkedin_url", ""),
+            "github_url": profile.get("github_url", ""),
+            "work_authorization": profile.get("work_authorization_note", ""),
+            "sponsorship": answer_question("Do you require sponsorship?", profile=profile, job_context={"company": company, "title": job_title}),
+            "why_this_role": answer_question("Why this role?", profile=profile, job_context={"company": company, "title": job_title}),
+            "why_this_company": answer_question("Why this company?", profile=profile, job_context={"company": company, "title": job_title}),
+        }
+        fit_result = {}
+        if job_description and master_resume_text:
+            from services.ats_service import check_fit_gate
+            state = {"base_resume_text": master_resume_text, "job_description": job_description, "target_position": job_title, "target_company": company, "target_location": "USA"}
+            fit_result = check_fit_gate(state)
+        return {
+            "status": "ok",
+            "resume_path": resume_path or "",
+            "autofill_values": values,
+            "fit_decision": fit_result.get("fit_decision", ""),
+            "job_fit_score": fit_result.get("job_fit_score", 0),
+            "unsupported_requirements": fit_result.get("unsupported_requirements", []),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@mcp.tool()
+def dry_run_apply_to_jobs(jobs_json: str, rate_limit_seconds: float = 90.0) -> dict:
+    """
+    Fill forms without submitting. Safe testing. Fills fields, takes screenshots,
+    saves unmapped fields. Never submits.
+    """
+    return apply_to_jobs(jobs_json=jobs_json, dry_run=True, rate_limit_seconds=rate_limit_seconds)
+
+
+@mcp.tool()
+def review_unmapped_fields(run_results_path: str) -> dict:
+    """
+    Summarize unmapped fields from a run. Returns which fields were missed,
+    likely question types, and suggested profile keys to add.
+    """
+    try:
+        path = Path(run_results_path)
+        if not path.is_file():
+            return {"status": "error", "message": f"File not found: {run_results_path}"}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            data = [data]
+        all_unmapped = []
+        for r in data:
+            unmapped = r.get("unmapped_fields", [])
+            if unmapped:
+                all_unmapped.extend(unmapped)
+        from collections import Counter
+        counts = Counter(all_unmapped)
+        suggestions = []
+        key_hints = {"sponsor": "short_answers.sponsorship", "salary": "salary_expectation_rule", "phone": "phone", "relocat": "relocation_preference", "years": "short_answers.years_*", "why": "short_answers.why_this_role"}
+        for field, _ in counts.most_common(15):
+            f_lower = (field or "").lower()
+            for kw, prof_key in key_hints.items():
+                if kw in f_lower:
+                    suggestions.append(f"{field} → add {prof_key}")
+                    break
+        return {
+            "status": "ok",
+            "unmapped_summary": dict(counts),
+            "total_unmapped": len(all_unmapped),
+            "suggested_profile_keys": suggestions[:10],
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@mcp.tool()
+def batch_prioritize_jobs(
+    jobs_json: str,
+    master_resume_text: str,
+    max_scored: int = 20,
+) -> dict:
+    """
+    Rank jobs by fit score, ATS potential, easy_apply_confirmed. Returns sorted list
+    with fit_score, fit_decision, ats_score for each. Limits to max_scored to avoid long runs.
+    """
+    try:
+        jobs = json.loads(jobs_json) if isinstance(jobs_json, str) else jobs_json
+        if not isinstance(jobs, list) or not jobs:
+            return {"status": "error", "message": "jobs_json must be a non-empty list"}
+        from services.ats_service import check_fit_gate
+        from enhanced_ats_checker import EnhancedATSChecker
+
+        scored = []
+        for i, j in enumerate(jobs[:max_scored]):
+            j = j if isinstance(j, dict) else {}
+            jd = j.get("description", "") or j.get("job_details", "")
+            if not jd or len(jd) < 100:
+                scored.append({**j, "fit_score": 0, "fit_decision": "Review", "ats_score": 0, "priority_note": "No JD"})
+                continue
+            state = {
+                "base_resume_text": master_resume_text,
+                "job_description": jd,
+                "target_position": j.get("title", ""),
+                "target_company": j.get("company", ""),
+                "target_location": "USA",
+            }
+            fit = check_fit_gate(state)
+            checker = EnhancedATSChecker()
+            ats = checker.comprehensive_ats_check(
+                resume_text=master_resume_text, job_description=jd,
+                job_title=j.get("title", ""), company_name=j.get("company", ""),
+                location="USA", target_truthful_score=100, master_resume_text=master_resume_text,
+            )
+            scored.append({
+                "title": j.get("title"),
+                "company": j.get("company"),
+                "url": j.get("url"),
+                "easy_apply_confirmed": j.get("easy_apply_confirmed", False),
+                "fit_score": fit.get("job_fit_score", 0),
+                "fit_decision": fit.get("fit_decision", "Review"),
+                "ats_score": ats.get("ats_score", 0),
+            })
+        scored.sort(key=lambda x: (
+            -(x.get("easy_apply_confirmed") or False),
+            -x.get("fit_score", 0),
+            -x.get("ats_score", 0),
+        ))
+        return {"status": "ok", "prioritized": scored}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@mcp.tool()
+def generate_recruiter_followup(
+    job_title: str,
+    company: str,
+    application_date: str = "",
+) -> dict:
+    """
+    Generate recruiter follow-up: short LinkedIn message and email. Uses candidate profile.
+    """
+    try:
+        from services.profile_service import load_profile
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import SystemMessage, HumanMessage
+
+        profile = load_profile()
+        name = profile.get("full_name", "Candidate")
+        date = application_date or "recently"
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
+        prompt = f"""Generate two brief professional follow-ups for a job applicant.
+- Applicant: {name}
+- Role: {job_title} at {company}
+- Applied: {date}
+
+1. LinkedIn message (2-3 sentences, max 200 chars): polite, reference the role, express continued interest.
+2. Email subject + body (2-3 sentences): similar tone, professional.
+
+Return as JSON: {{"linkedin_message": "...", "email_subject": "...", "email_body": "..."}}
+"""
+        r = llm.invoke([HumanMessage(content=prompt)])
+        import re
+        text = (r.content or "").strip()
+        m = re.search(r'\{[\s\S]*\}', text)
+        try:
+            data = json.loads(m.group(0)) if m else {}
+        except json.JSONDecodeError:
+            data = {}
+        data.setdefault("linkedin_message", text[:200] if text else "")
+        data.setdefault("email_subject", f"Following up - {job_title}")
+        data.setdefault("email_body", text[:300] if text else "")
+        return {"status": "ok", **data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@mcp.tool()
+def application_audit_report(run_results_path: str) -> dict:
+    """
+    After a batch run, return applied count, skipped count, fail reasons,
+    unmapped fields summary, profile gaps, next recommended fixes.
+    """
+    try:
+        path = Path(run_results_path)
+        if not path.is_file():
+            return {"status": "error", "message": f"File not found: {run_results_path}"}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            data = [data]
+        applied = sum(1 for r in data if r.get("status") == "applied")
+        skipped = sum(1 for r in data if r.get("status") == "skipped")
+        failed = sum(1 for r in data if r.get("status") == "failed")
+        dry_run = sum(1 for r in data if r.get("status") == "dry_run")
+        manual = sum(1 for r in data if r.get("status") == "manual_assist_ready")
+        errors = [r.get("error", "") for r in data if r.get("error")]
+        all_unmapped = []
+        for r in data:
+            all_unmapped.extend(r.get("unmapped_fields", []) or [])
+        from collections import Counter
+        return {
+            "status": "ok",
+            "applied": applied,
+            "skipped": skipped,
+            "failed": failed,
+            "dry_run": dry_run,
+            "manual_assist_ready": manual,
+            "fail_reasons": list(dict.fromkeys(e for e in errors if e))[:5],
+            "unmapped_fields_count": len(all_unmapped),
+            "unmapped_summary": dict(Counter(all_unmapped)),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200]}
 
 
 if __name__ == "__main__":

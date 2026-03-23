@@ -107,7 +107,15 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
                 applied += 1
                 try:
                     from application_tracker import log_application_from_result
-                    log_application_from_result(result, resume_path=config.resume_path or "")
+                    meta = {
+                        "job_id": job.get("job_id", ""),
+                        "fit_decision": job.get("fit_decision", ""),
+                        "ats_score": job.get("ats_score", job.get("final_ats_score")),
+                        "apply_mode": job.get("apply_mode", ""),
+                        "easy_apply_confirmed": job.get("easy_apply_confirmed"),
+                        "description": (job.get("description", "") or "")[:2000],
+                    }
+                    log_application_from_result(result, resume_path=config.resume_path or "", job_metadata=meta)
                 except ImportError:
                     pass
 

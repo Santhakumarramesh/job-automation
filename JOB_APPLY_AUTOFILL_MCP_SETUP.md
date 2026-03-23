@@ -10,10 +10,14 @@ Resumes are **renamed per job**: `{Name}_{Position}_at_{Company}_Resume.pdf`
 - **Greenhouse / Lever / Workday** – When LinkedIn redirects to external ATS, detects form type and autofills
 - **Proper resume naming** – Each application uses a job-specific resume path when tailored resume exists
 - **MCP tools** – Call from Cursor or any MCP client:
-  - `prepare_resume_for_job` – Generate job-specific resume path
-  - `get_autofill_values` – Get suggested values from candidate profile
-  - `apply_to_jobs` – Apply to a list of jobs (LinkedIn + external ATS)
-  - `detect_form_type` – Detect LinkedIn vs Greenhouse vs Lever vs Workday from URL
+
+  **Discovery:** `prepare_resume_for_job`, `get_autofill_values`, `detect_form_type`, `confirm_easy_apply`
+
+  **Decision:** `decide_apply_mode`, `validate_candidate_profile`, `score_job_fit`, `batch_prioritize_jobs`
+
+  **Execution:** `apply_to_jobs`, `dry_run_apply_to_jobs`, `prepare_application_package`
+
+  **Review:** `review_unmapped_fields`, `application_audit_report`, `generate_recruiter_followup`
 
 ## Setup
 
@@ -87,6 +91,25 @@ Or using Python directly:
 
 Replace `/path/to/career-co-pilot-pro` with your project root.
 
+## Tool reference
+
+| Tool | Purpose |
+|------|---------|
+| `decide_apply_mode` | Central policy: auto_easy_apply \| manual_assist \| skip |
+| `validate_candidate_profile` | Check profile completeness, auto_apply_ready |
+| `score_job_fit` | Fit score, ATS score, missing keywords, unsupported requirements |
+| `confirm_easy_apply` | Open job page, verify Easy Apply button exists |
+| `prepare_resume_for_job` | Job-specific resume path |
+| `get_autofill_values` | Profile-based form values |
+| `prepare_application_package` | Resume + autofill + fit/ATS for manual-assist |
+| `apply_to_jobs` | Live apply (Easy Apply only by default) |
+| `dry_run_apply_to_jobs` | Fill without submit; safe testing |
+| `detect_form_type` | LinkedIn vs Greenhouse vs Lever vs Workday |
+| `review_unmapped_fields` | Summarize missed form fields |
+| `application_audit_report` | Batch run summary |
+| `batch_prioritize_jobs` | Rank jobs by fit, ATS, Easy Apply |
+| `generate_recruiter_followup` | LinkedIn message + email draft |
+
 ## Usage from Cursor
 
 1. **Prepare resume for a job**  
@@ -145,6 +168,16 @@ Log to application_tracker
 - `rate_limit_seconds=90` – Minimum delay between applications
 - `RESUME_PATH` – Override default resume location
 - `CANDIDATE_NAME` – Used for resume filename when profile missing
+
+## Login challenges
+
+If LinkedIn shows a verification page (CAPTCHA, phone/email check, or security challenge):
+
+1. **Complete verification in a browser** – Open https://linkedin.com, log in, and finish any prompts.
+2. **Retry** – Run `apply_to_jobs` again. LinkedIn may trust the session for a while.
+3. **Use dry run first** – `dry_run=True` fills without submitting; reduces risk of triggering challenges.
+
+The server detects checkpoint/challenge URLs and returns an error immediately instead of failing later. There is no automated recovery; manual login and retry is the supported flow.
 
 ## Disclaimer
 

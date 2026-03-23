@@ -92,6 +92,16 @@ Before live use, run:
 
 ---
 
+## Full 24-item scorecard
+
+See [FIX_ROADMAP.md](FIX_ROADMAP.md) for the complete reconciliation. Key corrections:
+
+- **#5 Easy Apply truthfulness** — ✅ Fixed: `easy_apply_confirmed` vs `easy_apply_filter_used`
+- **#8 Centralized policy** — ✅ Fixed: `services/policy_service.py`
+- **#11 Answer safety** — ✅ Fixed: "Please review manually" when profile missing
+- **#15 Backend Easy Apply only** — ✅ Fixed: MCP + runner enforce; external ATS never submits
+- **#16 Credential gating** — ✅ Fixed: Apify optional for LinkedIn MCP only
+
 ## Summary
 
 | Aspect | Pass |
@@ -101,4 +111,4 @@ Before live use, run:
 | External ATS = manual-assist | ✅ |
 | Architecture | ✅ |
 | Prototype completeness | ✅ |
-| **Production readiness** | ❌ (login risk, external ATS fragility, dry-run recommended) |
+| **Production readiness** | ⚠️ LinkedIn Easy Apply OK with dry-run; external ATS = manual-assist |
