@@ -19,6 +19,10 @@ Auto-apply **only** proceeds when all of these are met:
 4. **No unsupported requirements** — When metadata provided, `unsupported_requirements` must be empty
 5. **External ATS = manual-assist** — Greenhouse/Lever/Workday not auto-submitted; engine skips them by default
 
+## Gap list
+
+See [PRODUCTION_READINESS_GAPS.md](PRODUCTION_READINESS_GAPS.md) for the full P0–P3 list and what's done vs pending.
+
 ## Known gaps
 
 1. **Easy Apply truthfulness** — Addressed: `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter). See [PASS_FAIL_CHECKLIST.md](PASS_FAIL_CHECKLIST.md).

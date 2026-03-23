@@ -80,3 +80,12 @@ def enqueue_job(name: str, payload: Dict[str, Any], user_id: str) -> str:
     job_id = str(uuid.uuid4())
     run_job.apply_async(args=(name, payload, user_id), task_id=job_id)
     return job_id
+
+
+def get_job_status(job_id: str) -> str:
+    """Get job status from Celery backend. Returns: PENDING, STARTED, SUCCESS, FAILURE."""
+    try:
+        result = run_job.AsyncResult(job_id)
+        return result.status or "PENDING"
+    except Exception:
+        return "UNKNOWN"

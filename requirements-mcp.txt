@@ -1,0 +1,7 @@
+# MCP and Apply dependencies. Install after core:
+#   pip install -r requirements.txt -r requirements-mcp.txt
+#   playwright install chromium
+
+mcp
+fastmcp
+playwright

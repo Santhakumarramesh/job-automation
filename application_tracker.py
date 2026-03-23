@@ -2,6 +2,7 @@
 Application tracker. Logs submissions with richer schema.
 Supports: source, job_url, apply_url, submission_status, screenshots, Q&A audit.
 Backward compatible with existing job_applications.csv.
+Set TRACKER_USE_DB=1 to use SQLite (Phase 2 production mode).
 """
 
 import json
@@ -15,6 +16,8 @@ import pandas as pd
 # Use project root so path works from any cwd
 _SCRIPT_DIR = Path(__file__).resolve().parent
 APPLICATION_FILE = _SCRIPT_DIR / "job_applications.csv"
+
+USE_DB = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
 
 # Rich schema columns (Phase 6+)
 TRACKER_COLUMNS = [
@@ -69,14 +72,20 @@ def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def initialize_tracker():
-    """Creates the CSV file with headers if it doesn't exist."""
-    if not APPLICATION_FILE.exists():
+    """Creates the CSV file or DB schema."""
+    if USE_DB:
+        try:
+            from services.tracker_db import initialize_tracker_db
+            initialize_tracker_db()
+        except ImportError:
+            pass
+    if not USE_DB and not APPLICATION_FILE.exists():
         df = pd.DataFrame(columns=TRACKER_COLUMNS)
         df.to_csv(APPLICATION_FILE, index=False)
 
 
 def log_application(state: dict):
-    """Logs a processed job application to the CSV file. Accepts graph state."""
+    """Logs a processed job application. Accepts graph state."""
     initialize_tracker()
     row = {
         "id": str(uuid.uuid4()),
@@ -101,6 +110,14 @@ def log_application(state: dict):
         "qa_audit": "",
         "retry_state": "",
     }
+    if USE_DB:
+        try:
+            from services.tracker_db import log_application_db
+            log_application_db(row)
+            print(f"✅ Application for {state.get('target_company')} logged in tracker.")
+            return state
+        except ImportError:
+            pass
     df = load_applications()
     df = _ensure_columns(df)
     new_row = pd.DataFrame([row])
@@ -151,6 +168,12 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "qa_audit": qa_json,
         "retry_state": "",
     }
+    if USE_DB:
+        try:
+            from services.tracker_db import log_application_db
+            return log_application_db(row)
+        except ImportError:
+            pass
     df = load_applications()
     df = _ensure_columns(df)
     new_row = pd.DataFrame([row])
@@ -163,6 +186,12 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
 def load_applications() -> pd.DataFrame:
     """Load all logged applications. Handles legacy and rich schema."""
     initialize_tracker()
+    if USE_DB:
+        try:
+            from services.tracker_db import load_applications_db
+            return load_applications_db()
+        except ImportError:
+            pass
     try:
         df = pd.read_csv(APPLICATION_FILE)
         df = _ensure_columns(df)

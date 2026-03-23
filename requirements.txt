@@ -1,3 +1,4 @@
+# Core (required for Streamlit UI, ATS, fit gate)
 streamlit
 python-dotenv
 langchain-openai
@@ -12,13 +13,7 @@ beautifulsoup4
 requests
 openpyxl
 reportlab
-# Optional: for LinkedIn MCP job source
-# mcp
 
-# For Apply on LinkedIn (python apply_linkedin_jobs.py)
-# playwright  # then: playwright install chromium
-
-# For Job Apply Autofill MCP server (LinkedIn Easy Apply + Greenhouse/Lever/Workday)
-# fastmcp
-# playwright
-# mcp
+# MCP / Apply (optional; install for full product)
+# pip install -r requirements.txt -r requirements-mcp.txt
+# Or: pip install mcp fastmcp playwright

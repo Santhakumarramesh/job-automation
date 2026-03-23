@@ -33,6 +33,16 @@ dev = [
     "ruff",
     "mypy"
 ]
+mcp = [
+    "mcp",
+    "fastmcp",
+    "playwright"
+]
+full = [
+    "mcp",
+    "fastmcp",
+    "playwright"
+]
 
 [tool.setuptools.packages.find]
-include = ["app*", "agents*", "dashboard*", "config*"]
+include = ["app*", "agents*", "dashboard*", "config*", "services*", "providers*", "ui*", "mcp_servers*"]

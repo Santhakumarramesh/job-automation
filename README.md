@@ -50,7 +50,13 @@ graph TD
 
 2. **Configure** (optional): Copy `.env.example` to `.env` and add `OPENAI_API_KEY`, `APIFY_API_TOKEN` (or enter in sidebar).
 
-3. **Run the app**:
+3. **MCP/Apply** (optional): For Job Apply Autofill and LinkedIn apply flows:
+   ```bash
+   pip install -r requirements-mcp.txt
+   playwright install chromium
+   ```
+
+4. **Run the app**:
    ```bash
    streamlit run app.py
    ```

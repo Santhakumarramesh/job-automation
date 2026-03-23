@@ -9,6 +9,7 @@ node_modules/
 generated_resumes/
 ATS_Report_*.xlsx
 job_applications.csv
+job_applications.db
 candidate_resumes/
 config/candidate_profile.json
 application_runs/
