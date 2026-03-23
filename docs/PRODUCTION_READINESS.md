@@ -21,7 +21,7 @@ Auto-apply **only** proceeds when all of these are met:
 
 ## Known gaps
 
-1. **Easy Apply truthfulness** — `easy_apply` can reflect the search filter, not per-job confirmation. Use `easy_apply_confirmed` when MCP provides it.
+1. **Easy Apply truthfulness** — Addressed: `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter). See [PASS_FAIL_CHECKLIST.md](PASS_FAIL_CHECKLIST.md).
 2. **External ATS autofill** — Workday/Greenhouse/Lever forms vary; heuristic fill is prototype-only. Use manual-assist.
 3. **Login automation risk** — LinkedIn checkpoint/challenge pages can break the flow. Code handles this; user may need to complete verification manually.
 4. **Dry run first** — Recommended: run with `dry_run=True` before live submit.
