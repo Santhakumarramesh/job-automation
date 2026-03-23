@@ -1,17 +1,18 @@
 # Career Co-Pilot Pro: Job Application Automation
 
-AI-powered system to automate job discovery, resume tailoring, and interview preparation with 100% ATS compatibility.
+AI-powered system to automate job discovery, resume tailoring, and interview preparation with ATS-oriented matching.
 
 ## 🚀 Overview
 
-This repository provides a production-ready, multi-agent AI system designed to streamline the job search process for AI/ML professionals.
+This repository provides a **prototype / early automation platform** for AI/ML professionals: Streamlit UI, job discovery (Apify, LinkedIn MCP), ATS-oriented resume tailoring, and document generation.
 
 ### Key Features
-- **Semantic ATS Scorer**: Evaluates your resume against job descriptions using LLMs.
-- **Resume Tailoring**: Automatically updates your resume and cover letter for specific roles.
-- **Job Discovery**: Automated job searching via Apify actors.
-- **Production Infrastructure**: FastAPI backend with Celery workers for background processing.
+- **ATS-Oriented Scorer**: Rule-based + LLM semantic analysis; maximizes truthful keyword match (not a guarantee of passing real employer ATS).
+- **Resume Tailoring**: Automatically updates resume and cover letter for specific roles; truth-safe mode avoids unsupported keyword stuffing.
+- **Job Discovery**: Apify actors and LinkedIn MCP. LinkedIn MCP integration is in progress; see [LINKEDIN_MCP_SETUP.md](LINKEDIN_MCP_SETUP.md).
+- **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
+- **Job Apply Autofill MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). Resumes renamed per job: `{Name}_{Position}_at_{Company}_Resume.pdf`. See [JOB_APPLY_AUTOFILL_MCP_SETUP.md](JOB_APPLY_AUTOFILL_MCP_SETUP.md).
 
 ## 🏗️ Architecture
 
@@ -27,28 +28,35 @@ graph TD
 
 ## 🛠️ Quickstart
 
+### Streamlit (recommended)
+
 1. **Clone & Setup**:
    ```bash
    git clone https://github.com/Santhakumarramesh/job-automation.git
    cd job-automation
    python -m venv venv
    source venv/bin/activate
-   pip install .
+   pip install -r requirements.txt
    ```
 
-2. **Run Backend**:
+2. **Configure** (optional): Copy `.env.example` to `.env` and add `OPENAI_API_KEY`, `APIFY_API_TOKEN` (or enter in sidebar).
+
+3. **Run the app**:
    ```bash
+   streamlit run app.py
+   ```
+
+### Backend (FastAPI + Celery)
+
+1. **Run API**:
+   ```bash
+   pip install .
    uvicorn app.main:app --reload
    ```
 
-3. **Run Worker**:
+2. **Run Worker**:
    ```bash
    celery -A app.tasks worker --loglevel=info
-   ```
-
-4. **Run Sidebar UI**:
-   ```bash
-   streamlit run app.py
    ```
 
 ## 🔒 Security
@@ -63,8 +71,7 @@ Security is a top priority for `job-automation`. Please follow these guidelines:
   - All job payloads are validated using Pydantic models in `app/main.py`.
   - Avoid using `shell=True` or any direct command execution with user-provided input in job handlers.
 - **Authentication**:
-  - The API skeleton includes a dependency-injection pattern for authentication (`app/auth.py`). 
-  - Ensure this is integrated with your organizational auth provider (e.g., Auth0, Firebase, or custom JWT).
+  - API auth is stubbed (`app/auth.py`); implement real auth (OAuth2/JWT) before production use.
 - **Observability**:
   - Every job execution is enqueued with a unique UUID for tracking and auditing.
 

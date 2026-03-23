@@ -1,7 +1,11 @@
 """
 Robust ATS Checker - Combines rule-based validation with LLM semantic analysis.
-Designed to maximize resume pass rate on real ATS systems.
-Adds: target_score, unsupported_requirements, truthful_missing_keywords,
+Designed for ATS-oriented resume matching and tailoring.
+
+IMPORTANT: This is an internal estimate only. Not a guarantee of passing real employer ATS systems.
+Scores reflect formatting, keyword overlap, and semantic relevance—actual ATS behavior varies.
+
+Adds: target_truthful_score, unsupported_requirements, truthful_missing_keywords,
 job_fit_score, ats_format_score when master_resume_text is provided.
 """
 
@@ -182,13 +186,17 @@ Return ONLY the JSON object, no markdown or extra text."""
         job_title,
         company_name,
         location,
-        target_score: int = 100,
+        target_truthful_score: int = 100,
         master_resume_text: Optional[str] = None,
+        target_score: Optional[int] = None,  # Deprecated alias for target_truthful_score
     ):
         """Robust ATS check: rule-based + LLM, weighted combined score.
+        Internal estimate only—not a guarantee of passing real employer ATS.
         When master_resume_text is provided: adds unsupported_requirements,
         truthful_missing_keywords, job_fit_score, ats_format_score.
         """
+        if target_score is not None:
+            target_truthful_score = target_score
         print("🔬 Running robust ATS analysis (rule-based + semantic)...")
 
         resume_text = resume_text or ""
@@ -217,7 +225,7 @@ Return ONLY the JSON object, no markdown or extra text."""
         )
         ats_score = min(100, max(0, round(combined)))
 
-        # ATS format score: formatting + structure (separate from keyword/semantic)
+        # ATS format score: formatting + structure (separate from role fit / keyword/semantic)
         ats_format_score = round((fmt_score + struct_score) / 2)
 
         # 4. Truth-safe outputs (when master resume provided)
@@ -261,7 +269,8 @@ Return ONLY the JSON object, no markdown or extra text."""
 
         result = {
             'ats_score': ats_score,
-            'target_score': target_score,
+            'target_score': target_truthful_score,
+            'target_truthful_score': target_truthful_score,
             'ats_format_score': ats_format_score,
             'job_fit_score': job_fit_score,
             'unsupported_requirements': unsupported_requirements,

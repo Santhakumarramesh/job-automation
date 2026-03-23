@@ -1,15 +1,17 @@
 """
 Job provider registry. Fetches from Apify, LinkedIn MCP, or both.
+Uses unified JobListing schema and SearchFilters.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 
 import pandas as pd
 
 from providers.common_schema import JobListing, jobs_to_dataframe
-from providers.apify_jobs import fetch_apify_jobs
-from providers.linkedin_mcp_jobs import fetch_linkedin_mcp_jobs
+from providers.base_provider import JobProvider, SearchFilters
+from providers.apify_jobs import fetch_apify_jobs, ApifyProvider
+from providers.linkedin_mcp_jobs import fetch_linkedin_mcp_jobs, LinkedInMCPProvider
 
 ProviderChoice = Literal["apify", "linkedin_mcp", "both"]
 
@@ -41,14 +43,19 @@ def get_jobs(
     resume_text: str,
     apify_api_key: str = "",
     max_results: int = 50,
+    filters: Optional[SearchFilters] = None,
 ) -> tuple[pd.DataFrame, list[JobListing]]:
     """
     Fetch jobs from selected provider(s). Returns (DataFrame, raw JobListing list).
     DataFrame has resume_match_score for UI; raw list for further processing.
+    filters: optional SearchFilters for date_posted, job_type, experience_level, easy_apply, etc.
     """
+    filters = filters or SearchFilters()
     kw = _analyze_resume_keywords(resume_text)
     jobs: list[JobListing] = []
     resume_ctx = (resume_text or "")[:500]
+    keywords = kw["job_titles"][:2] + kw["skills"][:3]
+    location = kw["locations"][0] if kw["locations"] else "United States"
 
     if provider in ("apify", "both") and apify_api_key:
         apify_jobs = fetch_apify_jobs(
@@ -62,12 +69,16 @@ def get_jobs(
         jobs.extend(apify_jobs)
 
     if provider in ("linkedin_mcp", "both"):
-        keywords = " ".join(kw["job_titles"][:2] + kw["skills"][:3])
         linkedin_jobs = fetch_linkedin_mcp_jobs(
             keywords=keywords,
-            location=kw["locations"][0] if kw["locations"] else "United States",
-            work_type="remote",
+            location=location,
+            work_type=filters.work_remote or "remote",
             max_results=max_results if provider == "linkedin_mcp" else max_results // 2,
+            easy_apply=filters.easy_apply,
+            date_posted=filters.date_posted,
+            job_type=filters.job_type,
+            experience_level=filters.experience_level,
+            sort_order=filters.sort_order,
         )
         jobs.extend(linkedin_jobs)
 
@@ -99,6 +110,15 @@ def _match_score(job: JobListing, kw: dict) -> int:
             score += 20
             break
     return min(score, 100)
+
+
+def get_provider(provider_id: str, apify_api_key: str = "") -> Optional[JobProvider]:
+    """Get a JobProvider instance by id."""
+    if provider_id == "apify":
+        return ApifyProvider(apify_api_key)
+    if provider_id == "linkedin_mcp":
+        return LinkedInMCPProvider()
+    return None
 
 
 def list_providers() -> list[dict]:

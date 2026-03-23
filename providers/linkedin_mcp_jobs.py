@@ -1,15 +1,17 @@
 """
 LinkedIn MCP job provider using linkedin-mcp-server.
 Search flow: search_jobs -> job_ids -> get_job_details for each -> JobListing.
+Supports: date_posted, job_type, experience_level, work_remote, easy_apply, sort_order.
 Requires: pip install mcp, linkedin-mcp-server running (uv run linkedin-mcp-server --transport streamable-http --port 8000)
 """
 
 import asyncio
 import json
 import os
-from typing import Any
+from typing import Any, Optional
 
 from providers.common_schema import JobListing, normalize_to_schema
+from providers.base_provider import JobProvider, SearchFilters
 
 LINKEDIN_MCP_URL = os.getenv("LINKEDIN_MCP_URL", "http://127.0.0.1:8000/mcp")
 
@@ -71,23 +73,37 @@ def fetch_linkedin_mcp_jobs(
     work_type: str = "remote",
     max_results: int = 25,
     easy_apply: bool = False,
+    date_posted: str = "",
+    job_type: str = "",
+    experience_level: str = "",
+    sort_order: str = "",
 ) -> list[JobListing]:
     """
     Fetch jobs from LinkedIn via MCP.
-    1. search_jobs(keywords, location, work_type) -> job_ids
+    1. search_jobs(keywords, location, work_type, filters) -> job_ids
     2. get_job_details(job_id) for each -> full job
     3. Build JobListing with url = https://linkedin.com/jobs/view/{id}/
     """
     if isinstance(keywords, list):
         keywords = " ".join(keywords[:5])
 
-    search_result = _call_mcp_tool("search_jobs", {
+    args = {
         "keywords": keywords,
         "location": location or "United States",
-        "work_type": work_type,
+        "work_type": work_type or "remote",
         "max_pages": min(3, (max_results // 25) + 1),
         "easy_apply": easy_apply,
-    })
+    }
+    if date_posted:
+        args["date_posted"] = date_posted  # 24h, 1w, 1m
+    if job_type:
+        args["job_type"] = job_type  # full_time, part_time, contract, internship
+    if experience_level:
+        args["experience_level"] = experience_level
+    if sort_order:
+        args["sort_order"] = sort_order  # most_recent, most_relevant
+
+    search_result = _call_mcp_tool("search_jobs", args)
     if not search_result or not isinstance(search_result, dict):
         return []
 
@@ -112,10 +128,62 @@ def fetch_linkedin_mcp_jobs(
                     "location": first.get("location") or first.get("place") or _extract_from_sections(sections, "location"),
                     "description": first.get("description") or first.get("details") or _extract_from_sections(sections, "description"),
                     "url": url,
+                    "job_id": str(jid),
+                    "easy_apply": easy_apply,
                 }
             else:
-                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url}
+                raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid)}
         else:
-            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url}
+            raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": str(jid)}
         jobs.append(normalize_to_schema(raw, "linkedin_mcp"))
     return jobs
+
+
+class LinkedInMCPProvider(JobProvider):
+    """LinkedIn MCP implementation of JobProvider."""
+
+    @property
+    def provider_id(self) -> str:
+        return "linkedin_mcp"
+
+    def search(
+        self,
+        keywords: list[str],
+        location: str,
+        filters: SearchFilters,
+        max_results: int,
+    ) -> list[JobListing]:
+        work_type = filters.work_remote or "remote"
+        return fetch_linkedin_mcp_jobs(
+            keywords=keywords,
+            location=location or "United States",
+            work_type=work_type,
+            max_results=max_results,
+            easy_apply=filters.easy_apply,
+            date_posted=filters.date_posted,
+            job_type=filters.job_type,
+            experience_level=filters.experience_level,
+            sort_order=filters.sort_order,
+        )
+
+    def get_job_details(self, job_id: str) -> Optional[JobListing]:
+        detail = _call_mcp_tool("get_job_details", {"job_id": str(job_id)})
+        if not detail or not isinstance(detail, dict):
+            return None
+        url = detail.get("url") or f"https://www.linkedin.com/jobs/view/{job_id}/"
+        sections = detail.get("sections") or {}
+        job_posting = sections.get("job_posting") or {}
+        raw = {"title": "Job", "company": "", "location": "", "description": "", "url": url, "job_id": job_id}
+        if isinstance(job_posting, dict):
+            entities = job_posting.get("entities") or job_posting.get("items") or [job_posting]
+            first = entities[0] if entities else job_posting
+            if isinstance(first, dict):
+                raw = {
+                    "title": first.get("title") or first.get("name") or _extract_from_sections(sections, "title"),
+                    "company": first.get("company") or first.get("company_name") or _extract_from_sections(sections, "company"),
+                    "location": first.get("location") or first.get("place") or _extract_from_sections(sections, "location"),
+                    "description": first.get("description") or first.get("details") or _extract_from_sections(sections, "description"),
+                    "url": url,
+                    "job_id": job_id,
+                }
+        return normalize_to_schema(raw, "linkedin_mcp")

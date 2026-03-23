@@ -16,10 +16,14 @@ class JobListing:
     location: str
     description: str
     url: str = ""
-    work_type: str = ""  # remote, hybrid, on_site
-    job_type: str = ""   # full_time, part_time, contract, internship
+    job_id: str = ""           # Provider-specific ID (LinkedIn job ID, etc.)
+    work_type: str = ""        # remote, hybrid, on_site
+    job_type: str = ""         # full_time, part_time, contract, internship
+    experience_level: str = "" # entry, mid, senior, etc.
+    easy_apply: bool = False
     posted_at: str = ""
-    source: str = ""     # apify, linkedin_mcp, url
+    apply_url: str = ""        # Dedicated apply URL if different from url
+    source: str = ""           # apify, linkedin_mcp, url
     salary: str = ""
     extra: dict = field(default_factory=dict)
 
@@ -30,9 +34,13 @@ class JobListing:
             "location": self.location,
             "description": self.description,
             "url": self.url,
+            "job_id": self.job_id,
             "work_type": self.work_type,
             "job_type": self.job_type,
+            "experience_level": self.experience_level,
+            "easy_apply": self.easy_apply,
             "posted_at": self.posted_at,
+            "apply_url": self.apply_url or self.url,
             "source": self.source,
             "salary": self.salary or "Not Available",
         }
@@ -88,6 +96,12 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
     job_type = raw.get("job_type") or raw.get("jobType") or raw.get("employmentType") or ""
     posted_at = raw.get("posted_at") or raw.get("postedAt") or raw.get("datePosted") or ""
     salary = raw.get("salary") or raw.get("salaryRange") or ""
+    job_id = raw.get("job_id") or raw.get("jobId") or raw.get("id") or ""
+    experience_level = raw.get("experience_level") or raw.get("experienceLevel") or ""
+    easy_apply = raw.get("easy_apply", raw.get("easyApply", False))
+    if isinstance(easy_apply, str):
+        easy_apply = easy_apply.lower() in ("true", "1", "yes")
+    apply_url = raw.get("apply_url") or raw.get("applyUrl") or ""
 
     return JobListing(
         title=str(title),
@@ -95,16 +109,22 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
         location=str(location),
         description=str(description),
         url=str(url),
+        job_id=str(job_id),
         work_type=str(work_type),
         job_type=str(job_type),
+        experience_level=str(experience_level),
+        easy_apply=bool(easy_apply),
         posted_at=str(posted_at),
+        apply_url=str(apply_url),
         source=source,
         salary=str(salary) if salary else "",
         extra={k: v for k, v in raw.items() if k not in {
             "title", "company", "location", "description", "url",
-            "work_type", "job_type", "posted_at", "salary",
+            "job_id", "work_type", "job_type", "experience_level",
+            "easy_apply", "posted_at", "apply_url", "salary",
             "jobTitle", "companyName", "jobDescription", "jobUrl",
             "workType", "postedAt", "datePosted", "salaryRange",
+            "jobId", "easyApply", "applyUrl", "experienceLevel",
         }},
     )
 

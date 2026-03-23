@@ -17,3 +17,8 @@ reportlab
 
 # For Apply on LinkedIn (python apply_linkedin_jobs.py)
 # playwright  # then: playwright install chromium
+
+# For Job Apply Autofill MCP server (LinkedIn Easy Apply + Greenhouse/Lever/Workday)
+# fastmcp
+# playwright
+# mcp

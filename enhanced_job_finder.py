@@ -26,13 +26,16 @@ class EnhancedJobFinder:
             "preferred_locations": kw["locations"],
         }
 
-    def find_jobs_with_apify(self, resume_text: str, max_results: int = 50) -> pd.DataFrame:
-        """Find jobs. Uses Apify, LinkedIn MCP, or both based on self.provider."""
+    def find_jobs_with_apify(self, resume_text: str, max_results: int = 50, filters=None) -> pd.DataFrame:
+        """Find jobs. Uses Apify, LinkedIn MCP, or both based on self.provider.
+        filters: optional SearchFilters for date_posted, easy_apply, etc. (LinkedIn MCP).
+        """
         df, _ = get_jobs(
             provider=self.provider,
             resume_text=resume_text,
             apify_api_key=self.apify_api_key,
             max_results=max_results,
+            filters=filters,
         )
         return df
 

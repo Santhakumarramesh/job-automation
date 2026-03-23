@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Apply to LinkedIn jobs using Playwright.
+Apply to LinkedIn jobs using Playwright + Application Runner.
 Uses jobs from JSON file (e.g. exported from Job Finder).
+Fills form fields via candidate_profile + application_answerer.
 Requires: pip install playwright && playwright install chromium
 Env: LINKEDIN_EMAIL, LINKEDIN_PASSWORD, (optional) RESUME_PATH
 """
@@ -17,46 +18,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-async def apply_to_linkedin(page, job: dict, resume_path: str) -> str:
-    """LinkedIn Easy Apply flow. Returns Applied | Skipped | Error."""
-    url = job.get("url") or job.get("applyUrl") or ""
-    if not url or "linkedin.com" not in url:
-        return "Skipped"
-    try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(random.randint(2000, 4000))
-
-        for sel in [
-            "button[aria-label*='Easy Apply']",
-            "button:has-text('Easy Apply')",
-            "button:has-text('Apply now')",
-            "[data-control-name='apply_from_job_card']",
-            "button.jobs-apply-button",
-        ]:
-            try:
-                btn = await page.query_selector(sel)
-                if btn and await btn.is_visible():
-                    await btn.click()
-                    await page.wait_for_timeout(3000)
-                    if resume_path and os.path.isfile(resume_path):
-                        up = await page.query_selector("input[type='file']")
-                        if up:
-                            await up.set_input_files(resume_path)
-                            await page.wait_for_timeout(1500)
-                    submit = await page.query_selector("button[aria-label*='Submit'], button:has-text('Submit application')")
-                    if submit and await submit.is_visible():
-                        await submit.click()
-                        await page.wait_for_timeout(2000)
-                    return "Applied"
-            except Exception:
-                continue
-        return "Skipped"
-    except Exception as e:
-        return f"Error: {str(e)[:60]}"
-
-
-async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True):
+async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True, dry_run: bool = False, rate_limit: float = 120.0):
     from playwright.async_api import async_playwright
+    from agents.application_runner import RunConfig, run_application, save_run_results
+
+    try:
+        from services.profile_service import load_profile
+        profile = load_profile()
+    except ImportError:
+        profile = {}
 
     with open(jobs_path) as f:
         data = json.load(f)
@@ -77,11 +47,27 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
     if not resume_path:
         print("⚠️ No resume path. Set RESUME_PATH or add PDF to Master_Resumes/")
 
+    config = RunConfig(
+        resume_path=resume_path or "",
+        profile=profile,
+        dry_run=dry_run,
+        rate_limit_sec=rate_limit,
+        confirm_before_submit=not dry_run,
+        screenshots_dir="application_runs/screenshots",
+        use_answerer=True,
+    )
+
+    screenshot_dir = Path(__file__).parent / "application_runs" / "screenshots"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+
     email = os.getenv("LINKEDIN_EMAIL") or os.getenv("EMAIL")
     password = os.getenv("LINKEDIN_PASSWORD")
     if not email or not password:
         print("Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD")
         return
+
+    if dry_run:
+        print("🔬 DRY RUN: Will fill forms but NOT submit.")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless)
@@ -103,19 +89,32 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
             input()
         await page.wait_for_timeout(2000)
 
+        results = []
         applied = 0
         for i, job in enumerate(jobs):
             title = job.get("title") or job.get("jobTitle", "Job")
             company = job.get("company") or job.get("companyName", "")
             print(f"\n[{i+1}/{len(jobs)}] {title} at {company}")
-            await asyncio.sleep(random.uniform(8, 15))
-            status = await apply_to_linkedin(page, job, resume_path or "")
-            print(f"  Status: {status}")
-            if status == "Applied":
+            await asyncio.sleep(random.uniform(max(5, rate_limit / 6), max(10, rate_limit / 4)))
+            result = await run_application(page, job, config, screenshot_dir=screenshot_dir)
+            results.append(result)
+            print(f"  Status: {result.status}")
+            if result.qa_audit:
+                print(f"  Filled: {list(result.qa_audit.keys())[:5]}")
+            if result.unmapped_fields:
+                print(f"  Unmapped: {result.unmapped_fields[:3]}")
+            if result.status == "applied":
                 applied += 1
+                try:
+                    from application_tracker import log_application_from_result
+                    log_application_from_result(result, resume_path=config.resume_path or "")
+                except ImportError:
+                    pass
 
         await browser.close()
-    print(f"\nDone. Applied to {applied}/{len(jobs)} jobs.")
+
+    save_path = save_run_results(results)
+    print(f"\nDone. Applied to {applied}/{len(jobs)} jobs. Results: {save_path}")
 
 
 def main():
@@ -123,8 +122,15 @@ def main():
     parser.add_argument("jobs_file", help="JSON file with jobs (list of {title, company, url})")
     parser.add_argument("--resume", default="", help="Resume PDF path")
     parser.add_argument("--no-headless", action="store_true", help="Show browser")
+    parser.add_argument("--dry-run", action="store_true", help="Fill forms but do not submit")
+    parser.add_argument("--rate-limit", type=float, default=120.0, help="Min seconds between applications (default: 120)")
     args = parser.parse_args()
-    asyncio.run(run_apply(args.jobs_file, args.resume, headless=not args.no_headless))
+    asyncio.run(run_apply(
+        args.jobs_file, args.resume,
+        headless=not args.no_headless,
+        dry_run=args.dry_run,
+        rate_limit=args.rate_limit,
+    ))
 
 
 if __name__ == "__main__":

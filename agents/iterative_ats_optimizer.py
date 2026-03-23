@@ -97,7 +97,7 @@ def run_iterative_ats_optimizer(
             **state,
             "base_resume_text": current_resume,
             "missing_skills": missing_for_rewrite,
-            "allowed_skills": list(master_inventory.get("skills", set()) | master_inventory.get("tools", set())) if truth_safe else None,
+            "allowed_skills": (master_inventory.allowed_skills_list() if hasattr(master_inventory, "allowed_skills_list") else list(master_inventory.get("skills", set()) | master_inventory.get("tools", set()))) if truth_safe and master_inventory else None,
         }
         tailor_result = tailor_fn(rewrite_state)
         current_resume = tailor_result.get("tailored_resume_text", current_resume)

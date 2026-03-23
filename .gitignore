@@ -8,6 +8,8 @@ generated_resumes/
 ATS_Report_*.xlsx
 job_applications.csv
 candidate_resumes/
+config/candidate_profile.json
+application_runs/
 .gemini/
 .agent/
 .agents/

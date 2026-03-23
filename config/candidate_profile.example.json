@@ -1,0 +1,25 @@
+{
+  "full_name": "Your Full Name",
+  "email": "your.email@example.com",
+  "phone": "+1 (555) 123-4567",
+  "current_location": "City, State",
+  "visa_status": "F1 OPT",
+  "work_authorization_note": "Immediate availability, no sponsorship required",
+  "relocation_preference": "Open to remote",
+  "notice_period": "Immediate",
+  "linkedin_url": "https://linkedin.com/in/yourprofile",
+  "github_url": "https://github.com/yourusername",
+  "portfolio_url": "",
+  "graduation_date": "May 2024",
+  "salary_expectation_rule": "Negotiable",
+  "short_answers": {
+    "why_this_role": "I am passionate about AI/ML and looking to apply my skills in a product-driven environment.",
+    "why_this_company": "I am excited by the company's mission and the opportunity to contribute to innovative projects.",
+    "years_python": "3+",
+    "years_ml": "2+",
+    "years_sql": "3+",
+    "years_aws": "1+",
+    "availability": "Immediate",
+    "sponsorship": "No sponsorship required. Authorized to work in the US."
+  }
+}
