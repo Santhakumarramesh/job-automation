@@ -51,7 +51,7 @@ LINKEDIN_PASSWORD=your_password
 ### Stdio (for Cursor MCP config)
 
 ```bash
-cd /path/to/resume-ai-agent
+cd /path/to/career-co-pilot-pro
 python -m mcp_servers.job_apply_autofill.server
 ```
 
@@ -65,7 +65,7 @@ Edit `~/.cursor/mcp.json` (or Cursor Settings → MCP):
     "job-apply-autofill": {
       "command": "fastmcp",
       "args": ["run", "mcp_servers/job_apply_autofill/server.py"],
-      "cwd": "/path/to/resume-ai-agent"
+      "cwd": "/path/to/career-co-pilot-pro"
     }
   }
 }
@@ -79,13 +79,13 @@ Or using Python directly:
     "job-apply-autofill": {
       "command": "python",
       "args": ["-m", "mcp_servers.job_apply_autofill.server"],
-      "cwd": "/path/to/resume-ai-agent"
+      "cwd": "/path/to/career-co-pilot-pro"
     }
   }
 }
 ```
 
-Replace `/path/to/resume-ai-agent` with your project root.
+Replace `/path/to/career-co-pilot-pro` with your project root.
 
 ## Usage from Cursor
 

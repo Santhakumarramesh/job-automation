@@ -16,7 +16,7 @@ from intelligent_project_generator import intelligent_project_generator
 REDIS_BROKER = os.getenv("REDIS_BROKER", "redis://localhost:6379/0")
 REDIS_BACKEND = os.getenv("REDIS_BACKEND", "redis://localhost:6379/1")
 
-celery = Celery("job_automation", broker=REDIS_BROKER, backend=REDIS_BACKEND)
+celery = Celery("career_co_pilot_pro", broker=REDIS_BROKER, backend=REDIS_BACKEND)
 
 @celery.task(bind=True, acks_late=True)
 def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):

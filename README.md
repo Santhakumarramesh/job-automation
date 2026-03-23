@@ -32,8 +32,8 @@ graph TD
 
 1. **Clone & Setup**:
    ```bash
-   git clone https://github.com/Santhakumarramesh/job-automation.git
-   cd job-automation
+   git clone https://github.com/Santhakumarramesh/career-co-pilot-pro.git
+   cd career-co-pilot-pro
    python -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
@@ -61,7 +61,7 @@ graph TD
 
 ## 🔒 Security
 
-Security is a top priority for `job-automation`. Please follow these guidelines:
+Security is a top priority for `career-co-pilot-pro`. Please follow these guidelines:
 
 - **Secrets Management**:
   - Always use `.env` files for environment-specific secrets.
