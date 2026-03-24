@@ -83,7 +83,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | # | Capability | Primary owner (path) | Status |
 |---|------------|----------------------|--------|
 | 26–27 | Single policy outcome | `services/policy_service.py` — `decide_apply_mode()` | ✅ |
-| 27 | Include profile-valid + no risky unanswered Qs in policy | Today: fit, ATS, unsupported, URL, `easy_apply_confirmed` | ⚠️ Extend with profile + answerer risk |
+| 27 | Include profile-valid + no risky unanswered Qs in policy | Today: fit, ATS, unsupported, URL, `easy_apply_confirmed`; optional `POLICY_ENFORCE_JOB_LOCATION` + `application_locations` ([job_location_match.py](services/job_location_match.py)) | ⚠️ Extend with answerer risk |
 | 28 | Policy decision audit (per-job reason) | `services/policy_service` — `REASON_*` codes; `policy_reason` on `JobListing` + tracker; MCP `decide_apply_mode` returns `policy_reason` | ✅ |
 
 ---

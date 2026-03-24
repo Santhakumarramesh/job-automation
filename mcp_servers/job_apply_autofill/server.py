@@ -350,9 +350,15 @@ def decide_apply_mode(
         job = json.loads(job_json) if isinstance(job_json, str) else (job_json or {})
         ats = int(ats_score) if ats_score and str(ats_score).strip() else None
         unsup = json.loads(unsupported_requirements_json) if isinstance(unsupported_requirements_json, str) else []
-        profile_ready = is_auto_apply_ready(load_profile())
+        prof = load_profile()
+        profile_ready = is_auto_apply_ready(prof)
         mode, reason = _decide_wr(
-            job, fit_decision or "", ats, unsup, profile_ready=profile_ready
+            job,
+            fit_decision or "",
+            ats,
+            unsup,
+            profile_ready=profile_ready,
+            profile=prof,
         )
         return {"apply_mode": mode, "policy_reason": reason, "status": "ok"}
     except Exception as e:

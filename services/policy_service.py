@@ -5,6 +5,7 @@ Values: auto_easy_apply, manual_assist, skip.
 Each decision includes a stable machine-readable policy_reason for audit/debug.
 """
 
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 FIT_THRESHOLD_AUTO_APPLY = 85
@@ -25,6 +26,7 @@ def decide_apply_mode_with_reason(
     ats_score: int | None = None,
     unsupported_requirements: list | None = None,
     profile_ready: Optional[bool] = None,
+    profile: Optional[dict] = None,
 ) -> Tuple[str, str]:
     """
     Decide apply_mode and return (mode, policy_reason).
@@ -44,6 +46,14 @@ def decide_apply_mode_with_reason(
 
     if ats_score is not None and int(ats_score) < FIT_THRESHOLD_AUTO_APPLY:
         return "skip", REASON_SKIP_ATS
+
+    from services.job_location_match import check_job_location_policy
+
+    loc_action, loc_reason = check_job_location_policy(job, profile)
+    if loc_action == "skip":
+        return "skip", loc_reason
+    if loc_action == "manual_assist":
+        return "manual_assist", loc_reason
 
     url = str(job.get("url") or job.get("apply_url") or job.get("applyUrl") or "")
     if "linkedin.com" not in url.lower():
@@ -82,17 +92,24 @@ def policy_from_exported_job(job: Dict[str, Any]) -> Tuple[str, str]:
             unsup = []
     if not isinstance(unsup, list):
         unsup = []
+    prof = load_profile()
+    desc = str(job.get("description") or job.get("job_description") or "")
     job_policy = {
         "url": job.get("url") or job.get("job_url", ""),
         "apply_url": job.get("apply_url") or job.get("url") or "",
         "easy_apply_confirmed": bool(job.get("easy_apply_confirmed", False)),
+        "location": job.get("location") or job.get("locationName") or job.get("job_location") or "",
+        "title": job.get("title") or job.get("position") or "",
+        "work_type": job.get("work_type") or "",
+        "description": desc[:800] if desc else "",
     }
     return decide_apply_mode_with_reason(
         job_policy,
         fit_decision=str(job.get("fit_decision", "") or ""),
         ats_score=ats_val,
         unsupported_requirements=unsup,
-        profile_ready=is_auto_apply_ready(load_profile()),
+        profile_ready=is_auto_apply_ready(prof),
+        profile=prof,
     )
 
 
@@ -106,8 +123,17 @@ def decide_apply_mode(
     """
     Decide apply_mode for a job.
     Returns: auto_easy_apply, manual_assist, or skip.
+    When ``POLICY_ENFORCE_JOB_LOCATION=1``, loads profile for optional location gate.
     """
+    prof: Optional[dict] = None
+    if os.getenv("POLICY_ENFORCE_JOB_LOCATION", "").lower() in ("1", "true", "yes"):
+        try:
+            from services.profile_service import load_profile
+
+            prof = load_profile()
+        except Exception:
+            prof = None
     mode, _ = decide_apply_mode_with_reason(
-        job, fit_decision, ats_score, unsupported_requirements, profile_ready
+        job, fit_decision, ats_score, unsupported_requirements, profile_ready, profile=prof
     )
     return mode

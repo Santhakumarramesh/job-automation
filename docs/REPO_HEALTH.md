@@ -29,6 +29,7 @@ Single-page snapshot: **strong prototype**, **not production-ready** for unatten
 - External ATS (Greenhouse/Lever/Workday) is **prototype** — prefer **manual_assist**; runner defaults to Easy Apply–only auto path.
 - Tracker **defaults to CSV** in dev; **production/strict startup now requires `TRACKER_USE_DB=1`** ([startup_checks.py](services/startup_checks.py)).
 - Candidate profile supports optional **`application_locations`** (target markets / remote) and **`mailing_address`** (structured street/city/state); answerer uses them for location and address questions ([profile_service.py](services/profile_service.py), [application_answerer.py](agents/application_answerer.py)).
+- Optional **`POLICY_ENFORCE_JOB_LOCATION=1`**: skip (or manual when location unknown) jobs that do not match `application_locations` / `remote_ok` ([job_location_match.py](services/job_location_match.py), [policy_service.py](services/policy_service.py)).
 
 ---
 

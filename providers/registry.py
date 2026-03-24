@@ -93,8 +93,18 @@ def get_jobs(
         prof = load_profile()
         profile_ready = is_auto_apply_ready(prof)
         for j in jobs:
-            job_dict = {"url": j.url, "apply_url": j.apply_url or j.url, "easy_apply_confirmed": j.easy_apply_confirmed}
-            mode, reason = decide_apply_mode_with_reason(job_dict, profile_ready=profile_ready)
+            job_dict = {
+                "url": j.url,
+                "apply_url": j.apply_url or j.url,
+                "easy_apply_confirmed": j.easy_apply_confirmed,
+                "location": j.location,
+                "title": j.title,
+                "work_type": j.work_type,
+                "description": (j.description or "")[:800],
+            }
+            mode, reason = decide_apply_mode_with_reason(
+                job_dict, profile_ready=profile_ready, profile=prof
+            )
             j.apply_mode = mode
             j.policy_reason = reason
     except ImportError:
