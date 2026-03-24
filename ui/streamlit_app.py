@@ -35,6 +35,9 @@ from services.application_service import get_applications, log_to_tracker, save_
 from services.follow_up_service import list_follow_ups as list_follow_up_queue
 from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
+from services.profile_service import load_profile
+from services.policy_service import policy_from_exported_job
+from agents.application_answerer import build_answerer_preview_for_export
 from agents.interview_prep_agent import generate_interview_prep
 
 _SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -546,19 +549,68 @@ def run():
                 auto_apply_jobs = linkedin_jobs[apply_mode_col == "auto_easy_apply"] if (apply_mode_col == "auto_easy_apply").any() else pd.DataFrame()
                 manual_lane_jobs = linkedin_jobs[apply_mode_col != "auto_easy_apply"]
                 if not auto_apply_jobs.empty:
-                    st.caption(f"✅ **{len(auto_apply_jobs)} Easy Apply** job(s) ready for auto-apply.")
-                    cols_export = ["title", "company", "location", "description", "url", "apply_mode", "easy_apply_confirmed"]
+                    st.caption(f"✅ **{len(auto_apply_jobs)} Easy Apply** job(s) in auto lane (before answerer preview).")
+                    cols_export = [
+                        "title",
+                        "company",
+                        "location",
+                        "description",
+                        "url",
+                        "apply_mode",
+                        "easy_apply_confirmed",
+                        "fit_decision",
+                        "ats_score",
+                        "final_ats_score",
+                        "unsupported_requirements",
+                    ]
                     cols_export = [c for c in cols_export if c in auto_apply_jobs.columns]
                     jobs_export = auto_apply_jobs[cols_export].to_dict(orient="records")
+                    master_txt = ""
+                    try:
+                        if st.session_state.get("base_resume_bytes"):
+                            master_txt = extract_text_from_pdf(st.session_state.base_resume_bytes)
+                    except Exception:
+                        master_txt = ""
+                    prof = load_profile()
                     for r in jobs_export:
                         r["applyUrl"] = r.get("url", "")
                         r["easy_apply"] = True
                         r["easy_apply_confirmed"] = True
-                        r["apply_mode"] = "auto_easy_apply"
-                    json_bytes = json.dumps(jobs_export, indent=2).encode()
-                    st.download_button("📤 Export Easy Apply jobs for auto-apply (JSON)", json_bytes, "linkedin_easy_apply_jobs.json", "application/json", key="export_linkedin")
+                        ar, pend = build_answerer_preview_for_export(
+                            prof, r, master_resume_text=master_txt, use_llm=False
+                        )
+                        r["answerer_review"] = ar
+                        r["answerer_manual_review_required"] = pend
+                        mode, reason = policy_from_exported_job(r)
+                        r["apply_mode"] = mode
+                        r["policy_reason"] = reason
+                    auto_final = [r for r in jobs_export if r.get("apply_mode") == "auto_easy_apply"]
+                    dropped = len(jobs_export) - len(auto_final)
+                    if dropped:
+                        st.warning(
+                            f"{dropped} job(s) moved to **manual_assist** after answerer preview "
+                            f"(see `policy_reason` / `answerer_manual_review_required`). "
+                            "They are excluded from this JSON. Fix profile short answers or apply manually."
+                        )
+                    if not auto_final:
+                        st.error(
+                            "No jobs remain in the auto-apply lane after answerer + policy check. "
+                            "Complete `config/candidate_profile.json` (short answers, links, salary, etc.) or use manual lane."
+                        )
+                    else:
+                        st.caption(
+                            f"📤 Exporting **{len(auto_final)}** job(s) with answerer preview + `policy_reason` for scripts/MCP."
+                        )
+                        json_bytes = json.dumps(auto_final, indent=2, default=str).encode()
+                        st.download_button(
+                            "📤 Export Easy Apply jobs for auto-apply (JSON)",
+                            json_bytes,
+                            "linkedin_easy_apply_jobs.json",
+                            "application/json",
+                            key="export_linkedin",
+                        )
                     st.code("python scripts/apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")
-                    st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Only auto-apply when Fit Decision = Apply and ATS ≥ threshold.")
+                    st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Export runs a deterministic answerer preview; jobs with manual_review_required become manual_assist in policy.")
                 else:
                     if not manual_lane_jobs.empty:
                         st.info(f"📋 **{len(manual_lane_jobs)}** selected job(s) are not Easy Apply. Use \"Generate Documents\" above to prepare resume + cover letter for manual apply.")

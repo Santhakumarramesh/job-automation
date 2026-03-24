@@ -228,5 +228,6 @@ Rough **~85–90%** of the end-to-end vision in [TARGET_OPERATING_MODEL.md](TARG
 3. **Truth-safe ATS ceiling UX** — explicit “max truthful score” in optimizer results + UI/MCP copy (still 📋 in Phase 5 row).  
 4. ~~**Follow-up reminders**~~ — digest API/CLI + optional `scripts/email_follow_up_digest.py` (`services/follow_up_email.py`, `FOLLOW_UP_*` env).  
 5. ~~**Answerer → policy**~~ — `answerer_manual_review_required` / `answerer_review` in `decide_apply_mode_with_reason` (`REASON_MANUAL_ANSWERER_REVIEW`).  
+5a. ~~**Streamlit export + answerer preview**~~ — `build_answerer_preview_for_export` + `policy_from_exported_job` on Easy Apply JSON (`ui/streamlit_app.py`).  
 6. **Pre-fit ranking service** — Phase 3 row 9.  
 7. **Postgres pool / scale** — Phase 3.2 / 3.4 in `PHASE_3_PLAN.md` where applicable.

@@ -269,6 +269,64 @@ def answer_question(
     )["answer"]
 
 
+# Canonical screening strings for export-time policy (aligned with QUESTION_PATTERNS).
+_CANONICAL_EXPORT_KEYS: list[tuple[str, str]] = [
+    ("sponsorship", "Will you now or in the future require sponsorship for employment visa status?"),
+    ("mailing_address", "Please enter your full mailing address including street, city, state, and ZIP code."),
+    ("relocation", "Are you willing to relocate for this position?"),
+    ("salary", "What are your salary expectations?"),
+    # Phrasing must match classify_question() patterns (see QUESTION_PATTERNS).
+    ("years_experience", "Years of experience with Python?"),
+    ("why_role", "Why do you want this role?"),
+    ("why_company", "Why do you want this company?"),
+    ("availability", "When can you start?"),
+    ("linkedin_url", "Please provide your LinkedIn profile URL."),
+    ("github_url", "Please provide your GitHub profile URL."),
+    ("portfolio_url", "Please provide your portfolio or personal website URL."),
+]
+
+
+def build_answerer_preview_for_export(
+    profile: Optional[dict],
+    job: Optional[dict] = None,
+    *,
+    master_resume_text: str = "",
+    use_llm: bool = False,
+) -> tuple[dict, bool]:
+    """
+    Run structured answerer on canonical application questions so exports can set
+    ``answerer_review`` / ``answerer_manual_review_required`` before ``policy_from_exported_job``.
+
+    Deterministic by default (``use_llm=False``) for fast JSON export from Streamlit.
+    """
+    profile = profile or {}
+    job = job or {}
+    jd = str(job.get("description") or job.get("job_description") or "")
+    ctx = {
+        "company": str(job.get("company") or ""),
+        "title": str(job.get("title") or job.get("position") or ""),
+    }
+    review: dict = {}
+    pending = False
+    for key, qtext in _CANONICAL_EXPORT_KEYS:
+        res = answer_question_structured(
+            qtext,
+            profile=profile,
+            master_resume_text=master_resume_text,
+            job_description=jd,
+            job_context=ctx,
+            use_llm=use_llm,
+        )
+        review[key] = {
+            "manual_review_required": res["manual_review_required"],
+            "reason_codes": res["reason_codes"],
+            "classified_type": res["classified_type"],
+        }
+        if res["manual_review_required"]:
+            pending = True
+    return review, pending
+
+
 def _tailor_with_llm(question: str, base: str, profile: dict, jd: str, company: str, role: str, max_len: int = 150) -> str:
     """Light LLM tailoring to personalize base answer. Keeps truthful."""
     try:
