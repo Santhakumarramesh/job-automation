@@ -39,6 +39,7 @@ Default API sort is **by this score** (descending). Use `sort_by_priority=false`
 - `PYTHONPATH=. python scripts/email_follow_up_digest.py` — same digest via **SMTP** when `FOLLOW_UP_SMTP_HOST` and `FOLLOW_UP_EMAIL_TO` are set; `--dry-run` prints digest and whether SMTP env is complete.
 - `PYTHONPATH=. python scripts/webhook_follow_up_digest.py` — POST the same digest to **`FOLLOW_UP_WEBHOOK_URL`** (Slack incoming webhook by default: JSON `{"text": "..."}`); `--dry-run` prints whether the URL is set.
 - `PYTHONPATH=. python scripts/telegram_follow_up_digest.py` — send the digest with **Telegram** `sendMessage` when bot token + chat id are set; `--dry-run` prints whether env is complete.
+- `PYTHONPATH=. python scripts/notify_follow_up_digest.py` — **all-in-one**: for due rows, sends via **webhook → Telegram → email** for every channel that is configured (same env vars as the three scripts above). Exit `2` if there are due items but no channel is configured; `1` if any configured channel fails.
 
 ## Email (optional)
 
@@ -62,7 +63,7 @@ Digest is sent as plain text (no `parse_mode`) so arbitrary job titles and notes
 
 ## Automation (cron / CI)
 
-Schedule `scripts/email_follow_up_digest.py`, `scripts/webhook_follow_up_digest.py`, and/or `scripts/telegram_follow_up_digest.py` with cron, a CI runner, or GitHub Actions. Use the same environment variables as locally; for Postgres-backed trackers in CI, set `TRACKER_USE_DB`, `DATABASE_URL` (or `TRACKER_DATABASE_URL`), and optionally `TRACKER_DEFAULT_USER_ID`.
+Schedule **`scripts/notify_follow_up_digest.py`** once (recommended), or run `scripts/email_follow_up_digest.py`, `scripts/webhook_follow_up_digest.py`, and/or `scripts/telegram_follow_up_digest.py` separately. Use the same environment variables as locally; for Postgres-backed trackers in CI, set `TRACKER_USE_DB`, `DATABASE_URL` (or `TRACKER_DATABASE_URL`), and optionally `TRACKER_DEFAULT_USER_ID`.
 
 ## Storage
 

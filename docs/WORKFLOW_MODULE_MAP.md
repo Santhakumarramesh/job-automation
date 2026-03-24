@@ -160,6 +160,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | — | Follow-up email (SMTP) | `services/follow_up_email.py`, `scripts/email_follow_up_digest.py` | ✅ |
 | — | Webhook / Slack / Discord digest | `services/follow_up_webhook.py`, `scripts/webhook_follow_up_digest.py`, `FOLLOW_UP_WEBHOOK_*` | ✅ |
 | — | Telegram digest (sendMessage) | `services/follow_up_telegram.py`, `scripts/telegram_follow_up_digest.py`, `FOLLOW_UP_TELEGRAM_*` | ✅ |
+| — | Multi-channel digest (one cron) | `scripts/notify_follow_up_digest.py` (webhook → Telegram → SMTP) | ✅ |
 
 ---
 
