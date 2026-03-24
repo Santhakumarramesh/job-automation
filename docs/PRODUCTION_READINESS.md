@@ -37,7 +37,7 @@ Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI pr
 
 **Versioned base URL:** the same routes are mounted at `/api` and `/api/v1` by default. Set `API_V1_DUPLICATE_ROUTES=0` to expose only `/api` (slimmer OpenAPI).
 
-**CORS:** set `API_CORS_ORIGINS` to a comma-separated allowlist (or `*` for local dev only). Unset = no CORS middleware (`services/api_cors.py`).
+**CORS:** set `API_CORS_ORIGINS` to a comma-separated allowlist (or `*` for local dev only). Unset = no CORS middleware (`services/api_cors.py`). **`API_CORS_ORIGINS=*` is rejected at startup when `APP_ENV=production`** unless `API_CORS_SKIP_WILDCARD_PROD_CHECK=1`.
 
 ## Known gaps
 

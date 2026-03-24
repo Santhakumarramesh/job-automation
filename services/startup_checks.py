@@ -154,6 +154,20 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
                     "or set API_RATE_LIMIT_SKIP_STARTUP_WARN=1 after confirming ingress/WAF rate limits."
                 )
 
+    if context == "app":
+        cors = (os.getenv("API_CORS_ORIGINS") or "").strip()
+        if cors == "*":
+            skip = (os.getenv("API_CORS_SKIP_WILDCARD_PROD_CHECK") or "").lower() in ("1", "true", "yes")
+            if prod and not skip:
+                errors.append(
+                    "API_CORS_ORIGINS must not be '*' in production — use a comma-separated allowlist "
+                    "(or set API_CORS_SKIP_WILDCARD_PROD_CHECK=1 only for controlled demos)."
+                )
+            elif strict and not prod and not skip:
+                warnings.append(
+                    "API_CORS_ORIGINS='*' allows any browser origin — prefer an explicit allowlist outside local dev."
+                )
+
     return errors, warnings
 
 

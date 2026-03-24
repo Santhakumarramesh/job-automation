@@ -149,3 +149,62 @@ def test_development_does_not_warn_rate_limit():
     ):
         _, warnings = collect_startup_report("app")
     assert not any("API_RATE_LIMIT_ENABLED is not set" in w for w in warnings)
+
+
+def test_production_rejects_cors_wildcard():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "k",
+            "JWT_SECRET": "x" * 32,
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+            "API_CORS_ORIGINS": "*",
+        },
+        clear=False,
+    ):
+        os.environ.pop("API_CORS_SKIP_WILDCARD_PROD_CHECK", None)
+        errors, _ = collect_startup_report("app")
+    assert any("API_CORS_ORIGINS" in e and "*" in e for e in errors)
+
+
+def test_production_cors_wildcard_allowed_with_skip_flag():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "k",
+            "JWT_SECRET": "x" * 32,
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+            "API_CORS_ORIGINS": "*",
+            "API_CORS_SKIP_WILDCARD_PROD_CHECK": "1",
+        },
+        clear=False,
+    ):
+        errors, _ = collect_startup_report("app")
+    assert not any("API_CORS_ORIGINS" in e for e in errors)
+
+
+def test_strict_nonprod_warns_cors_wildcard():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "development",
+            "STRICT_STARTUP": "1",
+            "API_CORS_ORIGINS": "*",
+        },
+        clear=False,
+    ):
+        os.environ.pop("API_CORS_SKIP_WILDCARD_PROD_CHECK", None)
+        _, warnings = collect_startup_report("app")
+    assert any("API_CORS_ORIGINS" in w for w in warnings)

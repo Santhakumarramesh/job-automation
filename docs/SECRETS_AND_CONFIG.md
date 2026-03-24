@@ -77,4 +77,4 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 
 - Implementation: `services/startup_checks.py`, `services/secrets_loader.py`
 - Example env keys: `.env.example`
-- Optional CORS for browser clients: `API_CORS_ORIGINS` — `services/api_cors.py`
+- Optional CORS for browser clients: `API_CORS_ORIGINS` — `services/api_cors.py` (production rejects `*` unless `API_CORS_SKIP_WILDCARD_PROD_CHECK=1`; see startup checks)
