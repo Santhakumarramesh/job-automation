@@ -104,7 +104,7 @@ graph TD
 
 9. **Insights (Phase 13 / 43)** — `GET /api/insights` returns tracker rollups, optional audit JSONL tail, heuristic suggestions, and **`answerer_review`** aggregates (parsed from tracker `qa_audit._answerer_review` when apply runs log it). Admin: `GET /api/admin/insights`. Streamlit tracker tab shows the same (no audit file by default).
 
-10. **Follow-up digest** — `GET /api/follow-ups/digest` returns `{ text, items, count }` for due reminders (paste into email/Slack). Admin: `GET /api/admin/follow-ups/digest`. CLI: `PYTHONPATH=. python scripts/follow_up_digest.py`. Optional SMTP: `scripts/email_follow_up_digest.py`; optional **Slack/Discord webhook**: `scripts/webhook_follow_up_digest.py` + `FOLLOW_UP_WEBHOOK_URL` (see [docs/FOLLOW_UPS.md](docs/FOLLOW_UPS.md)).
+10. **Follow-up digest** — `GET /api/follow-ups/digest` returns `{ text, items, count }` for due reminders (paste into email/Slack). Admin: `GET /api/admin/follow-ups/digest`. CLI: `PYTHONPATH=. python scripts/follow_up_digest.py`. Optional: SMTP (`scripts/email_follow_up_digest.py`), webhook (`scripts/webhook_follow_up_digest.py`), Telegram (`scripts/telegram_follow_up_digest.py`) — env vars in [docs/FOLLOW_UPS.md](docs/FOLLOW_UPS.md).
 
 ## 🔒 Security
 

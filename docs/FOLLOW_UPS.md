@@ -38,6 +38,7 @@ Default API sort is **by this score** (descending). Use `sort_by_priority=false`
 - `PYTHONPATH=. python scripts/follow_up_digest.py` — print due follow-ups to stdout (`--user-id` optional).
 - `PYTHONPATH=. python scripts/email_follow_up_digest.py` — same digest via **SMTP** when `FOLLOW_UP_SMTP_HOST` and `FOLLOW_UP_EMAIL_TO` are set; `--dry-run` prints digest and whether SMTP env is complete.
 - `PYTHONPATH=. python scripts/webhook_follow_up_digest.py` — POST the same digest to **`FOLLOW_UP_WEBHOOK_URL`** (Slack incoming webhook by default: JSON `{"text": "..."}`); `--dry-run` prints whether the URL is set.
+- `PYTHONPATH=. python scripts/telegram_follow_up_digest.py` — send the digest with **Telegram** `sendMessage` when bot token + chat id are set; `--dry-run` prints whether env is complete.
 
 ## Email (optional)
 
@@ -51,9 +52,17 @@ Use an app-specific password (Gmail, Outlook, etc.). TLS defaults to on (`STARTT
 
 Long digests are truncated (~3500 chars) so Slack-style webhooks are less likely to reject the payload.
 
+## Telegram (optional)
+
+- **`FOLLOW_UP_TELEGRAM_BOT_TOKEN`** — from [@BotFather](https://t.me/BotFather) when you create a bot.
+- **`FOLLOW_UP_TELEGRAM_CHAT_ID`** — numeric id for the user or group that should receive messages (e.g. message your bot, then open `https://api.telegram.org/bot<token>/getUpdates` and read `message.chat.id`).
+- Optional: **`FOLLOW_UP_TELEGRAM_TIMEOUT`** (seconds, default 30).
+
+Digest is sent as plain text (no `parse_mode`) so arbitrary job titles and notes do not break Telegram’s Markdown/HTML parsers. Long messages are truncated (~4000 chars).
+
 ## Automation (cron / CI)
 
-Schedule `scripts/email_follow_up_digest.py` and/or `scripts/webhook_follow_up_digest.py` with cron, a CI runner, or GitHub Actions. Use the same environment variables as locally; for Postgres-backed trackers in CI, set `TRACKER_USE_DB`, `DATABASE_URL` (or `TRACKER_DATABASE_URL`), and optionally `TRACKER_DEFAULT_USER_ID`.
+Schedule `scripts/email_follow_up_digest.py`, `scripts/webhook_follow_up_digest.py`, and/or `scripts/telegram_follow_up_digest.py` with cron, a CI runner, or GitHub Actions. Use the same environment variables as locally; for Postgres-backed trackers in CI, set `TRACKER_USE_DB`, `DATABASE_URL` (or `TRACKER_DATABASE_URL`), and optionally `TRACKER_DEFAULT_USER_ID`.
 
 ## Storage
 
