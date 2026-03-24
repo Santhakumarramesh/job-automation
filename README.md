@@ -104,7 +104,7 @@ Optional installs: `pip install -e ".[apply]"` (MCP + Playwright for apply tools
 
 8. **Admin API** — `GET /api/admin/applications` lists all tracker rows (no `user_id` filter). Requires admin: JWT claims `role` / `roles` / `realm_access.roles` matching `JWT_ADMIN_ROLES`, or `API_KEY_IS_ADMIN=1` with `X-API-Key`.
 
-9. **Insights (Phase 13 / 43)** — `GET /api/insights` returns tracker rollups, optional audit JSONL tail, heuristic suggestions, and **`answerer_review`** aggregates (parsed from tracker `qa_audit._answerer_review` when apply runs log it). Admin: `GET /api/admin/insights`. Streamlit tracker tab shows the same (no audit file by default).
+9. **Insights (Phase 13 / 43)** — `GET /api/insights` returns tracker rollups, optional audit JSONL tail, heuristic suggestions, and **`answerer_review`** aggregates (parsed from tracker `qa_audit._answerer_review` when apply runs log it). Admin: `GET /api/admin/insights`. Streamlit tracker tab shows the same (no audit file by default). CLI: `PYTHONPATH=. python scripts/print_insights.py` (`--json`, `--no-audit`, `--user-id`).
 
 10. **Follow-up digest** — `GET /api/follow-ups/digest` returns `{ text, items, count }` for due reminders (paste into email/Slack). Admin: `GET /api/admin/follow-ups/digest`. CLI: `PYTHONPATH=. python scripts/follow_up_digest.py`. Cron-friendly **multi-channel**: `scripts/notify_follow_up_digest.py` (webhook → Telegram → SMTP, each if configured). Single-channel scripts and env vars: [docs/FOLLOW_UPS.md](docs/FOLLOW_UPS.md).
 

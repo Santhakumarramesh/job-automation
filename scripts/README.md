@@ -8,6 +8,7 @@
 | `webhook_follow_up_digest.py` | POST due follow-ups to `FOLLOW_UP_WEBHOOK_URL` (Slack/Discord/raw; `--dry-run`) |
 | `telegram_follow_up_digest.py` | Telegram `sendMessage` (`FOLLOW_UP_TELEGRAM_BOT_TOKEN`, `FOLLOW_UP_TELEGRAM_CHAT_ID`; `--dry-run`) |
 | `notify_follow_up_digest.py` | One-shot: webhook + Telegram + SMTP for due items (each if configured; `--dry-run`) |
+| `print_insights.py` | Phase 13 tracker insights to stdout (`--json`, `--user-id`, `--no-audit`; no API) |
 | `regenerate_resume_pdf.py` | Build resume PDF from markdown |
 
 Run from repository root, e.g.:
@@ -20,5 +21,7 @@ PYTHONPATH=. python scripts/email_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/webhook_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/telegram_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/notify_follow_up_digest.py --dry-run
+PYTHONPATH=. python scripts/print_insights.py --no-audit
+PYTHONPATH=. python scripts/print_insights.py --json --no-audit | head -c 2000
 python scripts/regenerate_resume_pdf.py input.md out.pdf "Your Name"
 ```
