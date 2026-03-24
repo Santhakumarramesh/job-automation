@@ -14,7 +14,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | 1b | Truth inventory from resume | `agents/master_resume_guard.py` — `parse_master_resume()`, `CandidateProfile`, `extract_search_keywords()` | ✅ |
 | 2 | Candidate profile load | `config/candidate_profile.json`, `services/profile_service.py` | ✅ |
 | 2a | Structured `application_locations` + `mailing_address` | `profile_service.format_*`, `application_answerer` relocation / mailing_address patterns | ✅ (light) |
-| 3 | Profile validation | `services/profile_service.py` — `validate_profile()`, `is_auto_apply_ready()` | ⚠️ Enforce stricter gates before auto-apply |
+| 3 | Profile validation | `services/profile_service.py` — `validate_profile()`, `is_auto_apply_ready()`; CLI `scripts/validate_profile.py` | ⚠️ Enforce stricter gates before auto-apply |
 | 4 | Truth inventory as gate for tailoring/fit | `agents/master_resume_guard.py` — `is_job_fit()`, `get_unsupported_requirements()`, `compute_job_fit_score()` | ✅ |
 
 ---
