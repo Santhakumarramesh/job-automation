@@ -55,6 +55,57 @@ def resume_path_for_job(
     return base / filename
 
 
+def _resolve_project_file(proj: Path, raw: str) -> Optional[Path]:
+    """Absolute path if ``raw`` is an existing file (supports relative-to-project and ~)."""
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    p = Path(s).expanduser()
+    if not p.is_absolute():
+        p = (proj / p).resolve()
+    return p if p.is_file() else None
+
+
+def _pdf_sort_key(path: Path) -> str:
+    return str(path).lower()
+
+
+def _preference_rank(filename_lower: str) -> tuple:
+    """Lower tuple sorts first = more preferred master-style names."""
+    hints = ("master", "base_resume", "base-resume", "canonical", "primary")
+    for i, h in enumerate(hints):
+        if h in filename_lower:
+            return (i, filename_lower)
+    return (len(hints), filename_lower)
+
+
+def pick_fallback_resume_pdf(project_root: Optional[Path] = None) -> Optional[Path]:
+    """
+    Deterministic PDF to use when no explicit resume path exists.
+    Order: ``MASTER_RESUME_PDF`` / ``DEFAULT_RESUME_PDF`` env, then ``Master_Resumes``
+    (name hints like *master* before others, then lexicographic path), then
+    ``generated_resumes`` (lexicographic path only — last resort).
+    """
+    proj = project_root or Path(__file__).resolve().parent.parent
+    for key in ("MASTER_RESUME_PDF", "DEFAULT_RESUME_PDF"):
+        hit = _resolve_project_file(proj, os.getenv(key, ""))
+        if hit and hit.suffix.lower() == ".pdf":
+            return hit
+    master_dir = proj / "Master_Resumes"
+    if master_dir.is_dir():
+        pdfs = [p for p in master_dir.rglob("*.pdf") if p.is_file()]
+        if pdfs:
+            pdfs.sort(key=lambda p: (_preference_rank(p.name.lower()), _pdf_sort_key(p)))
+            return pdfs[0]
+    gen_dir = proj / "generated_resumes"
+    if gen_dir.is_dir():
+        pdfs = [p for p in gen_dir.rglob("*.pdf") if p.is_file()]
+        if pdfs:
+            pdfs.sort(key=_pdf_sort_key)
+            return pdfs[0]
+    return None
+
+
 def ensure_resume_exists_for_job(
     job: dict,
     resume_content_path: Optional[str] = None,
@@ -67,21 +118,19 @@ def ensure_resume_exists_for_job(
     If resume_content_path is a tailored resume from pipeline, use it.
     Returns path string or None if no source resume.
     """
+    import shutil
+
     target = resume_path_for_job(job, output_dir, candidate_name)
     if target.exists():
         return str(target)
     if resume_content_path and os.path.isfile(resume_content_path):
-        import shutil
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(resume_content_path, target)
         return str(target)
-    # Fallback: find any PDF in Master_Resumes
     proj = Path(__file__).resolve().parent.parent
-    for base in [proj / "Master_Resumes", proj / "generated_resumes"]:
-        if base.exists():
-            for f in base.rglob("*.pdf"):
-                target.parent.mkdir(parents=True, exist_ok=True)
-                import shutil
-                shutil.copy2(f, target)
-                return str(target)
+    fb = pick_fallback_resume_pdf(proj)
+    if fb:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(fb, target)
+        return str(target)
     return None

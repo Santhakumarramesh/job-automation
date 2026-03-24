@@ -147,7 +147,7 @@ For each job URL:
   - LinkedIn → run_linkedin_application (Easy Apply modal)
   - Greenhouse/Lever/Workday → fill_external_ats_form
     ↓
-Resume: ensure_resume_exists_for_job → {Name}_{Position}_at_{Company}_Resume.pdf
+Resume: ensure_resume_exists_for_job → {Name}_{Position}_at_{Company}_Resume.pdf (source: explicit path, or `MASTER_RESUME_PDF` / sorted `Master_Resumes/*.pdf` — see `services/resume_naming.py`)
     ↓
 Log to `services/application_tracker.py`
 ```

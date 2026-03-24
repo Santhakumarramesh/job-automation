@@ -48,7 +48,7 @@ Reconciliation of the full pass/fail checklist with current implementation. Item
 | # | Item | Status | Notes |
 |---|------|--------|-------|
 | 12 | Job-specific resume naming | ✅ Pass | `services/resume_naming.py` |
-| 13 | Resume source deterministic | 🟡 Partial | Logic exists; fallback can pick "any PDF" from broad folders |
+| 13 | Resume source deterministic | ✅ Pass | `MASTER_RESUME_PDF` / `DEFAULT_RESUME_PDF`, then `Master_Resumes` name hints + sorted paths (`pick_fallback_resume_pdf`) |
 
 ---
 

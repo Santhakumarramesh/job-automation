@@ -192,7 +192,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | `services/policy_service.py` | `auto_easy_apply` / `manual_assist` / `skip` |
 | `services/application_tracker.py`, `tracker_db.py` | Persistence + `user_id` |
 | `services/application_insights.py` | Phase 13 — tracker + audit aggregates, API insights |
-| `services/resume_naming.py` | PDF naming convention |
+| `services/resume_naming.py` | PDF naming convention; `pick_fallback_resume_pdf`, `MASTER_RESUME_PDF` |
 | `services/observability.py` | Audit JSONL |
 | `providers/registry.py`, `common_schema.py`, `*_jobs.py` | Discovery + `JobListing` |
 | `mcp_servers/job_apply_autofill/server.py` | MCP control plane tools |
