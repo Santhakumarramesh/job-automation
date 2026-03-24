@@ -202,5 +202,5 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 2. ~~**Answerer confidence**~~ — `answer_question_structured()`, `AnswerResult`, MCP `answer_review` / `prepare_application_package`, Streamlit profile tester.  
 2a. ~~**Answerer → apply runner**~~ — `RunResult.answerer_review`, `RunConfig.block_submit_on_answerer_review`, `save_run_results` + tracker `qa_audit._answerer_review`.  
 3. ~~**Truth-safe ATS ceiling**~~ — `services/truth_safe_ats.py`, `run_iterative_ats` / `run_live_optimizer`, Streamlit + MCP `score_job_fit`.  
-4. ~~**Follow-up reminders (light)**~~ — `GET /api/follow-ups/digest`, admin digest, `scripts/follow_up_digest.py` (SMTP push still operator-owned).  
+4. ~~**Follow-up reminders**~~ — digest API/CLI + optional `scripts/email_follow_up_digest.py` (`services/follow_up_email.py`, `FOLLOW_UP_*` env).  
 5. **Postgres + object storage** — Phase 3.2 / 3.4 in `PHASE_3_PLAN.md`.

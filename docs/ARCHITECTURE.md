@@ -301,6 +301,7 @@
 | `services/profile_service` | Load, validate profile |
 | `services/application_service` | Tracker access, get by job_id |
 | `services/follow_up_service.py` | Phase 12 — follow-up queue from tracker |
+| `services/follow_up_email.py` | Optional SMTP for follow-up digest script |
 | `services/application_insights.py` | Phase 13 — tracker rollups, audit tail summary, hints; `GET /api/insights` |
 | `services/application_tracker.py` | Log, load applications; `get_application_row_by_job_id` |
 | `services/artifact_metadata.py` | Phase 3.2.3 — parse tracker row → structured artifacts for API |

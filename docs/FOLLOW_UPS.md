@@ -36,6 +36,11 @@ Default API sort is **by this score** (descending). Use `sort_by_priority=false`
 ## CLI (local)
 
 - `PYTHONPATH=. python scripts/follow_up_digest.py` — print due follow-ups to stdout (`--user-id` optional).
+- `PYTHONPATH=. python scripts/email_follow_up_digest.py` — same digest via **SMTP** when `FOLLOW_UP_SMTP_HOST` and `FOLLOW_UP_EMAIL_TO` are set; `--dry-run` prints digest and whether SMTP env is complete.
+
+## Email (optional)
+
+Use an app-specific password (Gmail, Outlook, etc.). TLS defaults to on (`STARTTLS` on port 587). Set `FOLLOW_UP_SMTP_USE_TLS=0` only if your relay does not use STARTTLS.
 
 ## Storage
 
