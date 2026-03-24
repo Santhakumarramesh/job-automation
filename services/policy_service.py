@@ -17,7 +17,31 @@ REASON_SKIP_ATS = "skip_ats_below_threshold"
 REASON_MANUAL_NON_LINKEDIN = "manual_assist_non_linkedin_url"
 REASON_MANUAL_EASY_APPLY_UNCONFIRMED = "manual_assist_easy_apply_not_confirmed"
 REASON_MANUAL_PROFILE_INCOMPLETE = "manual_assist_profile_incomplete_for_auto"
+REASON_MANUAL_ANSWERER_REVIEW = "manual_assist_answerer_manual_review_required"
 REASON_AUTO_OK = "auto_easy_apply_all_checks_passed"
+
+
+def _answerer_review_blocks_auto(answerer_review: Optional[dict]) -> bool:
+    """True if any structured answerer field requires manual confirmation."""
+    if not answerer_review or not isinstance(answerer_review, dict):
+        return False
+    return any(
+        isinstance(v, dict) and bool(v.get("manual_review_required")) for v in answerer_review.values()
+    )
+
+
+def _job_answerer_blocks_auto(job: dict) -> bool:
+    if bool(job.get("answerer_manual_review_required")):
+        return True
+    ar = job.get("answerer_review")
+    if isinstance(ar, str) and ar.strip():
+        try:
+            import json
+
+            ar = json.loads(ar)
+        except Exception:
+            return False
+    return _answerer_review_blocks_auto(ar if isinstance(ar, dict) else None)
 
 
 def decide_apply_mode_with_reason(
@@ -65,6 +89,9 @@ def decide_apply_mode_with_reason(
     if profile_ready is False:
         return "manual_assist", REASON_MANUAL_PROFILE_INCOMPLETE
 
+    if _job_answerer_blocks_auto(job):
+        return "manual_assist", REASON_MANUAL_ANSWERER_REVIEW
+
     return "auto_easy_apply", REASON_AUTO_OK
 
 
@@ -102,6 +129,8 @@ def policy_from_exported_job(job: Dict[str, Any]) -> Tuple[str, str]:
         "title": job.get("title") or job.get("position") or "",
         "work_type": job.get("work_type") or "",
         "description": desc[:800] if desc else "",
+        "answerer_manual_review_required": bool(job.get("answerer_manual_review_required", False)),
+        "answerer_review": job.get("answerer_review"),
     }
     return decide_apply_mode_with_reason(
         job_policy,

@@ -119,8 +119,8 @@ Legend: **✅** in place · **⚠️** partial / needs hardening · **📋** pla
 | 7 | Truth-safe iterative optimizer | `agents/iterative_ats_optimizer.py`, `services/ats_service.py` | Ceiling / “max truthful” UX still **📋** |
 | 8 | Tailored documents + naming | `agents/resume_editor.py`, `agents/cover_letter_generator.py`, `services/resume_naming.py` | Job-specific PDF naming |
 | 9 | Address by job location (truthful) | `mailing_address`, `application_locations`, `services/job_location_match.py`, answerer | **Alternate addresses per region** + selector logic still **📋** beyond current structured fields |
-| 10 | Humanized answer engine | `agents/application_answerer.py` | Stronger manual-review signaling **⚠️** |
-| 11 | Central policy engine | `services/policy_service.py` | `decide_apply_mode()`; extend with answerer risk **⚠️** |
+| 10 | Humanized answer engine | `agents/application_answerer.py` | Manual-review flags; feed exports / policy **⚠️** |
+| 11 | Central policy engine | `services/policy_service.py` | `decide_apply_mode()` + **answerer** `manual_review` → `manual_assist` (`REASON_MANUAL_ANSWERER_REVIEW`) **✅** |
 | 12 | MCP tool layer | `mcp_servers/job_apply_autofill/server.py` | Map wish-list tools to existing + gaps **⚠️** |
 | 13 | Auto-apply execution | `agents/application_runner.py` | Easy Apply–only auto path; external ATS not auto-submit |
 | 14 | Manual-assist lane | UI export, MCP package, runner `manual_assist` | External ATS heuristics **⚠️** |
@@ -145,7 +145,7 @@ Legend: **✅** in place · **⚠️** partial / needs hardening · **📋** pla
 
 **Already strong:** modular UI (`ui/streamlit_app.py`), fit gate, internal ATS + iterative loop, multi-provider jobs, profile + answerer, resume naming, tracker + Postgres path, policy service, MCP autofill + runner, follow-ups + insights.
 
-**Highest-leverage upgrades (aligned with this vision):** Easy Apply **confirmation** coverage; **truth ceiling** messaging in optimizer UX; **address routing** (alternate truthful addresses by region); **answerer** manual-review flags feeding **policy**; MCP tool surface documented as one catalog; external ATS remains **manual-assist** by design.
+**Highest-leverage upgrades (aligned with this vision):** Easy Apply **confirmation** coverage; **truth ceiling** messaging in optimizer UX; **address routing** (alternate truthful addresses by region); wire **answerer preview** into job exports so policy sees flags before run; MCP tool catalog doc; external ATS remains **manual-assist** by design.
 
 ---
 

@@ -340,7 +340,9 @@ def decide_apply_mode(
 ) -> dict:
     """
     Central decision: auto_easy_apply | manual_assist | skip.
-    job_json: JSON object with url, easy_apply_confirmed.
+    job_json: JSON object with url, easy_apply_confirmed, optional fit/ATS fields,
+    and optional answerer_preview: answerer_manual_review_required (bool) and/or
+    answerer_review (object of field → {manual_review_required, ...}) to downgrade auto → manual_assist.
     Returns apply_mode and reason.
     """
     try:

@@ -6,6 +6,23 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 
 ---
 
+## Completion snapshot (target workflow)
+
+Rough **~85–90%** of the end-to-end vision in [TARGET_OPERATING_MODEL.md](TARGET_OPERATING_MODEL.md) / [VISION_ARCHITECTURE_MAP.md](VISION_ARCHITECTURE_MAP.md): core loop (truth → discovery → fit → ATS → package → policy → apply → track → follow-up → insights) is **implemented**; remaining work is mostly **hardening** (Easy Apply confirmation coverage, pre-fit ranking service, truth-ceiling UX, alternate-address routing, external ATS assist, deeper learning loop).
+
+| Phase band | Theme | Status (high level) |
+|------------|--------|----------------------|
+| 1–2 | Truth + profile + discovery | ✅ strong; ⚠️ stricter auto-apply profile gates; ⚠️ Easy Apply confirmation breadth |
+| 3 | Normalization & ranking | ✅ schema; ⚠️ unified pre-fit ranker |
+| 4–6 | Fit + ATS + tailoring | ✅; 📋 explicit “max truthful ATS” UX/API |
+| 7–8 | Answers + policy | ✅; ✅ answerer manual-review → policy; ⚠️ batch field map polish |
+| 9–10 | Auto-apply + manual-assist | ✅ Easy Apply lane; ⚠️ external ATS heuristics |
+| 11–13 + 3.x | Track, follow-up, learn, prod | ✅; ⚠️ deep auto-tuning 📋 |
+
+**Suggested next implementation slices:** (1) export `answerer_review` / `answerer_manual_review_required` on jobs from Streamlit/MCP package preview into `apply_mode` exports; (2) pre-fit ranking helper; (3) truth-safe ceiling strings in optimizer + API; (4) alternate truthful addresses by region.
+
+---
+
 ## Phase 1 — Identity, truth, profile
 
 | # | Capability | Primary owner (path) | Status |
@@ -83,7 +100,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | # | Capability | Primary owner (path) | Status |
 |---|------------|----------------------|--------|
 | 26–27 | Single policy outcome | `services/policy_service.py` — `decide_apply_mode()` | ✅ |
-| 27 | Include profile-valid + no risky unanswered Qs in policy | Today: fit, ATS, unsupported, URL, `easy_apply_confirmed`; optional `POLICY_ENFORCE_JOB_LOCATION` + `application_locations` ([job_location_match.py](services/job_location_match.py)) | ⚠️ Extend with answerer risk |
+| 27 | Include profile-valid + answerer manual-review in policy | `decide_apply_mode_with_reason` — `answerer_manual_review_required`, `answerer_review` (JSON or dict); `REASON_MANUAL_ANSWERER_REVIEW`; optional `POLICY_ENFORCE_JOB_LOCATION` + `application_locations` ([job_location_match.py](services/job_location_match.py)) | ✅ / ⚠️ Tighter profile + field-level gates still optional |
 | 28 | Policy decision audit (per-job reason) | `services/policy_service` — `REASON_*` codes; `policy_reason` on `JobListing` + tracker; MCP `decide_apply_mode` returns `policy_reason` | ✅ |
 
 ---
@@ -208,6 +225,8 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 1. ~~**Policy audit field**~~ — `policy_reason` on tracker, `JobListing`, MCP; `REASON_*` codes in `policy_service`.  
 2. ~~**Answerer confidence**~~ — `answer_question_structured()`, `AnswerResult`, MCP `answer_review` / `prepare_application_package`, Streamlit profile tester.  
 2a. ~~**Answerer → apply runner**~~ — `RunResult.answerer_review`, `RunConfig.block_submit_on_answerer_review`, `save_run_results` + tracker `qa_audit._answerer_review`.  
-3. ~~**Truth-safe ATS ceiling**~~ — `services/truth_safe_ats.py`, `run_iterative_ats` / `run_live_optimizer`, Streamlit + MCP `score_job_fit`.  
+3. **Truth-safe ATS ceiling UX** — explicit “max truthful score” in optimizer results + UI/MCP copy (still 📋 in Phase 5 row).  
 4. ~~**Follow-up reminders**~~ — digest API/CLI + optional `scripts/email_follow_up_digest.py` (`services/follow_up_email.py`, `FOLLOW_UP_*` env).  
-5. **Postgres + object storage** — Phase 3.2 / 3.4 in `PHASE_3_PLAN.md`.
+5. ~~**Answerer → policy**~~ — `answerer_manual_review_required` / `answerer_review` in `decide_apply_mode_with_reason` (`REASON_MANUAL_ANSWERER_REVIEW`).  
+6. **Pre-fit ranking service** — Phase 3 row 9.  
+7. **Postgres pool / scale** — Phase 3.2 / 3.4 in `PHASE_3_PLAN.md` where applicable.

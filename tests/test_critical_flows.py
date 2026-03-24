@@ -65,6 +65,44 @@ class TestPolicy:
         m, r = decide_apply_mode_with_reason(job, profile_ready=None)
         assert m == "auto_easy_apply" and r == REASON_AUTO_OK
 
+    def test_answerer_manual_review_required_downgrades_auto(self):
+        from services.policy_service import (
+            decide_apply_mode_with_reason,
+            REASON_AUTO_OK,
+            REASON_MANUAL_ANSWERER_REVIEW,
+        )
+
+        job = {
+            "url": "https://linkedin.com/jobs/view/42",
+            "easy_apply_confirmed": True,
+            "answerer_manual_review_required": True,
+        }
+        m, r = decide_apply_mode_with_reason(
+            job, fit_decision="apply", ats_score=95, unsupported_requirements=[], profile_ready=True
+        )
+        assert m == "manual_assist" and r == REASON_MANUAL_ANSWERER_REVIEW
+        m2, r2 = decide_apply_mode_with_reason(
+            {**job, "answerer_manual_review_required": False},
+            fit_decision="apply",
+            ats_score=95,
+            unsupported_requirements=[],
+            profile_ready=True,
+        )
+        assert m2 == "auto_easy_apply" and r2 == REASON_AUTO_OK
+
+    def test_answerer_review_dict_downgrades_auto(self):
+        from services.policy_service import decide_apply_mode_with_reason, REASON_MANUAL_ANSWERER_REVIEW
+
+        job = {
+            "url": "https://linkedin.com/jobs/view/43",
+            "easy_apply_confirmed": True,
+            "answerer_review": {"salary": {"manual_review_required": True, "reason_codes": ["ambiguous"]}},
+        }
+        m, r = decide_apply_mode_with_reason(
+            job, fit_decision="apply", ats_score=90, unsupported_requirements=[], profile_ready=True
+        )
+        assert m == "manual_assist" and r == REASON_MANUAL_ANSWERER_REVIEW
+
 
 class TestProfile:
     """Master resume parsing: parse_master_resume."""
