@@ -63,11 +63,15 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 
 - **FastAPI:** `app/main.py` lifespan → `run_startup_checks("app")`.
 - **Streamlit:** `run_streamlit.py` after `load_dotenv()` → `run_startup_checks("streamlit")`.
-- **Celery workers:** not auto-run (avoid import side effects). Call manually in an entrypoint if desired:
+- **Celery workers:** not auto-run (avoid import side effects). Validate in CI or an entrypoint:
 
   ```bash
-  python -c "from services.startup_checks import run_startup_checks; run_startup_checks('worker')"
+  PYTHONPATH=. python scripts/check_startup.py worker --fail-on-errors
   ```
+
+  Or inline: `python -c "from services.startup_checks import run_startup_checks; run_startup_checks('worker')"`.
+
+- **CLI (any context):** `PYTHONPATH=. python scripts/check_startup.py app|worker|streamlit` — prints the same errors/warnings as startup; add `--json`, `--fail-on-errors`, or `--fail-on-warnings` for automation.
 
 ## Reference
 

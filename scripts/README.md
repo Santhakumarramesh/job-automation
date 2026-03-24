@@ -10,6 +10,7 @@
 | `notify_follow_up_digest.py` | One-shot: webhook + Telegram + SMTP for due items (each if configured; `--dry-run`) |
 | `print_insights.py` | Phase 13 tracker insights to stdout (`--json`, `--user-id`, `--no-audit`; no API) |
 | `validate_profile.py` | Check `candidate_profile.json` for auto-apply readiness (`--strict`, `--json`; exit 0/1) |
+| `check_startup.py` | Phase 3.5 env report: `app` \| `worker` \| `streamlit` (`--json`, `--fail-on-errors`) |
 | `regenerate_resume_pdf.py` | Build resume PDF from markdown |
 
 Run from repository root, e.g.:
@@ -25,5 +26,7 @@ PYTHONPATH=. python scripts/notify_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/print_insights.py --no-audit
 PYTHONPATH=. python scripts/print_insights.py --json --no-audit | head -c 2000
 PYTHONPATH=. python scripts/validate_profile.py --strict
+PYTHONPATH=. python scripts/check_startup.py app
+PYTHONPATH=. python scripts/check_startup.py worker --json
 python scripts/regenerate_resume_pdf.py input.md out.pdf "Your Name"
 ```

@@ -136,7 +136,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 
 | # | Capability | Primary owner | Status |
 |---|------------|---------------|--------|
-| S1 | Production / strict startup | `services/startup_checks.py` | ✅ |
+| S1 | Production / strict startup | `services/startup_checks.py`, `scripts/check_startup.py` (report / CI) | ✅ |
 | S2 | AWS Secrets Manager hydrate | `services/secrets_loader.py` | ✅ |
 
 ---
