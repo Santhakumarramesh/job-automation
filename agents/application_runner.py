@@ -244,14 +244,10 @@ async def run_linkedin_application(
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(random.randint(2000, 4000))
 
-        # Click Easy Apply
-        for sel in [
-            "button[aria-label*='Easy Apply']",
-            "button:has-text('Easy Apply')",
-            "button:has-text('Apply now')",
-            "[data-control-name='apply_from_job_card']",
-            "button.jobs-apply-button",
-        ]:
+        # Click Easy Apply (same selector order as MCP confirm_easy_apply)
+        from services.linkedin_easy_apply import LINKEDIN_EASY_APPLY_BUTTON_SELECTORS
+
+        for sel in LINKEDIN_EASY_APPLY_BUTTON_SELECTORS:
             try:
                 btn = await page.query_selector(sel)
                 if btn and await btn.is_visible():

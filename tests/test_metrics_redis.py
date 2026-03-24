@@ -40,6 +40,14 @@ def test_incr_calls_redis_pipeline():
     mock_pipe.execute.assert_called_once()
 
 
+def test_read_celery_metrics_hash_requires_url():
+    from services.metrics_redis import read_celery_metrics_hash
+
+    with patch.dict(os.environ, {}, clear=True):
+        out = read_celery_metrics_hash()
+    assert out["ok"] is False
+
+
 def test_path_group_limits_cardinality():
     from services.prometheus_setup import _path_group
 

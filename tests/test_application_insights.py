@@ -61,6 +61,8 @@ def test_compute_tracker_crosstabs_pairs():
         ]
     )
     xt = compute_tracker_crosstabs(df)
+    assert "apply_mode_by_ats_provider_apply_target" in xt
+    assert "submission_status_by_ats_provider_apply_target" in xt
     sp = xt["submission_status_by_policy_reason"]
     assert any(r["count"] == 2 for r in sp)
     assert sp[0]["count"] >= 2
@@ -104,6 +106,50 @@ def test_tracker_insights_includes_pipeline(monkeypatch):
     assert "pipeline_correlations" in ins
 
 
+def test_tracker_insights_audit_provider_and_ceiling(monkeypatch):
+    df = pd.DataFrame(
+        [
+            {
+                "submission_status": "Applied",
+                "apply_mode": "auto_easy_apply",
+                "policy_reason": "auto_easy_apply",
+                "fit_decision": "apply",
+                "recruiter_response": "Pending",
+                "interview_stage": "",
+                "offer_outcome": "",
+                "ats_score": "90",
+                "ats_provider": "linkedin_jobs",
+                "ats_provider_apply_target": "linkedin_jobs",
+                "truth_safe_ats_ceiling": "88",
+            },
+            {
+                "submission_status": "Applied",
+                "apply_mode": "manual_assist",
+                "policy_reason": "manual_assist_external_apply_url",
+                "fit_decision": "apply",
+                "recruiter_response": "Pending",
+                "interview_stage": "",
+                "offer_outcome": "",
+                "ats_score": "85",
+                "ats_provider": "linkedin_jobs",
+                "ats_provider_apply_target": "greenhouse",
+                "truth_safe_ats_ceiling": "82",
+            },
+        ]
+    )
+
+    def fake_load(for_user_id=None):
+        return df
+
+    monkeypatch.setattr("services.application_tracker.load_applications", fake_load)
+    ins = compute_tracker_insights("any")
+    assert ins["by_ats_provider"].get("linkedin_jobs") == 2
+    assert ins["by_ats_provider_apply_target"].get("greenhouse") == 1
+    tc = ins["truth_safe_ats_ceiling"]
+    assert tc["count_numeric"] == 2
+    assert tc["mean"] == 85.0
+
+
 def test_tracker_insights_empty():
     import services.application_tracker as at
 
@@ -119,6 +165,8 @@ def test_tracker_insights_empty():
             assert ins["suggestions"]
             assert ins["by_interview_stage"] == {}
             assert ins["by_offer_outcome"] == {}
+            assert ins["by_ats_provider"] == {}
+            assert ins["truth_safe_ats_ceiling"]["count_numeric"] == 0
             assert "pipeline_correlations" in ins
             assert "crosstabs" in ins
             assert ins["crosstabs"]["submission_status_by_policy_reason"] == []

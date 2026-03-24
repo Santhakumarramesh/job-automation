@@ -95,6 +95,13 @@ def format_application_locations_summary(profile: dict) -> str:
     return "; ".join(chunks)
 
 
+def format_mailing_address_dict(mailing_address: dict) -> str:
+    """Format a single ``mailing_address`` object as one line (no full profile required)."""
+    if not isinstance(mailing_address, dict):
+        return ""
+    return format_mailing_address_oneline({"mailing_address": mailing_address})
+
+
 def format_mailing_address_oneline(profile: dict) -> str:
     """
     Single-line mailing address from ``mailing_address`` (street, city, state, postal, country).
@@ -145,6 +152,21 @@ def validate_profile(profile: dict) -> list[str]:
     if ma is not None and not isinstance(ma, dict):
         warnings.append("mailing_address should be an object with street/city/state fields")
 
+    alts = profile.get("alternate_mailing_addresses")
+    if alts is not None:
+        if not isinstance(alts, list):
+            warnings.append("alternate_mailing_addresses should be a list of objects")
+        else:
+            for i, alt in enumerate(alts):
+                if not isinstance(alt, dict):
+                    warnings.append(f"alternate_mailing_addresses[{i}] should be an object")
+                    continue
+                if not isinstance(alt.get("mailing_address"), dict):
+                    warnings.append(f"alternate_mailing_addresses[{i}].mailing_address should be an object")
+                rs = alt.get("regions_served")
+                if rs is not None and not isinstance(rs, list):
+                    warnings.append(f"alternate_mailing_addresses[{i}].regions_served should be a list of strings")
+
     return warnings
 
 
@@ -188,3 +210,71 @@ def ensure_profile_exists() -> bool:
             print(f"Could not create profile: {e}")
             return False
     return False
+
+
+def resolve_profile_path_for_api(path_fragment: str) -> str:
+    """
+    REST-only: profile JSON path must be relative to the project root (no traversal).
+    Returns resolved absolute path string. Raises ``ValueError`` if invalid.
+    """
+    raw = (path_fragment or "").strip()
+    if not raw:
+        raise ValueError("profile_path is empty")
+    p = Path(raw)
+    if p.is_absolute():
+        raise ValueError("profile_path must be a project-relative path, not absolute")
+    full = (_PROJECT_ROOT / p).resolve()
+    try:
+        full.relative_to(_PROJECT_ROOT.resolve())
+    except ValueError:
+        raise ValueError("profile_path must stay under the project root") from None
+    return str(full)
+
+
+def validate_candidate_profile_payload(
+    profile_path: str = "",
+    *,
+    restrict_to_project_relative: bool = False,
+) -> dict:
+    """
+    MCP ``validate_candidate_profile`` + REST parity.
+    When ``restrict_to_project_relative`` (REST), optional ``profile_path`` is validated like resume paths.
+    """
+    try:
+        path_for_load: Optional[str] = None
+        stripped = (profile_path or "").strip()
+        if stripped:
+            if restrict_to_project_relative:
+                path_for_load = resolve_profile_path_for_api(stripped)
+            else:
+                path_for_load = stripped
+        profile = load_profile(path_for_load)
+        if not profile:
+            return {
+                "status": "no_profile",
+                "auto_apply_ready": False,
+                "warnings": ["No profile found. Copy config/candidate_profile.example.json to candidate_profile.json"],
+                "suggested_fixes": [
+                    "Create config/candidate_profile.json with full_name, email, phone, linkedin_url, work_authorization_note, notice_period"
+                ],
+            }
+        warnings = validate_profile(profile)
+        short = profile.get("short_answers", {}) or {}
+        for k in ["sponsorship", "why_this_role", "why_this_company", "availability"]:
+            if not short.get(k) or not str(short.get(k)).strip():
+                warnings.append(f"short_answers.{k} is empty")
+        auto_ready = is_auto_apply_ready(profile)
+        suggested = []
+        for k in ["full_name", "email", "phone", "linkedin_url", "work_authorization_note", "notice_period"]:
+            if not profile.get(k) or not str(profile.get(k)).strip():
+                suggested.append(f"Add {k}")
+        return {
+            "status": "ok",
+            "auto_apply_ready": auto_ready,
+            "warnings": warnings,
+            "suggested_fixes": suggested[:10],
+        }
+    except ValueError as e:
+        return {"status": "error", "auto_apply_ready": False, "message": str(e)[:200]}
+    except Exception as e:
+        return {"status": "error", "auto_apply_ready": False, "message": str(e)[:200]}

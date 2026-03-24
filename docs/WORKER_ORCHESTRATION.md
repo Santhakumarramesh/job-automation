@@ -22,7 +22,8 @@
 
 - Request body: **`idempotency_key`** (optional string, max 200 chars), or HTTP header **`Idempotency-Key`** (same limits). If both are sent, they must be identical.
 - Same **`user_id` + idempotency_key** within **`IDEMPOTENCY_TTL_HOURS`** (default 24) returns the existing Celery task id without enqueueing again.
-- Storage: **`data/idempotency/`** (override with **`IDEMPOTENCY_DIR`**). File-backed; not safe for high-concurrency multi-host without Redis.
+- **Default storage:** **`data/idempotency/`** (override with **`IDEMPOTENCY_DIR`**). File-backed; not safe for high-concurrency multi-host.
+- **Phase 4.2 — DB storage:** set **`IDEMPOTENCY_USE_DB=1`**. Uses the tracker database (`DATABASE_URL` / `TRACKER_DATABASE_URL`). **Postgres** requires **`TRACKER_USE_DB=1`** (same as the application tracker). **SQLite** works with `DATABASE_URL=sqlite:///…` or the default `job_applications.db`. Table **`job_idempotency`** is created on first use (Postgres: run **`alembic upgrade head`** for `tracker_0005`). The DB path **inserts before `apply_async`**, so duplicate keys do not spawn duplicate Celery tasks across API replicas.
 
 ## Job status API
 
@@ -30,8 +31,15 @@
 - `?include_result=true` — result dict when the task has finished successfully (or error payload).
 - `?include_task_state=true` — last filesystem snapshot.
 
+## Stuck tasks / worker visibility (Phase 4.2.3)
+
+- **Admin API:** `GET /api/admin/celery/inspect?timeout=2` — Celery `control.inspect`: `ping`, `active`, `reserved`, `scheduled`, `stats`. Requires admin auth; API must use the same broker as workers. **Null** / empty sections usually mean no worker answered (workers down, wrong `REDIS_BROKER`, or inspect timeout too low).
+- **Disable:** set `CELERY_ADMIN_INSPECT=0` on the API to return **403** (avoid broker load in sensitive environments).
+- **Default timeout:** `CELERY_INSPECT_TIMEOUT` (default `2.0` seconds) or query param `timeout`.
+- **Per job:** if `GET /api/jobs/{id}` stays `PENDING` for a long time, workers may not be consuming — check inspect `active` / worker logs / Redis queue depth (operator tooling).
+
 ## Future (not done here)
 
-- Postgres-backed idempotency + checkpoints
+- Postgres-backed **checkpoints** for task state (idempotency DB is done — see above)
 - Push **failure_class** to metrics/alerting (PagerDuty, SNS, …)
 - Full parity with Streamlit graph (iterative ATS, fit gate branching)

@@ -30,6 +30,20 @@
     "postal_code": "94102",
     "country": "US"
   },
+  "alternate_mailing_addresses": [
+    {
+      "label": "NYC apartment",
+      "regions_served": ["New York", "NYC", "Manhattan", "Brooklyn", "NY"],
+      "mailing_address": {
+        "street_line1": "500 Example Ave",
+        "street_line2": "",
+        "city": "New York",
+        "state_region": "NY",
+        "postal_code": "10001",
+        "country": "US"
+      }
+    }
+  ],
   "work_authorization_note": "Authorized to work in the US. No sponsorship required.",
   "visa_status": "",
   "relocation_preference": "Open to remote",

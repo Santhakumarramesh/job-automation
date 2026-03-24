@@ -4,9 +4,11 @@ Parses master resume to build allowed skills/claims inventory.
 Rejects unsupported keyword stuffing and decides whether a JD is a truthful match.
 """
 
-import re
 import json
+import os
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, Union
 
 try:
@@ -51,8 +53,8 @@ class CandidateProfile:
 
 @dataclass
 class FitResult:
-    """Result of job fit check. Decision: apply, review, or reject."""
-    decision: str  # "apply" | "review" | "reject"
+    """Result of job fit check. Decision: apply, manual_review, or reject."""
+    decision: str  # "apply" | "manual_review" | "reject"
     score: int
     reasons: list
     unsupported_requirements: list
@@ -189,6 +191,87 @@ def parse_master_resume(master_resume_text: str) -> CandidateProfile:
         preferred_roles=["AI/ML Engineer", "Machine Learning Engineer"] if "ml" in text_lower or "ai" in text_lower else [],
         raw_text_lower=text_lower,
     )
+
+
+def read_resume_plaintext_file(p: Path) -> str:
+    """Load plaintext from a resume file (PDF or text/markdown)."""
+    if not p.is_file():
+        return ""
+    if p.suffix.lower() == ".pdf":
+        from services.document_service import extract_text_from_pdf
+
+        return (extract_text_from_pdf(p.read_bytes()) or "").strip()
+    return p.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def resolve_project_relative_resume_path(path_fragment: str) -> Path:
+    """
+    REST/API helper: only relative paths under the project root (no path traversal).
+    Raises ``ValueError`` with a short message if invalid.
+    """
+    raw = (path_fragment or "").strip()
+    if not raw:
+        raise ValueError("master_resume_path is empty")
+    p = Path(raw)
+    if p.is_absolute():
+        raise ValueError("master_resume_path must be a project-relative path, not absolute")
+    root = Path(__file__).resolve().parent.parent
+    full = (root / p).resolve()
+    try:
+        full.relative_to(root.resolve())
+    except ValueError:
+        raise ValueError("master_resume_path must stay under the project root") from None
+    return full
+
+
+def load_master_resume_text(path: str = "", inline_text: str = "") -> tuple[str, str]:
+    """
+    Resolve plain-text master resume for truth parsing.
+    Returns (text, source_label). Prefer ``inline_text`` when long enough; else ``path``,
+    then ``RESUME_PATH`` / ``MASTER_RESUME_PDF``, then first ``*.pdf`` under ``Master_Resumes/``.
+    """
+    inline = (inline_text or "").strip()
+    if len(inline) >= 100:
+        return inline, "inline_text"
+
+    tried = (path or "").strip() or os.getenv("RESUME_PATH", "") or os.getenv("MASTER_RESUME_PDF", "")
+    root = Path(__file__).resolve().parent.parent
+
+    if tried:
+        fp = Path(tried)
+        if not fp.is_absolute():
+            fp = root / fp
+        body = read_resume_plaintext_file(fp)
+        if len(body) >= 100:
+            return body, str(fp)
+
+    master_dir = root / "Master_Resumes"
+    if master_dir.is_dir():
+        for pattern in ("*.pdf", "*.md", "*.txt"):
+            for f in sorted(master_dir.glob(pattern)):
+                body = read_resume_plaintext_file(f)
+                if len(body) >= 100:
+                    return body, str(f)
+    return "", ""
+
+
+def truth_inventory_from_profile(profile: CandidateProfile) -> dict:
+    """JSON-serializable truth inventory from a parsed ``CandidateProfile``."""
+    return {
+        "skills": sorted(profile.skills),
+        "tools": sorted(profile.tools),
+        "projects": sorted(profile.projects),
+        "education": sorted(profile.education),
+        "companies": sorted(profile.companies),
+        "locations": list(profile.locations),
+        "visa_status": profile.visa_status,
+        "work_authorization": profile.work_authorization,
+        "github_url": profile.github_url,
+        "linkedin_url": profile.linkedin_url,
+        "portfolio_url": profile.portfolio_url,
+        "preferred_roles": list(profile.preferred_roles),
+        "years_experience": dict(profile.years_experience),
+    }
 
 
 def _extract_section(text: str, section_names: list[str]) -> str:
@@ -357,7 +440,7 @@ def is_job_fit(
     """
     Central fit gate: evaluate job against master resume profile.
     job: JobListing, or dict with description/title/company, or raw JD string.
-    Returns FitResult with decision (apply/review/reject), score, reasons.
+    Returns FitResult with decision (apply/manual_review/reject), score, reasons.
     """
     if isinstance(job, str):
         jd_text = job
@@ -369,7 +452,7 @@ def is_job_fit(
         jd_text = ""
 
     fit = compute_job_fit_score(jd_text, profile, ats_score=ats_score)
-    decision = "apply" if fit["apply"] else ("reject" if fit["reject"] else "review")
+    decision = "apply" if fit["apply"] else ("reject" if fit["reject"] else "manual_review")
     return FitResult(
         decision=decision,
         score=fit["score"],
@@ -395,4 +478,4 @@ def is_truthful_match(master_resume_text: str, jd_text: str) -> tuple[bool, str]
         return False, "; ".join(fit["reasons"][:3])
     if fit["apply"]:
         return True, "Full fit"
-    return True, "Review recommended: " + "; ".join(fit["reasons"][:2])
+    return True, "Manual review recommended: " + "; ".join(fit["reasons"][:2])

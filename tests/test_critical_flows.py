@@ -19,6 +19,24 @@ class TestPolicy:
         m, r = decide_apply_mode_with_reason({}, fit_decision="reject")
         assert m == "skip" and r == REASON_SKIP_FIT
 
+    def test_legacy_review_fit_normalized_and_skips(self):
+        from services.policy_service import (
+            REASON_SKIP_FIT,
+            decide_apply_mode_with_reason,
+            normalize_fit_decision_label,
+        )
+
+        assert normalize_fit_decision_label("review") == "manual_review"
+        assert normalize_fit_decision_label("Review") == "manual_review"
+        m, r = decide_apply_mode_with_reason(
+            {},
+            fit_decision="review",
+            ats_score=95,
+            unsupported_requirements=[],
+            profile_ready=True,
+        )
+        assert m == "skip" and r == REASON_SKIP_FIT
+
     def test_skip_on_unsupported_requirements(self):
         from services.policy_service import decide_apply_mode
         assert decide_apply_mode({}, unsupported_requirements=["secret clearance"]) == "skip"
@@ -32,6 +50,35 @@ class TestPolicy:
         from services.policy_service import decide_apply_mode
         job = {"url": "https://indeed.com/job/123", "easy_apply_confirmed": True}
         assert decide_apply_mode(job) == "manual_assist"
+
+    def test_manual_assist_linkedin_company_not_jobs_path(self):
+        from services.policy_service import decide_apply_mode, decide_apply_mode_with_reason
+        job = {
+            "url": "https://www.linkedin.com/company/acme",
+            "easy_apply_confirmed": True,
+        }
+        assert decide_apply_mode(job) == "manual_assist"
+        m, r = decide_apply_mode_with_reason(
+            job, fit_decision="apply", ats_score=95, unsupported_requirements=[], profile_ready=True
+        )
+        assert m == "manual_assist"
+
+    def test_manual_assist_external_apply_url_from_linkedin_listing(self):
+        from services.policy_service import (
+            decide_apply_mode_with_reason,
+            REASON_MANUAL_EXTERNAL_APPLY_TARGET,
+        )
+
+        job = {
+            "url": "https://linkedin.com/jobs/view/123",
+            "apply_url": "https://boards.greenhouse.io/acme/jobs/999",
+            "easy_apply_confirmed": True,
+        }
+        m, r = decide_apply_mode_with_reason(
+            job, fit_decision="apply", ats_score=95, unsupported_requirements=[], profile_ready=True
+        )
+        assert m == "manual_assist"
+        assert r == REASON_MANUAL_EXTERNAL_APPLY_TARGET
 
     def test_auto_easy_apply_linkedin_confirmed(self):
         from services.policy_service import decide_apply_mode
@@ -130,7 +177,7 @@ class TestFitGate:
         profile = parse_master_resume(text)
         jd = "We need Python and AWS experience. Machine learning preferred."
         result = is_job_fit(profile, jd, ats_score=90)
-        assert result.decision in ("apply", "review")
+        assert result.decision in ("apply", "manual_review")
         assert result.score >= 0
 
     def test_fit_reject_on_unsupported(self):
@@ -139,7 +186,51 @@ class TestFitGate:
         profile = parse_master_resume(text)
         jd = "Must have Top Secret clearance and 10 years COBOL."
         result = is_job_fit(profile, jd, ats_score=50)
-        assert result.unsupported_requirements or result.decision in ("reject", "review")
+        assert result.unsupported_requirements or result.decision in ("reject", "manual_review")
+
+
+class TestMasterResumeTruth:
+    """load_master_resume_text + truth inventory helpers."""
+
+    def test_load_inline_and_inventory(self):
+        from agents.master_resume_guard import (
+            load_master_resume_text,
+            parse_master_resume,
+            truth_inventory_from_profile,
+        )
+
+        long = "Python developer with AWS and machine learning experience. " * 12
+        text, src = load_master_resume_text(inline_text=long)
+        assert src == "inline_text" and len(text) >= 100
+        inv = truth_inventory_from_profile(parse_master_resume(text))
+        assert isinstance(inv["skills"], list)
+        assert any(str(s).lower() == "python" for s in inv["skills"])
+
+    def test_load_from_text_file(self):
+        from agents.master_resume_guard import (
+            load_master_resume_text,
+            parse_master_resume,
+            truth_inventory_from_profile,
+        )
+
+        root = Path(__file__).resolve().parent.parent
+        p = root / "_tmp_truth_cv_test.txt"
+        body = "Python SQL AWS TensorFlow data science professional. " * 15
+        try:
+            p.write_text(body, encoding="utf-8")
+            text, src = load_master_resume_text(path="_tmp_truth_cv_test.txt")
+            assert len(text) >= 100
+            assert "_tmp_truth_cv_test.txt" in src or str(p) == src
+            inv = truth_inventory_from_profile(parse_master_resume(text))
+            assert len(inv["skills"]) >= 1
+        finally:
+            p.unlink(missing_ok=True)
+
+    def test_resolve_project_relative_rejects_escape(self):
+        from agents.master_resume_guard import resolve_project_relative_resume_path
+
+        with pytest.raises(ValueError):
+            resolve_project_relative_resume_path("../.env")
 
 
 class TestTracker:

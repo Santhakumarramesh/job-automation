@@ -8,6 +8,9 @@ from services.job_location_match import (
     REASON_MANUAL_JOB_LOCATION_UNKNOWN,
     REASON_SKIP_JOB_LOCATION,
     check_job_location_policy,
+    haystack_matches_region,
+    job_is_remoteish,
+    job_location_haystack,
 )
 from services.policy_service import decide_apply_mode_with_reason, REASON_AUTO_OK
 
@@ -15,6 +18,18 @@ from services.policy_service import decide_apply_mode_with_reason, REASON_AUTO_O
 @pytest.fixture
 def clear_loc_policy(monkeypatch):
     monkeypatch.delenv("POLICY_ENFORCE_JOB_LOCATION", raising=False)
+
+
+def test_job_location_haystack_and_remote():
+    j = {"location": "US", "title": "Engineer", "work_type": "remote"}
+    assert "remote" in job_location_haystack(j)
+    assert job_is_remoteish(j) is True
+
+
+def test_haystack_matches_region():
+    hay = "senior engineer new york ny hybrid"
+    assert haystack_matches_region(hay, "New York") is True
+    assert haystack_matches_region(hay, "Paris") is False
 
 
 def test_enforce_off_always_ok(monkeypatch, clear_loc_policy):

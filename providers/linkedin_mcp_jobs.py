@@ -160,6 +160,42 @@ def fetch_linkedin_mcp_jobs(
     return jobs
 
 
+def linkedin_mcp_search_jobs_payload(
+    keywords: str = "",
+    location: str = "United States",
+    work_type: str = "remote",
+    max_results: int = 25,
+    easy_apply: bool = False,
+    date_posted: str = "",
+    job_type: str = "",
+    experience_level: str = "",
+    sort_order: str = "",
+) -> dict:
+    """
+    Shared MCP + REST response: normalized job rows from LinkedIn MCP.
+    Returns ``{status, count, jobs, message?}``.
+    """
+    kw = (keywords or "").strip()
+    if not kw:
+        return {"status": "error", "message": "keywords is required", "jobs": [], "count": 0}
+    try:
+        jobs = fetch_linkedin_mcp_jobs(
+            keywords=kw,
+            location=location or "United States",
+            work_type=work_type or "remote",
+            max_results=min(max(1, int(max_results)), 100),
+            easy_apply=bool(easy_apply),
+            date_posted=date_posted or "",
+            job_type=job_type or "",
+            experience_level=experience_level or "",
+            sort_order=sort_order or "",
+        )
+        rows = [j.to_row() for j in jobs]
+        return {"status": "ok", "count": len(rows), "jobs": rows}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200], "jobs": [], "count": 0}
+
+
 class LinkedInMCPProvider(JobProvider):
     """LinkedIn MCP implementation of JobProvider."""
 

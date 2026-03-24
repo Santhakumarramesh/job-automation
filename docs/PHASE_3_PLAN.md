@@ -33,7 +33,7 @@
 | 3.3.1 | Celery runs headless LangGraph (`agents/celery_workflow.py`); `CELERY_USE_LANGGRAPH=0` fallback ✅ |
 | 3.3.2 | Retries w/ backoff (`CELERY_TASK_MAX_RETRIES`); API **`idempotency_key`** + file store (`docs/WORKER_ORCHESTRATION.md`) ✅ |
 | 3.3.3 | Task snapshots — `services/task_state_store.py` + `?include_task_state=true` (filesystem; not DB) ✅ / DB 📋 |
-| 3.3.4 | **`failure_class`** transient/permanent on errors + `save_task_failure`; metrics/alerts 📋 |
+| 3.3.4 | **`failure_class`** transient/permanent on errors + `save_task_failure`; Redis counters via `incr_celery_task(..., failure_class=...)` when `CELERY_METRICS_REDIS=1` (`app/tasks.py`) ✅ — Prometheus-from-workers / alert rules → [Phase 4](PHASE_4_PLAN.md) |
 
 ## Phase 3.4 — Artifacts & storage
 
@@ -81,3 +81,9 @@ Doc: [OBSERVABILITY.md](OBSERVABILITY.md).
 ## Out of scope
 
 Multi-tenant billing, white-label, deep ATS integrations beyond current providers.
+
+---
+
+## Next: Phase 4
+
+See **[PHASE_4_PLAN.md](PHASE_4_PLAN.md)** — OIDC, durable idempotency/task state, Celery→Prometheus bridge, retention/compliance, apply-path hardening.

@@ -59,6 +59,23 @@ def incr_celery_task(
         pass
 
 
+def read_celery_metrics_hash() -> Dict[str, Any]:
+    """
+    Read ``ccp:metrics:celery`` from Redis for Prometheus bridge (Phase 4.3).
+
+    Does **not** require ``CELERY_METRICS_REDIS`` on this process — only a Redis URL
+    (``REDIS_METRICS_URL`` or ``REDIS_BROKER``).
+    """
+    try:
+        r = _client()
+        if r is None:
+            return {"ok": False, "reason": "no_redis_url", "fields": {}}
+        data = r.hgetall(_KEY_HASH) or {}
+        return {"ok": True, "fields": data}
+    except Exception as e:
+        return {"ok": False, "reason": str(e)[:500], "fields": {}}
+
+
 def get_celery_metrics_summary() -> Dict[str, Any]:
     """Read aggregated hash; empty if disabled or Redis unavailable."""
     if not _enabled():

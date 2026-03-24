@@ -6,8 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "career-co-pilot-pro"
 version = "0.1.0"
 description = "AI-powered job application automation system"
+requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.95",
+    # 0.135+ required for Starlette 0.46+ (Router no longer accepts on_startup/on_shutdown)
+    "fastapi>=0.135",
     "uvicorn[standard]>=0.22",
     "celery[redis]>=5.3",
     "pydantic>=1.10",

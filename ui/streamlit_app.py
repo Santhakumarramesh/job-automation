@@ -10,6 +10,7 @@ import base64
 import io
 import zipfile
 import requests
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 
 import streamlit as st
@@ -36,8 +37,7 @@ from services.follow_up_service import list_follow_ups as list_follow_up_queue
 from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
 from services.profile_service import load_profile
-from services.policy_service import policy_from_exported_job
-from agents.application_answerer import build_answerer_preview_for_export
+from services.policy_service import enrich_job_dict_for_policy_export
 from agents.interview_prep_agent import generate_interview_prep
 
 _SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -45,9 +45,76 @@ _CREDS_FILE = os.path.join(_SCRIPT_DIR, ".env")
 
 
 # --- Helpers ---
+def _df_row_to_plain_dict(row: pd.Series) -> dict:
+    """DataFrame row → JSON-friendly dict (NaN → empty string / False)."""
+    out: dict = {}
+    for k, v in row.items():
+        try:
+            if pd.isna(v):
+                out[k] = False if k == "answerer_manual_review_required" else ""
+            else:
+                out[k] = v
+        except (TypeError, ValueError):
+            out[k] = v
+    return out
+
+
 def _streamlit_tracker_user_id() -> str:
     """Tag tracker rows from this UI (override with TRACKER_DEFAULT_USER_ID)."""
     return (os.getenv("TRACKER_DEFAULT_USER_ID") or "streamlit-local").strip()
+
+
+def _career_api_base_default() -> str:
+    return (
+        os.getenv("STREAMLIT_CAREER_API_BASE") or os.getenv("CAREER_API_BASE_URL") or "http://127.0.0.1:8000"
+    ).rstrip("/")
+
+
+def _career_api_bearer_default() -> str:
+    return (os.getenv("STREAMLIT_CAREER_API_BEARER") or os.getenv("CAREER_API_JWT") or "").strip()
+
+
+def _career_api_headers(api_key: str, *, bearer: str = "", for_json_body: bool = False) -> dict:
+    h: dict = {}
+    bt = (bearer or "").strip()
+    if bt:
+        h["Authorization"] = bt if bt.lower().startswith("bearer ") else f"Bearer {bt}"
+    s = (api_key or "").strip()
+    if s:
+        h["X-API-Key"] = s
+    if for_json_body:
+        h["Content-Type"] = "application/json"
+    return h
+
+
+def _career_api_call(
+    base: str,
+    method: str,
+    path: str,
+    *,
+    api_key: str = "",
+    bearer: str = "",
+    params=None,
+    json_body=None,
+    extra_headers=None,
+    timeout: float = 45.0,
+):
+    """GET/POST against Career Co-Pilot FastAPI (same routes as MCP parity)."""
+    url = f"{base.rstrip('/')}{path}"
+    m = method.upper()
+    for_json = m in ("POST", "PATCH")
+    headers = _career_api_headers(api_key, bearer=bearer, for_json_body=for_json)
+    if extra_headers:
+        for hk, hv in extra_headers.items():
+            if hv is not None and str(hv).strip():
+                headers[str(hk)] = str(hv).strip()
+    if m == "GET":
+        return requests.get(url, headers=headers, params=params or {}, timeout=timeout)
+    if m == "POST":
+        return requests.post(url, headers=headers, params=params or {}, json=json_body, timeout=timeout)
+    if m == "PATCH":
+        return requests.patch(url, headers=headers, params=params or {}, json=json_body, timeout=timeout)
+    raise ValueError(f"Unsupported method {method}")
 
 
 def scrape_job_url(url):
@@ -124,6 +191,9 @@ def enhanced_ats_scorer_node(state: AgentState):
     st.write(f"🔬 Running Semantic ATS Analysis for {state['target_company']}...")
     result = score_resume(state, target_score=100)
     st.write(f"Semantic ATS Score for {state['target_company']}: {result['initial_ats_score']}%")
+    if result.get("truth_safe_ats_ceiling") is not None:
+        st.metric("Truth-safe ATS ceiling (est.)", f"{result['truth_safe_ats_ceiling']}%")
+        st.caption(result.get("truth_safe_ceiling_reason", ""))
     return result
 
 
@@ -275,7 +345,16 @@ def run():
 
     graph = build_graph(use_iterative_ats=use_iterative_ats)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📄 Single Job", "🚀 Batch URL Processor", "🤖 AI Job Finder", "🎯 Live ATS Optimizer", "💼 My Applications"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        [
+            "📄 Single Job",
+            "🚀 Batch URL Processor",
+            "🤖 AI Job Finder",
+            "🎯 Live ATS Optimizer",
+            "💼 My Applications",
+            "🔗 ATS / API",
+        ]
+    )
 
     with tab1:
         st.header("Single Job Application")
@@ -545,11 +624,60 @@ def run():
                     - Non–Easy Apply (Workday, Greenhouse, Lever) → prepare docs only
                     - Use "Generate Documents" above, then apply manually
                     """)
+                use_llm_preview_export = st.checkbox(
+                    "Use LLM for answerer preview (why_role; slower, needs OPENAI_API_KEY)",
+                    value=False,
+                    key="answerer_preview_use_llm",
+                )
+                if st.button(
+                    "Recalculate apply_mode + policy_reason (selected LinkedIn rows)",
+                    key="sync_policy_answerer_cols",
+                    help="Same canonical answerer preview as JSON export; updates the job table below.",
+                ):
+                    df = st.session_state.jobs_df.copy()
+                    for c, default in (
+                        ("policy_reason", ""),
+                        ("answerer_manual_review_required", False),
+                    ):
+                        if c not in df.columns:
+                            df[c] = default
+                    master_txt = ""
+                    try:
+                        if st.session_state.get("base_resume_bytes"):
+                            master_txt = extract_text_from_pdf(st.session_state.base_resume_bytes)
+                    except Exception:
+                        pass
+                    prof = load_profile()
+                    sel = df.get("Select")
+                    urls = df["url"].fillna("").astype(str)
+                    is_li = urls.str.contains("linkedin.com", na=False)
+                    mask = is_li & (sel == True) if sel is not None else is_li
+                    n_up = 0
+                    for idx in df[mask].index:
+                        j = _df_row_to_plain_dict(df.loc[idx])
+                        enriched = enrich_job_dict_for_policy_export(
+                            j,
+                            profile=prof,
+                            master_resume_text=master_txt,
+                            use_llm_preview=use_llm_preview_export,
+                        )
+                        df.at[idx, "apply_mode"] = enriched["apply_mode"]
+                        df.at[idx, "policy_reason"] = enriched.get("policy_reason", "")
+                        df.at[idx, "answerer_manual_review_required"] = bool(
+                            enriched.get("answerer_manual_review_required", False)
+                        )
+                        n_up += 1
+                    st.session_state.jobs_df = df
+                    st.success(f"Updated apply_mode / policy_reason for {n_up} LinkedIn row(s).")
+                    st.rerun()
                 apply_mode_col = linkedin_jobs["apply_mode"] if "apply_mode" in linkedin_jobs.columns else pd.Series(["manual_assist"] * len(linkedin_jobs))
                 auto_apply_jobs = linkedin_jobs[apply_mode_col == "auto_easy_apply"] if (apply_mode_col == "auto_easy_apply").any() else pd.DataFrame()
                 manual_lane_jobs = linkedin_jobs[apply_mode_col != "auto_easy_apply"]
                 if not auto_apply_jobs.empty:
-                    st.caption(f"✅ **{len(auto_apply_jobs)} Easy Apply** job(s) in auto lane (before answerer preview).")
+                    st.caption(
+                        f"✅ **{len(auto_apply_jobs)}** selected LinkedIn job(s) currently in **auto_easy_apply** lane "
+                        "(recalculate button above aligns with profile + answerer preview)."
+                    )
                     cols_export = [
                         "title",
                         "company",
@@ -564,7 +692,6 @@ def run():
                         "unsupported_requirements",
                     ]
                     cols_export = [c for c in cols_export if c in auto_apply_jobs.columns]
-                    jobs_export = auto_apply_jobs[cols_export].to_dict(orient="records")
                     master_txt = ""
                     try:
                         if st.session_state.get("base_resume_bytes"):
@@ -572,18 +699,29 @@ def run():
                     except Exception:
                         master_txt = ""
                     prof = load_profile()
-                    for r in jobs_export:
-                        r["applyUrl"] = r.get("url", "")
-                        r["easy_apply"] = True
-                        r["easy_apply_confirmed"] = True
-                        ar, pend = build_answerer_preview_for_export(
-                            prof, r, master_resume_text=master_txt, use_llm=False
+                    jobs_export = []
+                    for _, row in auto_apply_jobs.iterrows():
+                        j = _df_row_to_plain_dict(row)
+                        j["applyUrl"] = j.get("url", "")
+                        j["easy_apply"] = True
+                        j["easy_apply_confirmed"] = True
+                        enriched = enrich_job_dict_for_policy_export(
+                            j,
+                            profile=prof,
+                            master_resume_text=master_txt,
+                            use_llm_preview=use_llm_preview_export,
                         )
-                        r["answerer_review"] = ar
-                        r["answerer_manual_review_required"] = pend
-                        mode, reason = policy_from_exported_job(r)
-                        r["apply_mode"] = mode
-                        r["policy_reason"] = reason
+                        thin = {c: enriched.get(c) for c in cols_export if c in enriched}
+                        thin["applyUrl"] = enriched.get("applyUrl", enriched.get("url", ""))
+                        thin["easy_apply"] = True
+                        thin["easy_apply_confirmed"] = bool(enriched.get("easy_apply_confirmed", True))
+                        thin["answerer_review"] = enriched.get("answerer_review")
+                        thin["answerer_manual_review_required"] = bool(
+                            enriched.get("answerer_manual_review_required", False)
+                        )
+                        thin["apply_mode"] = enriched.get("apply_mode")
+                        thin["policy_reason"] = enriched.get("policy_reason", "")
+                        jobs_export.append(thin)
                     auto_final = [r for r in jobs_export if r.get("apply_mode") == "auto_easy_apply"]
                     dropped = len(jobs_export) - len(auto_final)
                     if dropped:
@@ -610,7 +748,10 @@ def run():
                             key="export_linkedin",
                         )
                     st.code("python scripts/apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")
-                    st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Export runs a deterministic answerer preview; jobs with manual_review_required become manual_assist in policy.")
+                    st.caption(
+                        "Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. "
+                        "Export uses the same answerer preview as **Recalculate** (see LLM checkbox above)."
+                    )
                 else:
                     if not manual_lane_jobs.empty:
                         st.info(f"📋 **{len(manual_lane_jobs)}** selected job(s) are not Easy Apply. Use \"Generate Documents\" above to prepare resume + cover letter for manual apply.")
@@ -707,6 +848,10 @@ def run():
                 st.info("You haven't processed any applications yet. Use the other tabs to get started!")
             else:
                 display_df = apps_df.copy()
+                st.caption(
+                    "Audit columns (when present): **ats_provider**, **ats_provider_apply_target**, "
+                    "**truth_safe_ats_ceiling**, **selected_address_label**, **package_field_stats** — filled on new logs."
+                )
                 if "company" in display_df.columns and "Company" not in display_df.columns:
                     display_df = display_df.rename(columns={"company": "Company", "position": "Position", "status": "Status", "job_description": "Job Description"})
                 status_col = "Status" if "Status" in display_df.columns else "status"
@@ -776,6 +921,17 @@ def run():
                         c2.metric("Avg ATS (logged)", f"{ats.get('mean')}" if ats.get("mean") is not None else "—")
                         c3.metric("ATS values", int(ats.get("count_numeric") or 0))
                         c4.metric("Rows w/ answerer QA", int(ar.get("tracker_rows_with_answerer_review") or 0))
+                        ap = tr.get("by_ats_provider") or {}
+                        if ap:
+                            st.caption("Top **ats_provider** (listing URL)")
+                            ap_df = pd.DataFrame([{"provider": k, "count": v} for k, v in sorted(ap.items(), key=lambda x: -x[1])[:8]])
+                            st.dataframe(ap_df, hide_index=True, use_container_width=True)
+                        tc = tr.get("truth_safe_ats_ceiling") or {}
+                        if tc.get("count_numeric"):
+                            st.caption(
+                                f"Logged **truth_safe_ats_ceiling**: mean **{tc.get('mean')}** "
+                                f"({int(tc.get('count_numeric') or 0)} numeric values)"
+                            )
                         if int(ar.get("tracker_rows_with_manual_review_flag") or 0) > 0:
                             st.caption(
                                 f"Manual-review flags in QA: **{ar.get('tracker_rows_with_manual_review_flag')}** application(s)"
@@ -809,6 +965,14 @@ def run():
                         if ap:
                             st.caption("Apply mode × policy reason")
                             st.dataframe(pd.DataFrame(ap), hide_index=True, use_container_width=True)
+                        amat = xtabs.get("apply_mode_by_ats_provider_apply_target") or []
+                        if amat:
+                            st.caption("Apply mode × apply-target ATS")
+                            st.dataframe(pd.DataFrame(amat), hide_index=True, use_container_width=True)
+                        subat = xtabs.get("submission_status_by_ats_provider_apply_target") or []
+                        if subat:
+                            st.caption("Submission status × apply-target ATS")
+                            st.dataframe(pd.DataFrame(subat), hide_index=True, use_container_width=True)
                         by_iv = tr.get("by_interview_stage") or {}
                         by_of = tr.get("by_offer_outcome") or {}
                         if by_iv:
@@ -859,3 +1023,817 @@ def run():
                         st.markdown(prep_guide)
         except Exception as e:
             st.error(f"An error occurred with the application tracker: {e}")
+
+    with tab6:
+        st.header("ATS / REST API")
+        st.caption(
+            "Optional: call the FastAPI app (uvicorn app.main:app) — same JSON as MCP parity under /api/ats/*. "
+            "Set STREAMLIT_CAREER_API_BASE or CAREER_API_BASE_URL for the default base URL."
+        )
+        api_base = st.text_input("API base URL", value=_career_api_base_default(), key="career_api_base_url")
+        api_key_ui = st.text_input("X-API-Key (if server requires it)", type="password", key="career_api_key_ui")
+        api_bearer_ui = st.text_input(
+            "Bearer JWT (optional; Authorization header — checked before API key on server)",
+            value=_career_api_bearer_default(),
+            type="password",
+            key="career_api_bearer_ui",
+        )
+
+        def _call(method: str, path: str, **kwargs):
+            return _career_api_call(
+                api_base,
+                method,
+                path,
+                api_key=api_key_ui,
+                bearer=api_bearer_ui,
+                **kwargs,
+            )
+
+        def _show_api_response(resp: requests.Response) -> None:
+            st.caption(f"HTTP {resp.status_code}")
+            try:
+                data = resp.json()
+            except Exception:
+                st.code((resp.text or "")[:4000] or "(empty body)")
+                return
+            if isinstance(data, (dict, list)):
+                st.json(data)
+            else:
+                st.write(data)
+
+        with st.expander("Service health", expanded=True):
+            st.caption("Root paths (no `/api` prefix). `/metrics` is Prometheus text when `PROMETHEUS_METRICS=1` and metrics extras are installed.")
+            r1c1, r1c2 = st.columns(2)
+            with r1c1:
+                if st.button("GET /health", key="career_api_btn_health"):
+                    try:
+                        r = _call("GET", "/health", timeout=15.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+            with r1c2:
+                if st.button("GET /ready", key="career_api_btn_ready"):
+                    try:
+                        r = _call("GET", "/ready", timeout=15.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+            r2c1, r2c2 = st.columns(2)
+            with r2c1:
+                if st.button("GET /", key="career_api_btn_root"):
+                    try:
+                        r = _call("GET", "/", timeout=15.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+            with r2c2:
+                if st.button("GET /metrics", key="career_api_btn_metrics"):
+                    try:
+                        r = _call("GET", "/metrics", timeout=15.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+        with st.expander("ATS metadata", expanded=False):
+            plat_job = st.text_input("Platform: job_url", value="https://www.linkedin.com/jobs/view/1", key="api_plat_job")
+            plat_apply = st.text_input("Platform: apply_url", value="", key="api_plat_apply")
+            if st.button("GET /api/ats/platform", key="api_plat_btn"):
+                try:
+                    r = _call(
+                        "GET",
+                        "/api/ats/platform",
+                        params={"job_url": plat_job.strip(), "apply_url": plat_apply.strip()},
+                        timeout=30.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            ft_url = st.text_input("Form type: URL", value="https://www.linkedin.com/jobs/view/1", key="api_ft_url")
+            if st.button("GET /api/ats/form-type", key="api_ft_btn"):
+                try:
+                    r = _call(
+                        "GET",
+                        "/api/ats/form-type",
+                        params={"url": ft_url.strip()},
+                        timeout=30.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Profile & autofill", expanded=False):
+            prof_path = st.text_input("validate-profile: profile_path (optional)", value="", key="api_vprof_path")
+            if st.button("POST /api/ats/validate-profile", key="api_vprof_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/validate-profile",
+                        json_body={"profile_path": prof_path.strip()},
+                        timeout=30.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            af_type = st.selectbox("autofill: form_type", ["linkedin", "greenhouse", "lever", "workday", "generic"], key="api_af_type")
+            af_hints = st.text_input("autofill: question_hints (comma-separated)", value="sponsorship", key="api_af_hints")
+            if st.button("POST /api/ats/autofill-values", key="api_af_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/autofill-values",
+                        json_body={"form_type": af_type, "question_hints": af_hints},
+                        timeout=30.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Apply policy (JSON job)", expanded=False):
+            st.caption("POST /api/ats/decide-apply-mode — edit the job object if needed.")
+            dam_json = st.text_area(
+                "Request JSON",
+                value=json.dumps(
+                    {
+                        "job": {
+                            "url": "https://www.linkedin.com/jobs/view/1/",
+                            "easy_apply_confirmed": True,
+                        },
+                        "fit_decision": "apply",
+                        "ats_score": 90,
+                        "unsupported_requirements": [],
+                    },
+                    indent=2,
+                ),
+                height=220,
+                key="api_dam_json",
+            )
+            if st.button("POST /api/ats/decide-apply-mode", key="api_dam_btn"):
+                try:
+                    body = json.loads(dam_json)
+                except json.JSONDecodeError as je:
+                    st.error(f"Invalid JSON: {je}")
+                else:
+                    try:
+                        r = _call(
+                            "POST",
+                            "/api/ats/decide-apply-mode",
+                            json_body=body,
+                            timeout=30.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+        with st.expander("Score job fit, address, static analyze-form", expanded=False):
+            st.caption("POST /api/ats/score-job-fit — JD + resume text required (min length enforced by API).")
+            sjf_use_pdf = st.checkbox(
+                "Use sidebar-uploaded resume PDF as master_resume_text",
+                key="api_sjf_use_pdf",
+            )
+            sjf_jd = st.text_area("job_description", height=140, key="api_sjf_jd", placeholder="Paste job description…")
+            sjf_resume = st.text_area(
+                "master_resume_text (ignored if PDF checkbox above is on and resume is uploaded)",
+                height=140,
+                key="api_sjf_resume",
+                placeholder="Paste resume text…",
+            )
+            cj, ck = st.columns(2)
+            sjf_title = cj.text_input("job_title", value="Engineer", key="api_sjf_title")
+            sjf_co = ck.text_input("company", value="ACME", key="api_sjf_co")
+            sjf_loc = st.text_input("location", value="USA", key="api_sjf_loc")
+            if st.button("POST /api/ats/score-job-fit", key="api_sjf_btn"):
+                resume_body = sjf_resume
+                if sjf_use_pdf and st.session_state.get("base_resume_bytes"):
+                    resume_body = extract_text_from_pdf(st.session_state["base_resume_bytes"])
+                if not (sjf_jd or "").strip() or not (resume_body or "").strip():
+                    st.error("Provide job_description and resume text (or enable PDF + upload in sidebar).")
+                else:
+                    try:
+                        r = _call(
+                            "POST",
+                            "/api/ats/score-job-fit",
+                            json_body={
+                                "job_description": sjf_jd,
+                                "master_resume_text": resume_body,
+                                "job_title": sjf_title,
+                                "company": sjf_co,
+                                "location": sjf_loc,
+                            },
+                            timeout=120.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("POST /api/ats/address-for-job — uses server candidate profile.")
+            ad_loc = st.text_input("address: job_location", value="Remote", key="api_ad_loc")
+            ad_title = st.text_input("address: job_title", value="Engineer", key="api_ad_title")
+            ad_jd = st.text_area("address: job_description (optional)", height=80, key="api_ad_jd")
+            ad_wt = st.text_input("address: work_type (optional)", value="", key="api_ad_wt")
+            if st.button("POST /api/ats/address-for-job", key="api_ad_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/address-for-job",
+                        json_body={
+                            "job_location": ad_loc,
+                            "job_title": ad_title,
+                            "job_description": ad_jd,
+                            "work_type": ad_wt,
+                        },
+                        timeout=45.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("POST /api/ats/analyze-form — static hints only (no browser).")
+            an_job = st.text_input("analyze-form: job_url", value="https://boards.greenhouse.io/example/jobs/1", key="api_an_job")
+            an_apply = st.text_input("analyze-form: apply_url", value="", key="api_an_apply")
+            if st.button("POST /api/ats/analyze-form", key="api_an_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/analyze-form",
+                        json_body={"job_url": an_job.strip(), "apply_url": an_apply.strip()},
+                        timeout=45.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Search jobs (LinkedIn MCP bridge)", expanded=False):
+            st.caption("POST /api/ats/search-jobs — needs linkedin-mcp-server; may hit API_RATE_LIMIT_ATS_SEARCH_JOBS_PER_MINUTE.")
+            sj_kw = st.text_input("keywords", value="machine learning engineer", key="api_sj_kw")
+            sj_loc = st.text_input("location", value="United States", key="api_sj_loc")
+            sj_wt = st.text_input("work_type", value="remote", key="api_sj_wt")
+            sj_max = st.number_input("max_results", min_value=1, max_value=100, value=10, key="api_sj_max")
+            sj_ez = st.checkbox("easy_apply", value=False, key="api_sj_ez")
+            if st.button("POST /api/ats/search-jobs", key="api_sj_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/search-jobs",
+                        json_body={
+                            "keywords": sj_kw,
+                            "location": sj_loc,
+                            "work_type": sj_wt,
+                            "max_results": int(sj_max),
+                            "easy_apply": sj_ez,
+                        },
+                        timeout=90.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Truth inventory & resume / package prep", expanded=False):
+            st.caption("POST /api/ats/truth-inventory — inline text (100+ chars) or project-relative master_resume_path on server.")
+            ti_text = st.text_area("master_resume_text (optional)", height=100, key="api_ti_text")
+            ti_path = st.text_input("master_resume_path (optional, project-relative)", value="", key="api_ti_path")
+            if st.button("POST /api/ats/truth-inventory", key="api_ti_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/truth-inventory",
+                        json_body={"master_resume_text": ti_text, "master_resume_path": ti_path.strip()},
+                        timeout=60.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            st.divider()
+            pr_title = st.text_input("prepare-resume: job_title", value="ML Engineer", key="api_pr_title")
+            pr_co = st.text_input("prepare-resume: company", value="ACME", key="api_pr_co")
+            pr_src = st.text_input("prepare-resume: resume_source_path (optional)", value="", key="api_pr_src")
+            if st.button("POST /api/ats/prepare-resume-for-job", key="api_pr_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/prepare-resume-for-job",
+                        json_body={
+                            "job_title": pr_title,
+                            "company": pr_co,
+                            "resume_source_path": pr_src.strip(),
+                        },
+                        timeout=60.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("POST /api/ats/prepare-application-package — server profile + answerer; optional fit if JD + resume below.")
+            pp_use = st.checkbox("Use uploaded PDF for master_resume_text", key="api_pp_use_pdf")
+            pp_jt = st.text_input("package: job_title", value="Engineer", key="api_pp_jt")
+            pp_co = st.text_input("package: company", value="ACME", key="api_pp_co")
+            pp_jd = st.text_area("package: job_description", height=100, key="api_pp_jd")
+            pp_res = st.text_area("package: master_resume_text (if not using PDF)", height=100, key="api_pp_res")
+            pp_jloc = st.text_input("package: job_location", value="", key="api_pp_jloc")
+            pp_wt = st.text_input("package: work_type", value="", key="api_pp_wt")
+            if st.button("POST /api/ats/prepare-application-package", key="api_pp_btn"):
+                mt = pp_res
+                if pp_use and st.session_state.get("base_resume_bytes"):
+                    mt = extract_text_from_pdf(st.session_state["base_resume_bytes"])
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/prepare-application-package",
+                        json_body={
+                            "job_title": pp_jt,
+                            "company": pp_co,
+                            "job_description": pp_jd,
+                            "master_resume_text": mt,
+                            "job_location": pp_jloc,
+                            "work_type": pp_wt,
+                        },
+                        timeout=120.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Batch prioritize & run-result reports", expanded=False):
+            st.caption("POST /api/ats/batch-prioritize-jobs — max 500 jobs in API; max_scored ≤ 200.")
+            bp_jobs = st.text_area(
+                "jobs (JSON array of job objects with description, url, …)",
+                height=160,
+                key="api_bp_jobs",
+                value='[\n  {\n    "title": "Engineer",\n    "company": "ACME",\n    "description": "'
+                + ("Senior Python engineer with AWS kubernetes docker. " * 8)
+                + '",\n    "url": "https://example.com/j",\n    "easy_apply_confirmed": true\n  }\n]',
+            )
+            bp_use_pdf = st.checkbox("Use uploaded PDF text as master_resume_text", key="api_bp_use_pdf")
+            bp_resume = st.text_area("master_resume_text (if not using PDF)", height=100, key="api_bp_res")
+            bp_max = st.number_input("max_scored", min_value=1, max_value=200, value=20, key="api_bp_max")
+            if st.button("POST /api/ats/batch-prioritize-jobs", key="api_bp_btn"):
+                try:
+                    jobs_parsed = json.loads(bp_jobs)
+                except json.JSONDecodeError as je:
+                    st.error(f"Invalid jobs JSON: {je}")
+                else:
+                    mrt = bp_resume
+                    if bp_use_pdf and st.session_state.get("base_resume_bytes"):
+                        mrt = extract_text_from_pdf(st.session_state["base_resume_bytes"])
+                    if not (mrt or "").strip():
+                        st.error("Provide master_resume_text or enable PDF + sidebar upload.")
+                    else:
+                        try:
+                            r = _call(
+                                "POST",
+                                "/api/ats/batch-prioritize-jobs",
+                                json_body={"jobs": jobs_parsed, "master_resume_text": mrt, "max_scored": int(bp_max)},
+                                timeout=180.0,
+                            )
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
+
+            st.divider()
+            rr_json = st.text_area(
+                "run_results JSON (array of run row dicts)",
+                height=140,
+                key="api_rr_json",
+                value='[{"status":"applied","unmapped_fields":["Salary"],"error":""}]',
+            )
+            c_ru, c_au = st.columns(2)
+            with c_ru:
+                if st.button("POST /api/ats/review-unmapped-fields", key="api_rr_unmapped"):
+                    try:
+                        rows = json.loads(rr_json)
+                        r = _call(
+                            "POST",
+                            "/api/ats/review-unmapped-fields",
+                            json_body={"run_results": rows},
+                            timeout=45.0,
+                        )
+                        _show_api_response(r)
+                    except json.JSONDecodeError as je:
+                        st.error(f"Invalid JSON: {je}")
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+            with c_au:
+                if st.button("POST /api/ats/application-audit-report", key="api_rr_audit"):
+                    try:
+                        rows = json.loads(rr_json)
+                        r = _call(
+                            "POST",
+                            "/api/ats/application-audit-report",
+                            json_body={"run_results": rows},
+                            timeout=45.0,
+                        )
+                        _show_api_response(r)
+                    except json.JSONDecodeError as je:
+                        st.error(f"Invalid JSON: {je}")
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+        with st.expander("Recruiter follow-up (OpenAI on server)", expanded=False):
+            st.caption("POST /api/ats/generate-recruiter-followup — API server needs OPENAI_API_KEY.")
+            rf_t = st.text_input("job_title", value="PM", key="api_rf_t")
+            rf_c = st.text_input("company", value="ACME", key="api_rf_c")
+            rf_d = st.text_input("application_date (optional)", value="", key="api_rf_d")
+            if st.button("POST /api/ats/generate-recruiter-followup", key="api_rf_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/generate-recruiter-followup",
+                        json_body={"job_title": rf_t, "company": rf_c, "application_date": rf_d},
+                        timeout=90.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Live form probe (optional)", expanded=False):
+            st.caption(
+                "POST /api/ats/analyze-form/live — set ATS_ALLOW_LIVE_FORM_PROBE=1 on the API; 403 if disabled."
+            )
+            lv_apply = st.text_input("apply_url (or job_url)", value="", key="api_lv_apply", placeholder="https://…")
+            lv_job = st.text_input("job_url (optional)", value="", key="api_lv_job")
+            lv_max = st.number_input("max_fields", min_value=5, max_value=80, value=30, key="api_lv_max")
+            if st.button("POST /api/ats/analyze-form/live", key="api_lv_btn"):
+                try:
+                    r = _call(
+                        "POST",
+                        "/api/ats/analyze-form/live",
+                        json_body={
+                            "apply_url": lv_apply.strip(),
+                            "job_url": lv_job.strip(),
+                            "max_fields": int(lv_max),
+                        },
+                        timeout=60.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+        with st.expander("Authenticated routes (JWT or X-API-Key)", expanded=False):
+            st.caption(
+                "Uses the Bearer / X-API-Key fields at the top of this tab. "
+                "If the server sets API_KEY, you must send a matching key or valid JWT. "
+                "If API_KEY is unset, requests run as demo-user."
+            )
+            if st.button("GET /api/applications", key="api_auth_apps"):
+                try:
+                    r = _call("GET", "/api/applications", timeout=30.0)
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            fu_due = st.checkbox("follow-ups: due_only", value=True, key="api_fu_due")
+            fu_lim = st.number_input("follow-ups: limit", 1, 200, 50, key="api_fu_lim")
+            if st.button("GET /api/follow-ups", key="api_fu_btn"):
+                try:
+                    r = _call(
+                        "GET",
+                        "/api/follow-ups",
+                        params={
+                            "due_only": fu_due,
+                            "include_snoozed": True,
+                            "limit": int(fu_lim),
+                            "sort_by_priority": True,
+                        },
+                        timeout=30.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            in_aud = st.checkbox("insights: include_audit", value=True, key="api_ins_aud")
+            in_max = st.number_input("insights: audit_max_lines", 100, 20000, 2500, key="api_ins_max")
+            if st.button("GET /api/insights", key="api_ins_btn"):
+                try:
+                    r = _call(
+                        "GET",
+                        "/api/insights",
+                        params={"include_audit": in_aud, "audit_max_lines": int(in_max)},
+                        timeout=60.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            abj_id = st.text_input(
+                "applications/by-job: job_id (external id from tracker)",
+                value="",
+                key="api_abj_id",
+                placeholder="e.g. linkedin job id",
+            )
+            if st.button("GET /api/applications/by-job/{job_id}", key="api_abj_btn"):
+                if not (abj_id or "").strip():
+                    st.error("Enter job_id")
+                else:
+                    try:
+                        path = f"/api/applications/by-job/{quote(abj_id.strip(), safe='')}"
+                        r = _call("GET", path, timeout=30.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("GET /api/follow-ups/digest — due-only digest with plain `text` plus structured `items`.")
+            dig_sn = st.checkbox("digest: include_snoozed", value=True, key="api_dig_sn")
+            dig_lim = st.number_input("digest: limit", 1, 100, 30, key="api_dig_lim")
+            if st.button("GET /api/follow-ups/digest", key="api_dig_btn"):
+                try:
+                    r = _call(
+                        "GET",
+                        "/api/follow-ups/digest",
+                        params={
+                            "include_snoozed": dig_sn,
+                            "limit": int(dig_lim),
+                            "sort_by_priority": True,
+                        },
+                        timeout=45.0,
+                    )
+                    _show_api_response(r)
+                except requests.RequestException as ex:
+                    st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("POST /api/jobs — enqueue a Celery background job (returns 202 + job_id).")
+            job_body = st.text_area(
+                "Request JSON (name, payload, optional idempotency_key in body)",
+                height=180,
+                key="api_job_post_json",
+                value=json.dumps({"name": "streamlit-api-test", "payload": {}}, indent=2),
+            )
+            idem_h = st.text_input(
+                "Idempotency-Key header (optional; if body also has idempotency_key they must match)",
+                value="",
+                key="api_job_idem",
+            )
+            if st.button("POST /api/jobs", key="api_job_post_btn"):
+                try:
+                    body = json.loads(job_body)
+                except json.JSONDecodeError as je:
+                    st.error(f"Invalid JSON: {je}")
+                else:
+                    extra = {}
+                    if (idem_h or "").strip():
+                        extra["Idempotency-Key"] = idem_h.strip()
+                    try:
+                        r = _call(
+                            "POST",
+                            "/api/jobs",
+                            json_body=body,
+                            extra_headers=extra if extra else None,
+                            timeout=30.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption("GET /api/jobs/{job_id} — poll Celery status (optional result / task_state).")
+            gj_id = st.text_input("jobs: job_id (UUID from POST /api/jobs)", value="", key="api_gj_id")
+            gj_res = st.checkbox("jobs: include_result", value=False, key="api_gj_res")
+            gj_ts = st.checkbox("jobs: include_task_state", value=False, key="api_gj_ts")
+            if st.button("GET /api/jobs/{job_id}", key="api_gj_btn"):
+                if not (gj_id or "").strip():
+                    st.error("Enter job_id")
+                else:
+                    try:
+                        path = f"/api/jobs/{quote(gj_id.strip(), safe='')}"
+                        r = _call(
+                            "GET",
+                            path,
+                            params={"include_result": gj_res, "include_task_state": gj_ts},
+                            timeout=30.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+            st.divider()
+            st.caption(
+                "PATCH tracker row by internal **id** (from GET /api/applications → items[].id), not external job_id."
+            )
+            p_app = st.text_input("applications/{id}: application_id (row id)", value="", key="api_patch_app_id")
+            fu_patch_json = st.text_area(
+                "PATCH …/follow-up JSON (follow_up_at ISO, follow_up_status, follow_up_note)",
+                height=120,
+                key="api_fu_patch_json",
+                value=json.dumps(
+                    {
+                        "follow_up_status": "pending",
+                        "follow_up_note": "Reminder set from Streamlit API tab",
+                    },
+                    indent=2,
+                ),
+            )
+            if st.button("PATCH /api/applications/{id}/follow-up", key="api_fu_patch_btn"):
+                if not (p_app or "").strip():
+                    st.error("Enter application_id (tracker row id)")
+                else:
+                    try:
+                        body = json.loads(fu_patch_json)
+                    except json.JSONDecodeError as je:
+                        st.error(f"Invalid JSON: {je}")
+                    else:
+                        try:
+                            path = f"/api/applications/{quote(p_app.strip(), safe='')}/follow-up"
+                            r = _call("PATCH", path, json_body=body, timeout=30.0)
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
+
+            pipe_patch_json = st.text_area(
+                "PATCH …/pipeline JSON (interview_stage, offer_outcome)",
+                height=100,
+                key="api_pipe_patch_json",
+                value=json.dumps({"interview_stage": "scheduled", "offer_outcome": ""}, indent=2),
+            )
+            if st.button("PATCH /api/applications/{id}/pipeline", key="api_pipe_patch_btn"):
+                if not (p_app or "").strip():
+                    st.error("Enter application_id (tracker row id)")
+                else:
+                    try:
+                        body = json.loads(pipe_patch_json)
+                    except json.JSONDecodeError as je:
+                        st.error(f"Invalid JSON: {je}")
+                    else:
+                        try:
+                            path = f"/api/applications/{quote(p_app.strip(), safe='')}/pipeline"
+                            r = _call("PATCH", path, json_body=body, timeout=30.0)
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
+
+            with st.expander("Admin routes (JWT / API key with admin role)", expanded=False):
+                st.caption(
+                    "Returns **403** unless the principal is admin (JWT role in JWT_ADMIN_ROLES, "
+                    "API_KEY_IS_ADMIN=1, or DEMO_USER_IS_ADMIN=1 for demo-user)."
+                )
+                if st.button("GET /api/admin/applications", key="api_adm_apps"):
+                    try:
+                        r = _call("GET", "/api/admin/applications", timeout=45.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                adm_ins_aud = st.checkbox("admin insights: include_audit", value=True, key="api_adm_ins_aud")
+                adm_ins_max = st.number_input(
+                    "admin insights: audit_max_lines", 100, 50000, 5000, key="api_adm_ins_max"
+                )
+                if st.button("GET /api/admin/insights", key="api_adm_ins"):
+                    try:
+                        r = _call(
+                            "GET",
+                            "/api/admin/insights",
+                            params={"include_audit": adm_ins_aud, "audit_max_lines": int(adm_ins_max)},
+                            timeout=90.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                if st.button("GET /api/admin/metrics/summary", key="api_adm_met"):
+                    try:
+                        r = _call("GET", "/api/admin/metrics/summary", timeout=20.0)
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                adm_celery_insp_to = st.number_input(
+                    "Celery inspect: timeout (s)", 0.5, 30.0, 2.0, step=0.5, key="api_adm_cel_insp_to"
+                )
+                if st.button("GET /api/admin/celery/inspect", key="api_adm_cel_insp"):
+                    try:
+                        r = _call(
+                            "GET",
+                            "/api/admin/celery/inspect",
+                            params={"timeout": float(adm_celery_insp_to)},
+                            timeout=min(45.0, float(adm_celery_insp_to) + 5.0),
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                adm_fu_due = st.checkbox("admin follow-ups: due_only", value=True, key="api_adm_fu_due")
+                adm_fu_sn = st.checkbox("admin follow-ups: include_snoozed", value=True, key="api_adm_fu_sn")
+                adm_fu_lim = st.number_input("admin follow-ups: limit", 1, 500, 100, key="api_adm_fu_lim")
+                if st.button("GET /api/admin/follow-ups", key="api_adm_fu"):
+                    try:
+                        r = _call(
+                            "GET",
+                            "/api/admin/follow-ups",
+                            params={
+                                "due_only": adm_fu_due,
+                                "include_snoozed": adm_fu_sn,
+                                "limit": int(adm_fu_lim),
+                                "sort_by_priority": True,
+                            },
+                            timeout=45.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                adm_dig_lim = st.number_input("admin digest: limit", 1, 200, 50, key="api_adm_dig_lim")
+                adm_dig_sn = st.checkbox("admin digest: include_snoozed", value=True, key="api_adm_dig_sn")
+                if st.button("GET /api/admin/follow-ups/digest", key="api_adm_dig"):
+                    try:
+                        r = _call(
+                            "GET",
+                            "/api/admin/follow-ups/digest",
+                            params={
+                                "include_snoozed": adm_dig_sn,
+                                "limit": int(adm_dig_lim),
+                                "sort_by_priority": True,
+                            },
+                            timeout=45.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+                adm_abj = st.text_input(
+                    "admin applications/by-job: job_id (any user)",
+                    value="",
+                    key="api_adm_abj",
+                    placeholder="external job id",
+                )
+                adm_abj_su = st.checkbox("admin by-job: signed_urls", value=False, key="api_adm_abj_su")
+                if st.button("GET /api/admin/applications/by-job/{job_id}", key="api_adm_abj_btn"):
+                    if not (adm_abj or "").strip():
+                        st.error("Enter job_id")
+                    else:
+                        try:
+                            path = f"/api/admin/applications/by-job/{quote(adm_abj.strip(), safe='')}"
+                            r = _call(
+                                "GET",
+                                path,
+                                params={"signed_urls": adm_abj_su},
+                                timeout=30.0,
+                            )
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
+
+                st.divider()
+                st.caption(
+                    "PATCH admin — same bodies as user PATCH; updates **any** row by internal id (no user scope)."
+                )
+                adm_patch_id = st.text_input(
+                    "admin PATCH: application_id (row id)",
+                    value="",
+                    key="api_adm_patch_id",
+                )
+                adm_fu_pjson = st.text_area(
+                    "admin PATCH …/follow-up JSON",
+                    height=100,
+                    key="api_adm_fu_pjson",
+                    value=json.dumps(
+                        {"follow_up_status": "pending", "follow_up_note": "Admin update via Streamlit"},
+                        indent=2,
+                    ),
+                )
+                if st.button("PATCH /api/admin/applications/{id}/follow-up", key="api_adm_fu_patch"):
+                    if not (adm_patch_id or "").strip():
+                        st.error("Enter application_id")
+                    else:
+                        try:
+                            body = json.loads(adm_fu_pjson)
+                        except json.JSONDecodeError as je:
+                            st.error(f"Invalid JSON: {je}")
+                        else:
+                            try:
+                                path = f"/api/admin/applications/{quote(adm_patch_id.strip(), safe='')}/follow-up"
+                                r = _call("PATCH", path, json_body=body, timeout=30.0)
+                                _show_api_response(r)
+                            except requests.RequestException as ex:
+                                st.error(f"Connection error: {ex}")
+
+                adm_pl_pjson = st.text_area(
+                    "admin PATCH …/pipeline JSON",
+                    height=90,
+                    key="api_adm_pl_pjson",
+                    value=json.dumps({"interview_stage": "scheduled", "offer_outcome": ""}, indent=2),
+                )
+                if st.button("PATCH /api/admin/applications/{id}/pipeline", key="api_adm_pl_patch"):
+                    if not (adm_patch_id or "").strip():
+                        st.error("Enter application_id")
+                    else:
+                        try:
+                            body = json.loads(adm_pl_pjson)
+                        except json.JSONDecodeError as je:
+                            st.error(f"Invalid JSON: {je}")
+                        else:
+                            try:
+                                path = f"/api/admin/applications/{quote(adm_patch_id.strip(), safe='')}/pipeline"
+                                r = _call("PATCH", path, json_body=body, timeout=30.0)
+                                _show_api_response(r)
+                            except requests.RequestException as ex:
+                                st.error(f"Connection error: {ex}")
+
+        st.caption(
+            "Browser automation (confirm Easy Apply, apply-to-jobs) is not triggered here — "
+            "see scripts/README.md (needs ATS_ALLOW_LINKEDIN_BROWSER on the API)."
+        )

@@ -59,6 +59,24 @@ def _token_matches_haystack(hay: str, token: str) -> bool:
     return t in hay
 
 
+def job_location_haystack(job: dict) -> str:
+    """Normalized lowercase text blob for job location / work mode (shared with address routing)."""
+    return _job_haystack(job)
+
+
+def job_is_remoteish(job: dict) -> bool:
+    """True if job appears remote or hybrid from work_type or description/title."""
+    return _is_remoteish(_job_haystack(job), job or {})
+
+
+def haystack_matches_region(hay: str, region: str) -> bool:
+    """True if ``region`` (city, state, country, metro label) plausibly appears in ``hay``."""
+    t = str(region or "").strip().lower()
+    if len(t) < 2:
+        return False
+    return _token_matches_haystack(hay, t)
+
+
 def check_job_location_policy(job: dict, profile: Optional[dict]) -> Tuple[str, str]:
     """
     Returns (\"ok\", \"\") to continue the rest of ``decide_apply_mode_with_reason``,

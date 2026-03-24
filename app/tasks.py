@@ -239,16 +239,21 @@ def enqueue_job(
 ) -> str:
     """Enqueue a new job and return its UUID (Celery task id)."""
     if idempotency_key:
-        from services.idempotency_keys import lookup_idempotent_job, store_idempotent_job
+        from services.idempotency_keys import (
+            resolve_idempotent_enqueue,
+            store_idempotent_job,
+            uses_db_for_idempotency,
+        )
 
-        existing = lookup_idempotent_job(user_id, idempotency_key)
-        if existing:
-            return existing
+        job_id, do_enqueue = resolve_idempotent_enqueue(user_id, idempotency_key)
+        if not do_enqueue:
+            return job_id
+    else:
+        job_id = str(uuid.uuid4())
 
-    job_id = str(uuid.uuid4())
     run_job.apply_async(args=(name, payload, user_id), task_id=job_id)
 
-    if idempotency_key:
+    if idempotency_key and not uses_db_for_idempotency():
         from services.idempotency_keys import store_idempotent_job
 
         store_idempotent_job(user_id, idempotency_key, job_id)

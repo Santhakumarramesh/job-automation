@@ -13,6 +13,327 @@ except ImportError:
     _APP_AVAILABLE = False
 
 
+def test_batch_prioritize_jobs_payload_empty():
+    from services.batch_prioritize_jobs import batch_prioritize_jobs_payload
+
+    assert batch_prioritize_jobs_payload([], "resume text " * 20)["status"] == "error"
+
+
+def test_review_unmapped_fields_payload():
+    from services.run_results_reports import review_unmapped_fields_payload
+
+    out = review_unmapped_fields_payload(
+        [
+            {"unmapped_fields": ["Salary expectation", "Sponsorship required"]},
+            {"unmapped_fields": ["Salary expectation"]},
+        ]
+    )
+    assert out["status"] == "ok"
+    assert out["total_unmapped"] == 3
+    assert out["unmapped_summary"].get("Salary expectation") == 2
+
+
+def test_application_audit_report_payload():
+    from services.run_results_reports import application_audit_report_payload
+
+    out = application_audit_report_payload(
+        [
+            {"status": "applied", "unmapped_fields": ["a"]},
+            {"status": "failed", "error": "timeout"},
+            {"status": "dry_run"},
+        ]
+    )
+    assert out["status"] == "ok"
+    assert out["applied"] == 1
+    assert out["failed"] == 1
+    assert out["dry_run"] == 1
+    assert "timeout" in (out.get("fail_reasons") or [])
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_autofill_values_no_profile(monkeypatch):
+    monkeypatch.setattr("services.profile_service.load_profile", lambda: {})
+    r = client.post("/api/ats/autofill-values", json={"form_type": "linkedin"})
+    assert r.status_code == 200
+    assert r.json().get("status") == "no_profile"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("enhanced_ats_checker.EnhancedATSChecker")
+def test_post_ats_batch_prioritize_jobs_mocked(mock_checker_cls):
+    inst = MagicMock()
+    inst.comprehensive_ats_check.return_value = {"ats_score": 91}
+    mock_checker_cls.return_value = inst
+    jd = "Senior Python engineer with AWS kubernetes docker. " * 15
+    resume = "Python developer with AWS and APIs experience. " * 15
+    job = {
+        "title": "Engineer",
+        "company": "ACME",
+        "description": jd,
+        "url": "https://example.com/j",
+        "easy_apply_confirmed": True,
+    }
+    r = client.post(
+        "/api/ats/batch-prioritize-jobs",
+        json={"jobs": [job], "master_resume_text": resume, "max_scored": 5},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert len(data.get("prioritized") or []) == 1
+    assert data["prioritized"][0].get("ats_score") == 91
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_batch_prioritize_jobs_too_many():
+    r = client.post(
+        "/api/ats/batch-prioritize-jobs",
+        json={"jobs": [{"description": "x" * 120}] * 501, "master_resume_text": "y" * 200},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_prepare_application_package_mocked(monkeypatch):
+    monkeypatch.setattr(
+        "services.profile_service.load_profile",
+        lambda: {"full_name": "Ada Lovelace", "email": "ada@example.com"},
+    )
+    monkeypatch.setattr(
+        "services.resume_naming.ensure_resume_exists_for_job",
+        lambda *args, **kwargs: "/tmp/Ada_Role_at_Co_Resume.pdf",
+    )
+
+    def _fake_aq(question_text, profile=None, job_context=None, **kwargs):
+        return {
+            "answer": "ok",
+            "manual_review_required": False,
+            "reason_codes": [],
+            "classified_type": "generic",
+        }
+
+    monkeypatch.setattr("agents.application_answerer.answer_question_structured", _fake_aq)
+    r = client.post(
+        "/api/ats/prepare-application-package",
+        json={"job_title": "Engineer", "company": "ACME"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("resume_path")
+    av = data.get("autofill_values") or {}
+    assert av.get("email") == "ada@example.com"
+    assert av.get("first_name") == "Ada"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_review_unmapped_fields():
+    r = client.post(
+        "/api/ats/review-unmapped-fields",
+        json={"run_results": [{"unmapped_fields": ["Years of Python"]}]},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("total_unmapped") == 1
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_application_audit_report():
+    r = client.post(
+        "/api/ats/application-audit-report",
+        json={"run_results": [{"status": "skipped", "unmapped_fields": ["x", "x"]}]},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("skipped") == 1
+    assert data.get("unmapped_fields_count") == 2
+
+
+def test_apply_to_jobs_payload_bad_json():
+    from services.linkedin_browser_automation import apply_to_jobs_payload
+
+    assert apply_to_jobs_payload("not-json")["status"] == "error"
+    assert apply_to_jobs_payload("[]")["status"] == "error"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_prepare_resume_for_job_mocked(monkeypatch):
+    monkeypatch.setattr(
+        "services.resume_naming.ensure_resume_exists_for_job",
+        lambda *args, **kwargs: "/tmp/Candidate_Role_at_ACME_Resume.pdf",
+    )
+    r = client.post(
+        "/api/ats/prepare-resume-for-job",
+        json={"job_title": "Role", "company": "ACME"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ready"
+    assert data.get("filename")
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_confirm_easy_apply_disabled(monkeypatch):
+    monkeypatch.delenv("ATS_ALLOW_LINKEDIN_BROWSER", raising=False)
+    r = client.post(
+        "/api/ats/confirm-easy-apply",
+        json={"job_url": "https://www.linkedin.com/jobs/view/123"},
+    )
+    assert r.status_code == 403
+    assert r.json().get("status") == "disabled"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_apply_to_jobs_disabled(monkeypatch):
+    monkeypatch.delenv("ATS_ALLOW_LINKEDIN_BROWSER", raising=False)
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": True,
+        },
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_apply_to_jobs_dry_run_disabled(monkeypatch):
+    monkeypatch.delenv("ATS_ALLOW_LINKEDIN_BROWSER", raising=False)
+    r = client.post(
+        "/api/ats/apply-to-jobs/dry-run",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+        },
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.apply_to_jobs_payload")
+def test_post_ats_apply_to_jobs_dry_run_enabled_forces_dry_run(mock_payload, monkeypatch):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    mock_payload.return_value = {"status": "ok", "applied": 0, "total": 1, "results": [], "results_file": "/tmp/x"}
+    client.post(
+        "/api/ats/apply-to-jobs/dry-run",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "rate_limit_seconds": 30.0,
+        },
+    )
+    mock_payload.assert_called_once()
+    ca = mock_payload.call_args
+    assert ca.kwargs.get("dry_run") is True
+    assert ca.kwargs.get("rate_limit_seconds") == 30.0
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.apply_to_jobs_payload")
+def test_post_ats_apply_to_jobs_enabled_mocked(mock_payload, monkeypatch):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    mock_payload.return_value = {
+        "status": "ok",
+        "applied": 0,
+        "total": 1,
+        "results": [],
+        "results_file": "/tmp/run.json",
+    }
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json().get("status") == "ok"
+    mock_payload.assert_called_once()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.confirm_easy_apply_payload")
+def test_post_ats_confirm_easy_apply_enabled_mocked(mock_confirm, monkeypatch):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    mock_confirm.return_value = {
+        "easy_apply_confirmed": True,
+        "status": "ok",
+        "url": "https://www.linkedin.com/jobs/view/123",
+        "matched_selector": "button",
+        "selectors_tried": [],
+    }
+    r = client.post(
+        "/api/ats/confirm-easy-apply",
+        json={"job_url": "https://www.linkedin.com/jobs/view/123"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json().get("easy_apply_confirmed") is True
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("langchain_openai.ChatOpenAI")
+def test_post_ats_generate_recruiter_followup_mocked(mock_llm_cls, monkeypatch):
+    monkeypatch.setattr(
+        "services.profile_service.load_profile",
+        lambda: {"full_name": "Test User"},
+    )
+    inst = MagicMock()
+    inst.invoke.return_value = MagicMock(
+        content='{"linkedin_message": "Hello", "email_subject": "Re role", "email_body": "Thanks"}'
+    )
+    mock_llm_cls.return_value = inst
+    r = client.post(
+        "/api/ats/generate-recruiter-followup",
+        json={"job_title": "PM", "company": "Co", "application_date": "2025-01-01"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("linkedin_message") == "Hello"
+
+
+def test_detect_form_type_payload_empty_url():
+    from services.form_type_detection import detect_form_type_payload
+
+    out = detect_form_type_payload("")
+    assert out.get("form_type") == "generic"
+    assert out.get("error")
+
+
+def test_linkedin_mcp_search_jobs_payload_blank_keywords():
+    from providers.linkedin_mcp_jobs import linkedin_mcp_search_jobs_payload
+
+    assert linkedin_mcp_search_jobs_payload(keywords="")["status"] == "error"
+    assert linkedin_mcp_search_jobs_payload(keywords="   ")["status"] == "error"
+
+
 def test_extract_search_keywords():
     """Role keyword extraction from master resume."""
     from agents.master_resume_guard import extract_search_keywords
@@ -23,6 +344,215 @@ def test_extract_search_keywords():
     assert "locations" in kw
     assert any("python" in s.lower() for s in kw["skills"])
     assert len(kw["job_titles"]) >= 1
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_get_ats_platform():
+    r = client.get(
+        "/api/ats/platform",
+        params={"job_url": "https://linkedin.com/jobs/view/1", "apply_url": "https://boards.greenhouse.io/x/jobs/9"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("listing_provider") == "linkedin_jobs"
+    assert data.get("apply_target_provider") == "greenhouse"
+    assert data.get("supports_auto_apply_v1") is False
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_truth_inventory_inline():
+    long_text = "Python AWS machine learning engineer with distributed systems. " * 12
+    r = client.post("/api/ats/truth-inventory", json={"master_resume_text": long_text})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("char_count", 0) >= 100
+    inv = data.get("inventory") or {}
+    assert isinstance(inv.get("skills"), list)
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_truth_inventory_rejects_path_traversal():
+    r = client.post("/api/ats/truth-inventory", json={"master_resume_path": "../.env"})
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_truth_inventory_rejects_absolute_path():
+    r = client.post("/api/ats/truth-inventory", json={"master_resume_path": "/etc/passwd"})
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_search_jobs_empty_keywords():
+    r = client.post("/api/ats/search-jobs", json={"keywords": ""})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("status") == "error"
+    assert data.get("count") == 0
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("providers.linkedin_mcp_jobs.fetch_linkedin_mcp_jobs")
+def test_post_ats_search_jobs_mocked(mock_fetch):
+    from providers.common_schema import JobListing
+
+    mock_fetch.return_value = [
+        JobListing(
+            title="Engineer",
+            company="ACME",
+            location="Remote",
+            description="Build things",
+            url="https://www.linkedin.com/jobs/view/1/",
+            job_id="1",
+        )
+    ]
+    r = client.post("/api/ats/search-jobs", json={"keywords": "python", "max_results": 5})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("count") == 1
+    assert data["jobs"][0].get("title") == "Engineer"
+    mock_fetch.assert_called_once()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.ats_service.EnhancedATSChecker")
+def test_post_ats_score_job_fit_mocked(mock_checker_cls):
+    inst = MagicMock()
+    inst.comprehensive_ats_check.return_value = {
+        "ats_score": 88,
+        "detailed_breakdown": {"missing_keywords": ["kubernetes"]},
+        "unsupported_requirements": [],
+        "truthful_missing_keywords": [],
+    }
+    mock_checker_cls.return_value = inst
+    jd = "Senior Python engineer with cloud and AWS experience required. " * 12
+    resume = "Python developer with AWS and REST APIs experience. " * 12
+    r = client.post(
+        "/api/ats/score-job-fit",
+        json={
+            "job_description": jd,
+            "master_resume_text": resume,
+            "job_title": "Engineer",
+            "company": "ACME",
+            "location": "USA",
+        },
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("ats_score") == 88
+    assert "fit_decision" in data
+    assert isinstance(data.get("missing_keywords"), list)
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_address_for_job(monkeypatch):
+    monkeypatch.setattr(
+        "services.profile_service.load_profile",
+        lambda: {
+            "full_name": "Jane Doe",
+            "mailing_address": {"city": "Austin", "state": "TX", "country": "USA"},
+            "alternate_mailing_addresses": [],
+        },
+    )
+    r = client.post(
+        "/api/ats/address-for-job",
+        json={"job_location": "Remote", "job_title": "Engineer"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("used_alternate") is False
+    assert "mailing_address_oneline" in data
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_get_ats_form_type_linkedin():
+    r = client.get(
+        "/api/ats/form-type",
+        params={"url": "https://www.linkedin.com/jobs/view/123/"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json().get("form_type") == "linkedin"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_validate_profile_rejects_path_traversal():
+    r = client.post("/api/ats/validate-profile", json={"profile_path": "../.env"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("status") == "error"
+    assert "project" in (data.get("message") or "").lower()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_decide_apply_mode_skip_on_reject_fit():
+    r = client.post(
+        "/api/ats/decide-apply-mode",
+        json={
+            "job": {"url": "https://www.linkedin.com/jobs/view/123/", "easy_apply_confirmed": True},
+            "fit_decision": "reject",
+            "ats_score": 95,
+            "unsupported_requirements": [],
+        },
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("apply_mode") == "skip"
+
+
+def test_decide_apply_mode_payload_skip_without_app():
+    from services.policy_service import decide_apply_mode_payload
+
+    out = decide_apply_mode_payload(
+        job={"url": "https://www.linkedin.com/jobs/view/1/"},
+        fit_decision="reject",
+        ats_score=95,
+        unsupported_requirements=[],
+    )
+    assert out.get("status") == "ok"
+    assert out.get("apply_mode") == "skip"
+
+
+def test_score_job_fit_payload_returns_error_on_checker_failure():
+    from services.ats_service import score_job_fit_payload
+
+    with patch("services.ats_service.EnhancedATSChecker", side_effect=RuntimeError("checker down")):
+        out = score_job_fit_payload("job description text " * 20, "master resume text " * 20)
+    assert out.get("status") == "error"
+    assert "checker down" in (out.get("message") or "")
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_analyze_form_live_disabled(monkeypatch):
+    monkeypatch.delenv("ATS_ALLOW_LIVE_FORM_PROBE", raising=False)
+    r = client.post(
+        "/api/ats/analyze-form/live",
+        json={"job_url": "https://example.com/", "apply_url": ""},
+    )
+    assert r.status_code == 403
+    data = r.json()
+    assert data.get("status") == "disabled"
+    assert "ATS_ALLOW_LIVE_FORM_PROBE" in (data.get("message") or "")
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_analyze_form():
+    r = client.post(
+        "/api/ats/analyze-form",
+        json={"job_url": "https://boards.greenhouse.io/acme/jobs/1", "apply_url": ""},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("status") == "ok"
+    assert data.get("provider_id") == "greenhouse"
+    fa = data.get("form_analysis") or {}
+    assert fa.get("status") == "schema_hints"
+    assert fa.get("flow") == "greenhouse_embedded_or_standalone"
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
@@ -38,10 +568,30 @@ def test_openapi_schema_grouped_by_tags():
     assert schema["info"]["title"] == "Career Co-Pilot Pro API"
     assert schema["info"].get("version") == "0.1.0"
     tag_names = {t["name"] for t in schema.get("tags", [])}
-    assert "jobs" in tag_names and "admin" in tag_names
+    assert "jobs" in tag_names and "admin" in tag_names and "ats" in tag_names
+    paths = schema.get("paths") or {}
+    assert "/api/ats/truth-inventory" in paths
+    assert "/api/ats/search-jobs" in paths
+    assert "/api/ats/score-job-fit" in paths
+    assert "/api/ats/address-for-job" in paths
+    assert "/api/ats/decide-apply-mode" in paths
+    assert "/api/ats/form-type" in paths
+    assert "/api/ats/validate-profile" in paths
+    assert "/api/ats/autofill-values" in paths
+    assert "/api/ats/batch-prioritize-jobs" in paths
+    assert "/api/ats/prepare-application-package" in paths
+    assert "/api/ats/review-unmapped-fields" in paths
+    assert "/api/ats/application-audit-report" in paths
+    assert "/api/ats/generate-recruiter-followup" in paths
+    assert "/api/ats/prepare-resume-for-job" in paths
+    assert "/api/ats/confirm-easy-apply" in paths
+    assert "/api/ats/apply-to-jobs" in paths
+    assert "/api/ats/apply-to-jobs/dry-run" in paths
     assert schema["paths"]["/api/jobs"]["post"]["tags"] == ["jobs"]
     assert schema["paths"]["/api/v1/jobs"]["post"]["tags"] == ["jobs"]
     assert schema["paths"]["/api/admin/applications"]["get"]["tags"] == ["admin"]
+    assert "/api/admin/celery/inspect" in paths
+    assert schema["paths"]["/api/admin/celery/inspect"]["get"]["tags"] == ["admin"]
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
@@ -148,3 +698,37 @@ def test_submit_job_idempotency_header_too_long():
     long_key = "x" * 201
     r = client.post("/api/jobs", json=job_data, headers={"Idempotency-Key": long_key})
     assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_celery_inspect_ok(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    monkeypatch.delenv("CELERY_ADMIN_INSPECT", raising=False)
+    with patch(
+        "services.celery_admin_inspect.celery_inspect_snapshot",
+        return_value={"ok": True, "timeout_sec": 2.0, "workers": {"ping": {}}},
+    ):
+        r = client.get("/api/admin/celery/inspect", headers={"X-API-Key": "admkey"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("ok") is True
+    assert "workers" in body
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_celery_inspect_forbidden_when_disabled(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    monkeypatch.setenv("CELERY_ADMIN_INSPECT", "0")
+    r = client.get("/api/admin/celery/inspect", headers={"X-API-Key": "admkey"})
+    assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_celery_inspect_requires_admin(monkeypatch):
+    monkeypatch.setenv("API_KEY", "userkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "0")
+    monkeypatch.delenv("CELERY_ADMIN_INSPECT", raising=False)
+    r = client.get("/api/admin/celery/inspect", headers={"X-API-Key": "userkey"})
+    assert r.status_code == 403

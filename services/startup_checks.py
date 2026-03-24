@@ -96,6 +96,19 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
         if backend and "localhost" in backend.lower():
             warnings.append("REDIS_BACKEND points at localhost in production — confirm this is intentional.")
 
+    if os.getenv("IDEMPOTENCY_USE_DB", "").lower() in ("1", "true", "yes"):
+        try:
+            from services.idempotency_db import can_use_db_for_idempotency, idempotency_db_requested
+
+            if idempotency_db_requested() and not can_use_db_for_idempotency():
+                warnings.append(
+                    "IDEMPOTENCY_USE_DB=1 but DB idempotency is inactive — "
+                    "Postgres requires TRACKER_USE_DB=1 and TRACKER_DATABASE_URL/DATABASE_URL; "
+                    "or use SQLite (DATABASE_URL=sqlite:///… or default job_applications.db)."
+                )
+        except Exception:
+            pass
+
     tracker_db_on = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
     if (strict or prod) and context in ("app", "worker", "streamlit") and not tracker_db_on:
         errors.append(

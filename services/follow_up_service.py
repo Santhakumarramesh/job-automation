@@ -57,7 +57,7 @@ def _fit_weight(fit_decision: Any) -> float:
     x = (str(fit_decision or "")).strip().lower()
     if x == "apply":
         return 1.0
-    if x in ("manual_review", "manual_assist", "manual review"):
+    if x in ("manual_review", "manual_assist", "manual review", "review"):
         return 0.7
     if x == "reject":
         return 0.2

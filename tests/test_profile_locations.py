@@ -6,6 +6,7 @@ from agents.application_answerer import (
 )
 from services.profile_service import (
     format_application_locations_summary,
+    format_mailing_address_dict,
     format_mailing_address_oneline,
     validate_profile,
 )
@@ -21,6 +22,11 @@ def test_format_application_locations_summary():
     s = format_application_locations_summary(p)
     assert "Bay" in s and "remote OK" in s
     assert "NYC" in s or "NY" in s
+
+
+def test_format_mailing_address_dict():
+    ma = {"street_line1": "2 Side", "city": "Denver", "state_region": "CO", "country": "US"}
+    assert "Denver" in format_mailing_address_dict(ma)
 
 
 def test_format_mailing_address_oneline():
@@ -42,6 +48,14 @@ def test_validate_profile_location_shapes():
     assert any("application_locations" in x for x in w)
     w2 = validate_profile({"full_name": "A", "email": "a@b.co", "mailing_address": []})
     assert any("mailing_address" in x for x in w2)
+    w3 = validate_profile(
+        {
+            "full_name": "A",
+            "email": "a@b.co",
+            "alternate_mailing_addresses": [{"label": "x", "regions_served": "nope"}],
+        }
+    )
+    assert any("regions_served" in x for x in w3)
 
 
 def test_answerer_relocation_falls_back_to_application_locations():

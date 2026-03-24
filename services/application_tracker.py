@@ -51,6 +51,11 @@ TRACKER_COLUMNS = [
     "follow_up_note",     # free text reminder
     "interview_stage",    # Phase 13+ — pipeline: none, scheduled, completed, advanced, rejected, withdrew, no_show
     "offer_outcome",      # none, pending, extended, accepted, declined, ghosted
+    "ats_provider",
+    "ats_provider_apply_target",
+    "truth_safe_ats_ceiling",
+    "selected_address_label",
+    "package_field_stats",
 ]
 
 # Legacy columns for backward compat
@@ -114,6 +119,8 @@ def initialize_tracker():
 def log_application(state: dict):
     """Logs a processed job application. Accepts graph state."""
     initialize_tracker()
+    from services.tracker_context import build_tracker_row_extras
+
     row = {
         "id": str(uuid.uuid4()),
         "source": state.get("job_source", "url"),
@@ -149,6 +156,7 @@ def log_application(state: dict):
         "interview_stage": str(state.get("interview_stage", "") or ""),
         "offer_outcome": str(state.get("offer_outcome", "") or ""),
     }
+    row.update(build_tracker_row_extras(state))
     if USE_DB:
         try:
             from services.tracker_db import log_application_db
@@ -174,6 +182,8 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     """
     initialize_tracker()
     job_metadata = job_metadata or {}
+    from services.tracker_context import build_tracker_row_extras
+
     screenshots_json = json.dumps(run_result.screenshot_paths) if run_result.screenshot_paths else ""
     qa_combined = dict(run_result.qa_audit) if run_result.qa_audit else {}
     ar = getattr(run_result, "answerer_review", None) or {}
@@ -219,6 +229,14 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "interview_stage": "",
         "offer_outcome": "",
     }
+    merge_state = {
+        "job_url": run_result.job_url,
+        "apply_url": job_metadata.get("apply_url", ""),
+        "truth_safe_ats_ceiling": job_metadata.get("truth_safe_ats_ceiling"),
+        "selected_address_label": job_metadata.get("selected_address_label"),
+        "package_field_stats": job_metadata.get("package_field_stats"),
+    }
+    row.update(build_tracker_row_extras(merge_state))
     if USE_DB:
         try:
             from services.tracker_db import log_application_db

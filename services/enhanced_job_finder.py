@@ -18,8 +18,9 @@ class EnhancedJobFinder:
 
     def analyze_resume_for_keywords(self, resume_text: str):
         """Legacy: kept for compatibility. Use get_jobs for new code."""
-        from providers.registry import _analyze_resume_keywords
-        kw = _analyze_resume_keywords(resume_text)
+        from services.prefit_ranker import prefit_keyword_bundle
+
+        kw = prefit_keyword_bundle(resume_text)
         return {
             "skills": kw["skills"],
             "job_titles": kw["job_titles"],

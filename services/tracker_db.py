@@ -31,6 +31,11 @@ TRACKER_COLUMNS = [
     "qa_audit", "artifacts_manifest", "retry_state", "user_id",
     "follow_up_at", "follow_up_status", "follow_up_note",
     "interview_stage", "offer_outcome",
+    "ats_provider",
+    "ats_provider_apply_target",
+    "truth_safe_ats_ceiling",
+    "selected_address_label",
+    "package_field_stats",
 ]
 
 FOLLOW_UP_COLUMN_SET = frozenset({"follow_up_at", "follow_up_status", "follow_up_note"})
@@ -186,6 +191,11 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             follow_up_note TEXT DEFAULT '',
             interview_stage TEXT DEFAULT '',
             offer_outcome TEXT DEFAULT '',
+            ats_provider TEXT DEFAULT '',
+            ats_provider_apply_target TEXT DEFAULT '',
+            truth_safe_ats_ceiling TEXT DEFAULT '',
+            selected_address_label TEXT DEFAULT '',
+            package_field_stats TEXT DEFAULT '{}',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -219,6 +229,21 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
         conn.commit()
     if "offer_outcome" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN offer_outcome TEXT DEFAULT ''")
+        conn.commit()
+    if "ats_provider" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN ats_provider TEXT DEFAULT ''")
+        conn.commit()
+    if "ats_provider_apply_target" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN ats_provider_apply_target TEXT DEFAULT ''")
+        conn.commit()
+    if "truth_safe_ats_ceiling" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN truth_safe_ats_ceiling TEXT DEFAULT ''")
+        conn.commit()
+    if "selected_address_label" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN selected_address_label TEXT DEFAULT ''")
+        conn.commit()
+    if "package_field_stats" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN package_field_stats TEXT DEFAULT '{}'")
         conn.commit()
 
 
@@ -255,6 +280,11 @@ def _init_schema_postgres(conn) -> None:
             follow_up_note TEXT DEFAULT '',
             interview_stage TEXT DEFAULT '',
             offer_outcome TEXT DEFAULT '',
+            ats_provider TEXT DEFAULT '',
+            ats_provider_apply_target TEXT DEFAULT '',
+            truth_safe_ats_ceiling TEXT DEFAULT '',
+            selected_address_label TEXT DEFAULT '',
+            package_field_stats TEXT DEFAULT '{}',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -267,6 +297,11 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "follow_up_note", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "interview_stage", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "offer_outcome", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "ats_provider", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "ats_provider_apply_target", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "truth_safe_ats_ceiling", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "selected_address_label", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
 
 
 def migrate_from_csv_sqlite(conn: sqlite3.Connection) -> int:
@@ -349,6 +384,17 @@ def _row_vals(row, col: str) -> str:
         return str(v or "")[:2000]
     if col in ("interview_stage", "offer_outcome"):
         return str(v or "").strip()[:120]
+    if col in ("ats_provider", "ats_provider_apply_target"):
+        return str(v or "").strip()[:120]
+    if col == "truth_safe_ats_ceiling":
+        return str(v or "").strip()[:32]
+    if col == "selected_address_label":
+        return str(v or "").strip()[:200]
+    if col == "package_field_stats":
+        s = str(v or "").strip()
+        if not s:
+            return "{}"
+        return s[:8000]
     return str(v or "")[:500]
 
 

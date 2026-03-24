@@ -56,6 +56,36 @@ def _top_counts(df, col: str, limit: int = 20) -> Dict[str, int]:
     return {str(k): int(v) for k, v in vc.items()}
 
 
+def _truth_ceiling_summary(df) -> Dict[str, Any]:
+    col = "truth_safe_ats_ceiling"
+    if col not in df.columns:
+        return {"count_numeric": 0, "mean": None, "min": None, "max": None, "missing": int(len(df))}
+    vals: List[float] = []
+    missing = 0
+    for x in df[col]:
+        s = str(x).strip() if x is not None else ""
+        if not s:
+            missing += 1
+            continue
+        try:
+            v = float(s.replace("%", ""))
+            if 0 <= v <= 100:
+                vals.append(v)
+            else:
+                missing += 1
+        except (TypeError, ValueError):
+            missing += 1
+    if not vals:
+        return {"count_numeric": 0, "mean": None, "min": None, "max": None, "missing": missing}
+    return {
+        "count_numeric": len(vals),
+        "mean": round(sum(vals) / len(vals), 2),
+        "min": round(min(vals), 2),
+        "max": round(max(vals), 2),
+        "missing": missing,
+    }
+
+
 def _ats_summary(df) -> Dict[str, Any]:
     if "ats_score" not in df.columns:
         return {"count_numeric": 0, "mean": None, "min": None, "max": None, "missing": int(len(df))}
@@ -238,6 +268,22 @@ def compute_tracker_crosstabs(df) -> Dict[str, Any]:
             label_b="policy_reason",
             limit=28,
         ),
+        "apply_mode_by_ats_provider_apply_target": _crosstab_top_pairs(
+            df,
+            "apply_mode",
+            "ats_provider_apply_target",
+            label_a="apply_mode",
+            label_b="ats_provider_apply_target",
+            limit=36,
+        ),
+        "submission_status_by_ats_provider_apply_target": _crosstab_top_pairs(
+            df,
+            "submission_status",
+            "ats_provider_apply_target",
+            label_a="submission_status",
+            label_b="ats_provider_apply_target",
+            limit=40,
+        ),
     }
 
 
@@ -282,6 +328,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
             "by_recruiter_response": {},
             "by_interview_stage": {},
             "by_offer_outcome": {},
+            "by_ats_provider": {},
+            "by_ats_provider_apply_target": {},
+            "truth_safe_ats_ceiling": _truth_ceiling_summary(df),
             "pipeline_correlations": compute_pipeline_correlations(df),
             "crosstabs": compute_tracker_crosstabs(df),
             "ats": _ats_summary(df),
@@ -311,6 +360,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
         "by_recruiter_response": by_rec,
         "by_interview_stage": by_iv,
         "by_offer_outcome": by_of,
+        "by_ats_provider": _top_counts(df, "ats_provider", 20),
+        "by_ats_provider_apply_target": _top_counts(df, "ats_provider_apply_target", 20),
+        "truth_safe_ats_ceiling": _truth_ceiling_summary(df),
         "pipeline_correlations": pipe_corr,
         "crosstabs": xtabs,
         "ats": _ats_summary(df),

@@ -25,12 +25,14 @@ class AgentState(TypedDict, total=False):
     
     # Job-fit gate (from master_resume_guard)
     job_fit_score: Optional[int]
-    fit_decision: str  # Apply | Review | Reject
+    fit_decision: str  # apply | manual_review | reject
     unsupported_requirements: List[str]
     truthful_missing_keywords: List[str]
     truth_safe_ats_ceiling: int
     truth_safe_ceiling_reason: str
     ceiling_limited_by: List[str]
+    selected_address_label: str
+    package_field_stats: dict
     
     # Resume Editor Outputs
     tailored_resume_text: str

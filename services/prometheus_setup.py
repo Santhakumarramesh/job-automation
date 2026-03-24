@@ -61,7 +61,21 @@ def install_prometheus(app: FastAPI) -> None:
             pass
         return response
 
+    try:
+        from services.prometheus_celery_bridge import (
+            refresh_celery_redis_gauges,
+            register_celery_redis_gauges,
+        )
+
+        register_celery_redis_gauges(REGISTRY)
+    except Exception:
+        pass
+
     @app.get("/metrics", include_in_schema=False)
     def _metrics_endpoint():
+        try:
+            refresh_celery_redis_gauges()
+        except Exception:
+            pass
         data = generate_latest(REGISTRY)
         return Response(data, media_type=CONTENT_TYPE_LATEST)

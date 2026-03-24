@@ -1,9 +1,10 @@
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -16,6 +17,7 @@ _OPENAPI_TAGS = [
     {"name": "jobs", "description": "Enqueue and inspect Celery background jobs."},
     {"name": "applications", "description": "Application tracker rows for the authenticated user."},
     {"name": "insights", "description": "Tracker aggregates, audit hints, and answerer rollups."},
+    {"name": "ats", "description": "ATS/board form hints and platform metadata (v1 static; MCP parity)."},
     {"name": "follow-ups", "description": "Follow-up queue and digests per user."},
     {"name": "admin", "description": "Cross-user operations (requires admin role or API_KEY_IS_ADMIN)."},
 ]
@@ -243,6 +245,528 @@ def list_applications(user=Depends(get_current_user)):
     return {"count": len(records), "items": records[:500]}
 
 
+class AnalyzeFormRequest(BaseModel):
+    job_url: str = Field(default="", max_length=2000, description="Job listing URL")
+    apply_url: str = Field(default="", max_length=2000, description="Apply target URL if different from listing")
+
+
+class AnalyzeFormLiveRequest(AnalyzeFormRequest):
+    max_fields: int = Field(40, ge=5, le=120, description="Max form controls to return from DOM")
+
+
+class TruthInventoryRequest(BaseModel):
+    """
+    Same resolution order as MCP ``build_truth_inventory_from_master_resume``:
+    long inline text wins; else optional **project-relative** ``master_resume_path``;
+    else server default (``RESUME_PATH`` / ``MASTER_RESUME_PDF`` / ``Master_Resumes/*``).
+    """
+
+    master_resume_text: str = Field(default="", max_length=600_000)
+    master_resume_path: str = Field(
+        default="",
+        max_length=2000,
+        description="Path relative to project root only (no absolute paths).",
+    )
+
+
+class SearchJobsRequest(BaseModel):
+    """
+    LinkedIn job discovery via MCP (``search_jobs`` tool parity).
+    Requires a running linkedin-mcp-server (``LINKEDIN_MCP_URL``, default ``http://127.0.0.1:8000/mcp``).
+    """
+
+    keywords: str = Field(default="", max_length=500)
+    location: str = Field(default="United States", max_length=200)
+    work_type: str = Field(default="remote", max_length=64)
+    max_results: int = Field(25, ge=1, le=100)
+    easy_apply: bool = False
+    date_posted: str = Field(default="", max_length=32)
+    job_type: str = Field(default="", max_length=64)
+    experience_level: str = Field(default="", max_length=64)
+    sort_order: str = Field(default="", max_length=64)
+
+
+class ScoreJobFitRequest(BaseModel):
+    """Fit gate + ATS snapshot (MCP ``score_job_fit`` parity)."""
+
+    job_description: str = Field(..., min_length=1, max_length=600_000)
+    master_resume_text: str = Field(..., min_length=1, max_length=600_000)
+    job_title: str = Field(default="", max_length=300)
+    company: str = Field(default="", max_length=300)
+    location: str = Field(default="USA", max_length=200)
+
+
+class AddressForJobRequest(BaseModel):
+    """Mailing address selection (MCP ``get_address_for_job`` parity)."""
+
+    job_location: str = Field(default="", max_length=2000)
+    job_title: str = Field(default="", max_length=500)
+    job_description: str = Field(default="", max_length=600_000)
+    work_type: str = Field(default="", max_length=120)
+
+
+class DecideApplyModeRequest(BaseModel):
+    """Central apply policy (MCP ``decide_apply_mode`` parity; JSON body instead of stringified job)."""
+
+    job: Dict[str, Any] = Field(default_factory=dict)
+    fit_decision: str = Field(default="", max_length=64)
+    ats_score: Optional[int] = None
+    unsupported_requirements: List[str] = Field(default_factory=list)
+
+
+class ValidateProfileRequest(BaseModel):
+    """Optional ``profile_path`` (project-relative only); empty uses default/env profile."""
+
+    profile_path: str = Field(default="", max_length=2000)
+
+
+class AutofillValuesRequest(BaseModel):
+    """Profile field suggestions (MCP ``get_autofill_values`` parity)."""
+
+    form_type: str = Field(default="linkedin", max_length=64)
+    question_hints: str = Field(default="", max_length=2000)
+
+
+class BatchPrioritizeRequest(BaseModel):
+    """Rank jobs by fit + ATS (MCP ``batch_prioritize_jobs`` parity). Max 500 jobs per request."""
+
+    jobs: List[Dict[str, Any]] = Field(..., min_length=1)
+    master_resume_text: str = Field(..., min_length=1, max_length=600_000)
+    max_scored: int = Field(20, ge=1, le=200)
+
+
+class PrepareApplicationPackageRequest(BaseModel):
+    """Manual-assist bundle: resume path, autofill map, short answers, optional fit gate (MCP ``prepare_application_package``)."""
+
+    job_title: str = Field(..., max_length=500)
+    company: str = Field(..., max_length=300)
+    job_description: str = Field(default="", max_length=600_000)
+    master_resume_text: str = Field(default="", max_length=600_000)
+    job_location: str = Field(default="", max_length=2000)
+    work_type: str = Field(default="", max_length=120)
+
+
+class RunResultsReportRequest(BaseModel):
+    """Batch apply run rows (same JSON shape as MCP on-disk run results). Max 2000 rows."""
+
+    run_results: List[Dict[str, Any]] = Field(default_factory=list, max_length=2000)
+
+
+class RecruiterFollowupRequest(BaseModel):
+    """LinkedIn + email follow-up drafts (MCP ``generate_recruiter_followup`` parity)."""
+
+    job_title: str = Field(..., max_length=500)
+    company: str = Field(..., max_length=300)
+    application_date: str = Field(default="", max_length=120)
+
+
+class PrepareResumeForJobRequest(BaseModel):
+    """Copy/rename resume PDF for a job (MCP ``prepare_resume_for_job`` parity)."""
+
+    job_title: str = Field(..., max_length=500)
+    company: str = Field(..., max_length=300)
+    resume_source_path: str = Field(default="", max_length=2000)
+
+
+class ConfirmEasyApplyRequest(BaseModel):
+    """LinkedIn listing URL to probe for Easy Apply (MCP ``confirm_easy_apply`` parity)."""
+
+    job_url: str = Field(..., min_length=12, max_length=2000)
+
+
+class ApplyToJobsRequest(BaseModel):
+    """
+    Batch apply (MCP ``apply_to_jobs`` / ``dry_run_apply_to_jobs`` parity).
+    Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1`` on the API. Max 50 jobs per request.
+    """
+
+    jobs: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+    dry_run: bool = False
+    rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
+    manual_assist: bool = False
+    require_safeguards: bool = True
+
+
+class DryRunApplyToJobsRequest(BaseModel):
+    """
+    Same as batch apply but always ``dry_run=True`` (MCP ``dry_run_apply_to_jobs`` parity).
+    """
+
+    jobs: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+    rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
+    manual_assist: bool = False
+    require_safeguards: bool = True
+
+
+_RUN_RESULTS_REPORT_MAX = 2000
+
+
+@api_router.post("/ats/truth-inventory", tags=["ats"])
+def ats_truth_inventory(body: TruthInventoryRequest):
+    """
+    Parse master resume into a JSON truth inventory (MCP ``build_truth_inventory_from_master_resume`` parity).
+    """
+    from agents.master_resume_guard import (
+        load_master_resume_text,
+        parse_master_resume,
+        read_resume_plaintext_file,
+        resolve_project_relative_resume_path,
+        truth_inventory_from_profile,
+    )
+
+    inline = (body.master_resume_text or "").strip()
+    text, src = "", ""
+    if len(inline) >= 100:
+        text, src = inline, "inline_text"
+    elif (body.master_resume_path or "").strip():
+        try:
+            p = resolve_project_relative_resume_path(body.master_resume_path)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        text = read_resume_plaintext_file(p)
+        src = str(p)
+        if len(text.strip()) < 100:
+            return {
+                "status": "error",
+                "message": "Resolved file has insufficient text (need 100+ characters).",
+                "source": src,
+                "inventory": {},
+            }
+    else:
+        text, src = load_master_resume_text("", "")
+
+    if len((text or "").strip()) < 100:
+        return {
+            "status": "error",
+            "message": "Need master resume text (100+ chars), a readable project-relative path, or server RESUME_PATH / Master_Resumes.",
+            "source": src or "",
+            "inventory": {},
+        }
+    profile = parse_master_resume(text)
+    return {
+        "status": "ok",
+        "source": src or "inline_text",
+        "char_count": len(text),
+        "inventory": truth_inventory_from_profile(profile),
+    }
+
+
+@api_router.post("/ats/search-jobs", tags=["ats"])
+def ats_search_jobs(body: SearchJobsRequest):
+    """
+    Search LinkedIn Jobs through the MCP bridge; each row matches the shared job schema (``JobListing.to_row()``).
+    """
+    from providers.linkedin_mcp_jobs import linkedin_mcp_search_jobs_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return linkedin_mcp_search_jobs_payload(**raw)
+
+
+@api_router.post("/ats/score-job-fit", tags=["ats"])
+def ats_score_job_fit(body: ScoreJobFitRequest):
+    """
+    Master-resume fit gate plus one comprehensive ATS check (same JSON as MCP ``score_job_fit``).
+    """
+    from services.ats_service import score_job_fit_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return score_job_fit_payload(**raw)
+
+
+@api_router.post("/ats/address-for-job", tags=["ats"])
+def ats_address_for_job(body: AddressForJobRequest):
+    """Pick profile mailing address for a job location (same JSON as MCP ``get_address_for_job``)."""
+    from services.address_for_job import address_for_job_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return address_for_job_payload(**raw)
+
+
+@api_router.post("/ats/decide-apply-mode", tags=["ats"])
+def ats_decide_apply_mode(body: DecideApplyModeRequest):
+    """Return ``auto_easy_apply`` | ``manual_assist`` | ``skip`` plus ``policy_reason`` (MCP parity)."""
+    from services.policy_service import decide_apply_mode_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return decide_apply_mode_payload(
+        job=raw.get("job") or {},
+        fit_decision=raw.get("fit_decision") or "",
+        ats_score=raw.get("ats_score"),
+        unsupported_requirements=raw.get("unsupported_requirements") or [],
+    )
+
+
+@api_router.get("/ats/form-type", tags=["ats"])
+def ats_form_type(url: str = Query("", max_length=2000, description="Job or apply page URL")):
+    """Form family from URL (MCP ``detect_form_type`` parity)."""
+    from services.form_type_detection import detect_form_type_payload
+
+    return detect_form_type_payload(url)
+
+
+@api_router.post("/ats/validate-profile", tags=["ats"])
+def ats_validate_profile(body: ValidateProfileRequest):
+    """Validate ``candidate_profile.json`` (MCP ``validate_candidate_profile`` parity)."""
+    from services.profile_service import validate_candidate_profile_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return validate_candidate_profile_payload(
+        raw.get("profile_path") or "",
+        restrict_to_project_relative=True,
+    )
+
+
+@api_router.post("/ats/autofill-values", tags=["ats"])
+def ats_autofill_values(body: AutofillValuesRequest):
+    """Suggested autofill map from candidate profile (MCP ``get_autofill_values`` parity)."""
+    from services.autofill_values import get_autofill_values_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return get_autofill_values_payload(
+        form_type=raw.get("form_type") or "linkedin",
+        question_hints=raw.get("question_hints") or "",
+    )
+
+
+@api_router.post("/ats/batch-prioritize-jobs", tags=["ats"])
+def ats_batch_prioritize_jobs(body: BatchPrioritizeRequest):
+    """Score and sort job dicts by Easy Apply flag, fit score, ATS score (MCP parity)."""
+    from services.batch_prioritize_jobs import batch_prioritize_jobs_payload
+
+    if len(body.jobs) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 jobs per request")
+    return batch_prioritize_jobs_payload(
+        body.jobs,
+        body.master_resume_text,
+        max_scored=body.max_scored,
+    )
+
+
+@api_router.post("/ats/prepare-application-package", tags=["ats"])
+def ats_prepare_application_package(body: PrepareApplicationPackageRequest):
+    """Resume path, autofill values, structured short answers, optional fit scores (MCP parity)."""
+    from services.application_package import prepare_application_package_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return prepare_application_package_payload(
+        job_title=raw.get("job_title") or "",
+        company=raw.get("company") or "",
+        job_description=raw.get("job_description") or "",
+        master_resume_text=raw.get("master_resume_text") or "",
+        job_location=raw.get("job_location") or "",
+        work_type=raw.get("work_type") or "",
+    )
+
+
+@api_router.post("/ats/review-unmapped-fields", tags=["ats"])
+def ats_review_unmapped_fields(body: RunResultsReportRequest):
+    """Unmapped field counts and profile-key hints from run result rows (MCP parity via JSON body)."""
+    from services.run_results_reports import review_unmapped_fields_payload
+
+    rows = body.run_results
+    if len(rows) > _RUN_RESULTS_REPORT_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {_RUN_RESULTS_REPORT_MAX} run result rows per request",
+        )
+    return review_unmapped_fields_payload(rows)
+
+
+@api_router.post("/ats/application-audit-report", tags=["ats"])
+def ats_application_audit_report(body: RunResultsReportRequest):
+    """Applied / skipped / failed counts and unmapped summary from run rows (MCP parity via JSON body)."""
+    from services.run_results_reports import application_audit_report_payload
+
+    rows = body.run_results
+    if len(rows) > _RUN_RESULTS_REPORT_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {_RUN_RESULTS_REPORT_MAX} run result rows per request",
+        )
+    return application_audit_report_payload(rows)
+
+
+@api_router.post("/ats/generate-recruiter-followup", tags=["ats"])
+def ats_generate_recruiter_followup(body: RecruiterFollowupRequest):
+    """Draft LinkedIn message and email subject/body from profile + role (MCP parity)."""
+    from services.recruiter_followup import generate_recruiter_followup_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return generate_recruiter_followup_payload(
+        job_title=raw.get("job_title") or "",
+        company=raw.get("company") or "",
+        application_date=raw.get("application_date") or "",
+    )
+
+
+@api_router.post("/ats/prepare-resume-for-job", tags=["ats"])
+def ats_prepare_resume_for_job(body: PrepareResumeForJobRequest):
+    """Ensure a job-specific resume PDF path under ``generated_resumes/`` (MCP parity)."""
+    from services.prepare_resume_for_job import prepare_resume_for_job_payload
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    return prepare_resume_for_job_payload(
+        job_title=raw.get("job_title") or "",
+        company=raw.get("company") or "",
+        resume_source_path=raw.get("resume_source_path") or "",
+    )
+
+
+@api_router.post(
+    "/ats/confirm-easy-apply",
+    tags=["ats"],
+    responses={403: {"description": "LinkedIn browser automation disabled on API."}},
+)
+def ats_confirm_easy_apply(body: ConfirmEasyApplyRequest):
+    """
+    Headless LinkedIn login + job page probe for Easy Apply (MCP parity).
+    Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1``, Playwright, and ``LINKEDIN_EMAIL`` / ``LINKEDIN_PASSWORD``.
+    """
+    from services.linkedin_browser_automation import confirm_easy_apply_payload
+    from services.linkedin_browser_gate import (
+        linkedin_browser_automation_disabled_response,
+        linkedin_browser_automation_enabled,
+    )
+
+    if not linkedin_browser_automation_enabled():
+        return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
+    return confirm_easy_apply_payload(body.job_url.strip())
+
+
+@api_router.post(
+    "/ats/apply-to-jobs",
+    tags=["ats"],
+    responses={403: {"description": "LinkedIn browser automation disabled on API."}},
+)
+def ats_apply_to_jobs(body: ApplyToJobsRequest):
+    """
+    Run the LinkedIn apply loop (or dry-run) for up to 50 jobs (MCP parity).
+    Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1``, Playwright, credentials, and (for default mode) Easy Apply–confirmed rows.
+    """
+    from services.linkedin_browser_automation import apply_to_jobs_payload
+    from services.linkedin_browser_gate import (
+        linkedin_browser_automation_disabled_response,
+        linkedin_browser_automation_enabled,
+    )
+
+    if not linkedin_browser_automation_enabled():
+        return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
+    return apply_to_jobs_payload(
+        body.jobs,
+        dry_run=body.dry_run,
+        rate_limit_seconds=body.rate_limit_seconds,
+        manual_assist=body.manual_assist,
+        require_safeguards=body.require_safeguards,
+    )
+
+
+@api_router.post(
+    "/ats/apply-to-jobs/dry-run",
+    tags=["ats"],
+    responses={403: {"description": "LinkedIn browser automation disabled on API."}},
+)
+def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest):
+    """
+    Fill application flows without submitting (MCP ``dry_run_apply_to_jobs`` parity).
+    Same gate and limits as ``POST /ats/apply-to-jobs`` with ``dry_run`` forced on.
+    """
+    from services.linkedin_browser_automation import apply_to_jobs_payload
+    from services.linkedin_browser_gate import (
+        linkedin_browser_automation_disabled_response,
+        linkedin_browser_automation_enabled,
+    )
+
+    if not linkedin_browser_automation_enabled():
+        return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
+    return apply_to_jobs_payload(
+        body.jobs,
+        dry_run=True,
+        rate_limit_seconds=body.rate_limit_seconds,
+        manual_assist=body.manual_assist,
+        require_safeguards=body.require_safeguards,
+    )
+
+
+@api_router.post("/ats/analyze-form", tags=["ats"])
+def ats_analyze_form(body: AnalyzeFormRequest):
+    """
+    Static form-flow hints per ATS/board plus platform metadata (same core as MCP ``analyze_form``).
+    Does not open a browser.
+    """
+    from services.ats_form_analysis import run_analyze_form
+
+    return run_analyze_form(job_url=body.job_url.strip(), apply_url=body.apply_url.strip())
+
+
+@api_router.get("/ats/platform", tags=["ats"])
+def ats_describe_platform_get(
+    job_url: str = Query("", max_length=2000, description="Job listing URL"),
+    apply_url: str = Query("", max_length=2000, description="Apply target URL if different"),
+):
+    """
+    ATS/board metadata: provider labels, v1 auto-submit policy, manual-assist capabilities,
+    and a preview of static ``analyze_form`` output (MCP ``describe_ats_platform`` parity).
+    """
+    from providers.ats.registry import describe_ats_platform
+
+    return {"status": "ok", **describe_ats_platform(job_url=job_url.strip(), apply_url=apply_url.strip())}
+
+
+@api_router.post(
+    "/ats/analyze-form/live",
+    tags=["ats"],
+    responses={403: {"description": "Live probe disabled (same JSON shape as MCP ``analyze_form_live``)."}},
+)
+def ats_analyze_form_live(body: AnalyzeFormLiveRequest):
+    """
+    **Optional** headless Chromium probe: lists visible input/select/textarea metadata (read-only).
+    Requires ``ATS_ALLOW_LIVE_FORM_PROBE=1`` and ``playwright`` + ``playwright install chromium``.
+    Merges with static ``analyze_form`` payload. Many sites block bots or require login — expect partial data.
+    """
+    from services.ats_form_analysis import run_analyze_form
+    from services.live_form_probe import (
+        live_form_probe_disabled_response,
+        live_form_probe_enabled,
+        probe_apply_page_fields,
+    )
+
+    if not live_form_probe_enabled():
+        return JSONResponse(status_code=403, content=live_form_probe_disabled_response())
+    target = (body.apply_url or body.job_url or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Provide apply_url or job_url for the page to load.")
+    live = probe_apply_page_fields(target, max_fields=body.max_fields)
+    static = run_analyze_form(job_url=body.job_url.strip(), apply_url=body.apply_url.strip())
+    return {"live": live, "static": static}
+
+
 @api_router.get("/insights", tags=["insights"])
 def application_insights(
     user=Depends(get_current_user),
@@ -349,6 +873,32 @@ def admin_metrics_summary(admin=Depends(require_admin)):
     from services.metrics_redis import get_celery_metrics_summary
 
     return get_celery_metrics_summary()
+
+
+@api_router.get("/admin/celery/inspect", tags=["admin"])
+def admin_celery_inspect(
+    admin=Depends(require_admin),
+    timeout: Optional[float] = Query(
+        None,
+        ge=0.5,
+        le=30.0,
+        description="Broker RPC timeout for inspect (default from CELERY_INSPECT_TIMEOUT or 2s)",
+    ),
+):
+    """
+    Phase 4.2.3 — live Celery worker snapshot: ping, active, reserved, scheduled, stats.
+
+    **None** values usually mean no worker replied (workers off, wrong broker, or cold start).
+    Disable entirely with ``CELERY_ADMIN_INSPECT=0`` on the API.
+    """
+    if os.getenv("CELERY_ADMIN_INSPECT", "").strip().lower() in ("0", "false", "no"):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin Celery inspect disabled (CELERY_ADMIN_INSPECT=0).",
+        )
+    from services.celery_admin_inspect import celery_inspect_snapshot
+
+    return celery_inspect_snapshot(timeout_sec=timeout)
 
 
 @api_router.get("/follow-ups", tags=["follow-ups"])

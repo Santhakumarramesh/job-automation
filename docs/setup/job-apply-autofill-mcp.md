@@ -11,11 +11,15 @@ Resumes are **renamed per job**: `{Name}_{Position}_at_{Company}_Resume.pdf`
 - **Proper resume naming** – Each application uses a job-specific resume path when tailored resume exists
 - **MCP tools** – Call from Cursor or any MCP client:
 
-  **Discovery:** `prepare_resume_for_job`, `get_autofill_values`, `detect_form_type`, `confirm_easy_apply`
+  **Discovery:** `prepare_resume_for_job`, `get_autofill_values` (REST: ``POST /api/ats/autofill-values``), `detect_form_type` (REST: ``GET /api/ats/form-type``), `confirm_easy_apply`
 
-  **Decision:** `decide_apply_mode`, `validate_candidate_profile`, `score_job_fit`, `batch_prioritize_jobs`
+  **Decision:** `decide_apply_mode`, `get_address_for_job`, `validate_candidate_profile` (REST: ``POST /api/ats/validate-profile``), `score_job_fit`, `batch_prioritize_jobs` (REST: ``POST /api/ats/batch-prioritize-jobs``)
 
   **Execution:** `apply_to_jobs`, `dry_run_apply_to_jobs`, `prepare_application_package`
+
+  **Truth + discovery:** `build_truth_inventory_from_master_resume`, `search_jobs` (LinkedIn MCP; set `LINKEDIN_MCP_URL`)
+
+  **ATS / forms (static + optional live):** `analyze_form`, `describe_ats_platform`, `analyze_form_live` (live probe needs `ATS_ALLOW_LIVE_FORM_PROBE=1` and Playwright Chromium — read-only DOM listing)
 
   **Review:** `review_unmapped_fields`, `application_audit_report`, `generate_recruiter_followup`
 
@@ -95,20 +99,26 @@ Replace `/path/to/career-co-pilot-pro` with your project root.
 
 | Tool | Purpose |
 |------|---------|
-| `decide_apply_mode` | Central policy: auto_easy_apply \| manual_assist \| skip |
-| `validate_candidate_profile` | Check profile completeness, auto_apply_ready |
-| `score_job_fit` | Fit score, ATS score, missing keywords, unsupported requirements |
+| `decide_apply_mode` | Central policy: auto_easy_apply \| manual_assist \| skip; REST: ``POST /api/ats/decide-apply-mode`` |
+| `validate_candidate_profile` | Check profile completeness, auto_apply_ready; REST: ``POST /api/ats/validate-profile`` |
+| `score_job_fit` | Fit score, ATS score, missing keywords, unsupported requirements; REST: ``POST /api/ats/score-job-fit`` |
 | `confirm_easy_apply` | Open job page, verify Easy Apply button exists |
+| `get_address_for_job` | Mailing address from profile for job location; REST: ``POST /api/ats/address-for-job`` |
 | `prepare_resume_for_job` | Job-specific resume path |
-| `get_autofill_values` | Profile-based form values |
+| `get_autofill_values` | Profile-based form values; REST: ``POST /api/ats/autofill-values`` |
 | `prepare_application_package` | Resume + autofill + fit/ATS for manual-assist |
 | `apply_to_jobs` | Live apply (Easy Apply only by default) |
 | `dry_run_apply_to_jobs` | Fill without submit; safe testing |
-| `detect_form_type` | LinkedIn vs Greenhouse vs Lever vs Workday |
+| `detect_form_type` | LinkedIn vs Greenhouse vs Lever vs Workday; REST: ``GET /api/ats/form-type?url=`` |
 | `review_unmapped_fields` | Summarize missed form fields |
 | `application_audit_report` | Batch run summary |
-| `batch_prioritize_jobs` | Rank jobs by fit, ATS, Easy Apply |
+| `batch_prioritize_jobs` | Rank jobs by fit, ATS, Easy Apply; REST: ``POST /api/ats/batch-prioritize-jobs`` |
 | `generate_recruiter_followup` | LinkedIn message + email draft |
+| `analyze_form` | Static ATS/board form hints + platform metadata (no browser) |
+| `describe_ats_platform` | Provider labels, v1 auto-submit policy, static analyze preview |
+| `analyze_form_live` | Optional headless Chromium field list + static merge; requires `ATS_ALLOW_LIVE_FORM_PROBE=1` |
+| `build_truth_inventory_from_master_resume` | Parse master resume → skills/tools/projects/URLs (truth base for fit + ATS) |
+| `search_jobs` | LinkedIn MCP job search → normalized job rows (`LINKEDIN_MCP_URL`); REST: ``POST /api/ats/search-jobs`` |
 
 ## Usage from Cursor
 
@@ -168,6 +178,7 @@ Log to `services/application_tracker.py`
 - `rate_limit_seconds=90` – Minimum delay between applications
 - `RESUME_PATH` – Override default resume location
 - `CANDIDATE_NAME` – Used for resume filename when profile missing
+- `ATS_ALLOW_LIVE_FORM_PROBE=1` – Enables MCP `analyze_form_live` (and API `POST /api/ats/analyze-form/live`); read-only DOM probe
 
 ## Login challenges
 

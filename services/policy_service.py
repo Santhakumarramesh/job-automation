@@ -8,13 +8,25 @@ Each decision includes a stable machine-readable policy_reason for audit/debug.
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+from providers.job_source import ATS_LINKEDIN_JOBS, ats_metadata_for_job, detect_ats_provider
+
 FIT_THRESHOLD_AUTO_APPLY = 85
+
+
+def normalize_fit_decision_label(fit_decision: str) -> str:
+    """Map legacy ``review`` to ``manual_review``; preserve other labels."""
+    s = str(fit_decision or "").strip()
+    if s.lower() == "review":
+        return "manual_review"
+    return s
+
 
 # Stable codes for audit logs, tracker.policy_reason, MCP responses
 REASON_SKIP_FIT = "skip_fit_decision_not_apply"
 REASON_SKIP_UNSUPPORTED = "skip_unsupported_requirements"
 REASON_SKIP_ATS = "skip_ats_below_threshold"
 REASON_MANUAL_NON_LINKEDIN = "manual_assist_non_linkedin_url"
+REASON_MANUAL_EXTERNAL_APPLY_TARGET = "manual_assist_external_apply_url"
 REASON_MANUAL_EASY_APPLY_UNCONFIRMED = "manual_assist_easy_apply_not_confirmed"
 REASON_MANUAL_PROFILE_INCOMPLETE = "manual_assist_profile_incomplete_for_auto"
 REASON_MANUAL_ANSWERER_REVIEW = "manual_assist_answerer_manual_review_required"
@@ -61,6 +73,7 @@ def decide_apply_mode_with_reason(
     """
     job = job or {}
     unsup = unsupported_requirements or []
+    fit_decision = normalize_fit_decision_label(str(fit_decision or ""))
 
     if fit_decision and str(fit_decision).lower() != "apply":
         return "skip", REASON_SKIP_FIT
@@ -79,9 +92,17 @@ def decide_apply_mode_with_reason(
     if loc_action == "manual_assist":
         return "manual_assist", loc_reason
 
-    url = str(job.get("url") or job.get("apply_url") or job.get("applyUrl") or "")
-    if "linkedin.com" not in url.lower():
+    listing_url = str(
+        job.get("url") or job.get("job_url") or job.get("jobUrl") or ""
+    )
+    apply_raw = str(job.get("apply_url") or job.get("applyUrl") or "").strip()
+    apply_target = apply_raw or listing_url
+
+    if detect_ats_provider(listing_url) != ATS_LINKEDIN_JOBS:
         return "manual_assist", REASON_MANUAL_NON_LINKEDIN
+
+    if detect_ats_provider(apply_target) != ATS_LINKEDIN_JOBS:
+        return "manual_assist", REASON_MANUAL_EXTERNAL_APPLY_TARGET
 
     if not job.get("easy_apply_confirmed", False):
         return "manual_assist", REASON_MANUAL_EASY_APPLY_UNCONFIRMED
@@ -123,7 +144,7 @@ def policy_from_exported_job(job: Dict[str, Any]) -> Tuple[str, str]:
     desc = str(job.get("description") or job.get("job_description") or "")
     job_policy = {
         "url": job.get("url") or job.get("job_url", ""),
-        "apply_url": job.get("apply_url") or job.get("url") or "",
+        "apply_url": job.get("apply_url") or job.get("applyUrl") or "",
         "easy_apply_confirmed": bool(job.get("easy_apply_confirmed", False)),
         "location": job.get("location") or job.get("locationName") or job.get("job_location") or "",
         "title": job.get("title") or job.get("position") or "",
@@ -140,6 +161,37 @@ def policy_from_exported_job(job: Dict[str, Any]) -> Tuple[str, str]:
         profile_ready=is_auto_apply_ready(prof),
         profile=prof,
     )
+
+
+def enrich_job_dict_for_policy_export(
+    job: Dict[str, Any],
+    *,
+    profile: Optional[dict] = None,
+    master_resume_text: str = "",
+    use_llm_preview: bool = False,
+) -> Dict[str, Any]:
+    """
+    Run canonical answerer preview, then set ``apply_mode`` and ``policy_reason``.
+    Used by Streamlit JSON export and table sync (keeps UI + export aligned).
+    """
+    from agents.application_answerer import build_answerer_preview_for_export
+    from services.profile_service import load_profile
+
+    j = dict(job or {})
+    prof = profile if profile is not None else load_profile()
+    ar, pend = build_answerer_preview_for_export(
+        prof,
+        j,
+        master_resume_text=master_resume_text or "",
+        use_llm=use_llm_preview,
+    )
+    j["answerer_review"] = ar
+    j["answerer_manual_review_required"] = pend
+    j.update(ats_metadata_for_job(j))
+    mode, reason = policy_from_exported_job(j)
+    j["apply_mode"] = mode
+    j["policy_reason"] = reason
+    return j
 
 
 def decide_apply_mode(
@@ -166,3 +218,31 @@ def decide_apply_mode(
         job, fit_decision, ats_score, unsupported_requirements, profile_ready, profile=prof
     )
     return mode
+
+
+def decide_apply_mode_payload(
+    job: Optional[Dict[str, Any]] = None,
+    fit_decision: str = "",
+    ats_score: Optional[int] = None,
+    unsupported_requirements: Optional[List[str]] = None,
+) -> dict:
+    """
+    MCP ``decide_apply_mode`` + REST parity: load profile, ``is_auto_apply_ready``, return mode + reason.
+    """
+    try:
+        from services.profile_service import load_profile, is_auto_apply_ready
+
+        j = dict(job or {})
+        prof = load_profile()
+        profile_ready = is_auto_apply_ready(prof)
+        mode, reason = decide_apply_mode_with_reason(
+            j,
+            fit_decision or "",
+            ats_score,
+            unsupported_requirements or [],
+            profile_ready=profile_ready,
+            profile=prof,
+        )
+        return {"status": "ok", "apply_mode": mode, "policy_reason": reason}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:200], "apply_mode": "", "policy_reason": ""}

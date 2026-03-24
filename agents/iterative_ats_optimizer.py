@@ -35,6 +35,7 @@ def run_iterative_ats_optimizer(
 
     current_resume = master_text
     current_score = 0
+    first_ats_score: Optional[int] = None
     attempt = 0
     last_feedback = []
     last_missing = []
@@ -54,6 +55,8 @@ def run_iterative_ats_optimizer(
 
         ats_result = _run_ats_check(current_resume)
         current_score = ats_result.get("ats_score", 0)
+        if first_ats_score is None:
+            first_ats_score = int(current_score)
         last_feedback = ats_result.get("feedback", [])
         if isinstance(last_feedback, str):
             last_feedback = last_feedback.split("\n") if last_feedback else []
@@ -63,7 +66,7 @@ def run_iterative_ats_optimizer(
             return {
                 "tailored_resume_text": current_resume,
                 "humanized_resume_text": current_resume,
-                "initial_ats_score": current_score,
+                "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
                 "final_ats_score": current_score,
                 "feedback": last_feedback,
                 "missing_keywords": last_missing,
@@ -79,7 +82,7 @@ def run_iterative_ats_optimizer(
                 return {
                     "tailored_resume_text": current_resume,
                     "humanized_resume_text": current_resume,
-                    "initial_ats_score": current_score,
+                    "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
                     "final_ats_score": current_score,
                     "feedback": last_feedback,
                     "missing_keywords": last_missing,
@@ -110,11 +113,12 @@ def run_iterative_ats_optimizer(
     return {
         "tailored_resume_text": current_resume,
         "humanized_resume_text": current_resume,
-        "initial_ats_score": current_score,
+        "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
         "final_ats_score": current_score,
         "feedback": last_feedback,
         "missing_keywords": last_missing,
         "truthful_missing_keywords": last_truthful_missing,
         "attempts": attempt,
         "converged": current_score >= target_score,
+        "stopped_after_max_attempts": bool(attempt >= max_attempts and current_score < target_score),
     }

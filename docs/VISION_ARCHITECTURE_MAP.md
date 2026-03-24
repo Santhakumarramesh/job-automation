@@ -112,19 +112,19 @@ Legend: **✅** in place · **⚠️** partial / needs hardening · **📋** pla
 |---|----------------|----------------------|--------|
 | 1 | Master resume as truth source | `agents/master_resume_guard.py`, `services/document_service.py` | Parse + inventory + unsupported JD checks |
 | 2 | Candidate profile (application layer) | `services/profile_service.py`, `config/candidate_profile.example.json` | Extend validation / auto-apply gates as needed |
-| 3 | Job discovery (MCP + providers) | `providers/registry.py`, `providers/linkedin_mcp_jobs.py`, `providers/apify_jobs.py` | Unified schema in `providers/common_schema.py` |
+| 3 | Job discovery (MCP + providers) | `providers/registry.py`, `providers/linkedin_mcp_jobs.py`, `providers/apify_jobs.py`, `providers/ats/` | Unified schema in `providers/common_schema.py`; pre-fit rank in `services/prefit_ranker.py`; adapter registry + MCP `describe_ats_platform` |
 | 4 | Easy Apply confirmation | `JobListing.easy_apply_*`, `providers/linkedin_mcp_jobs.py`, MCP tools | Keep **filter** vs **confirmed** separate; broaden confirmation coverage **⚠️** |
 | 5 | Truthful fit gate | `agents/master_resume_guard.py`, `services/ats_service.py` (`check_fit_gate`) | apply / manual_review / reject + unsupported list |
 | 6 | ATS-oriented JD matching | `agents/enhanced_ats_checker.py`, `services/ats_service.py` | **Internal** score ≠ employer ATS guarantee (README / PRODUCTION_READINESS) |
-| 7 | Truth-safe iterative optimizer | `agents/iterative_ats_optimizer.py`, `services/ats_service.py` | Ceiling / “max truthful” UX still **📋** |
+| 7 | Truth-safe iterative optimizer | `agents/iterative_ats_optimizer.py`, `services/ats_service.py`, `services/truth_safe_ats.py` | Ceiling + reasons in service, Streamlit, MCP **✅** |
 | 8 | Tailored documents + naming | `agents/resume_editor.py`, `agents/cover_letter_generator.py`, `services/resume_naming.py` | Job-specific PDF naming |
-| 9 | Address by job location (truthful) | `mailing_address`, `application_locations`, `services/job_location_match.py`, answerer | **Alternate addresses per region** + selector logic still **📋** beyond current structured fields |
+| 9 | Address by job location (truthful) | `mailing_address`, **`alternate_mailing_addresses`**, `services/address_for_job.py`, `job_location_match` haystack helpers, MCP `get_address_for_job`, package `address_selection` | **✅** selector; optional Streamlit row wiring **📋** |
 | 10 | Humanized answer engine | `agents/application_answerer.py` | Manual-review flags; feed exports / policy **⚠️** |
-| 11 | Central policy engine | `services/policy_service.py` | `decide_apply_mode()` + **answerer** `manual_review` → `manual_assist` (`REASON_MANUAL_ANSWERER_REVIEW`) **✅** |
+| 11 | Central policy engine | `services/policy_service.py`, `providers/job_source.py` | `decide_apply_mode()` + LinkedIn **`/jobs/`** + apply-target gate + **answerer** `manual_review` → `manual_assist` **✅** |
 | 12 | MCP tool layer | `mcp_servers/job_apply_autofill/server.py` | Map wish-list tools to existing + gaps **⚠️** |
 | 13 | Auto-apply execution | `agents/application_runner.py` | Easy Apply–only auto path; external ATS not auto-submit |
 | 14 | Manual-assist lane | UI export, MCP package, runner `manual_assist` | External ATS heuristics **⚠️** |
-| 15 | Tracking & audit | `services/application_tracker.py`, `services/tracker_db.py`, `services/observability.py` | CSV / SQLite / Postgres + API |
+| 15 | Tracking & audit | `services/application_tracker.py`, `services/tracker_db.py`, `services/tracker_context.py`, `services/observability.py` | CSV / SQLite / Postgres + API + audit columns (`ats_*`, ceiling, address label, package stats) |
 | 16 | Follow-up automation | `services/follow_up_service.py`, MCP follow-up, `scripts/*_follow_up*.py` | Queue, digests, email / webhook / Telegram |
 | 17 | Learning loop | `services/application_insights.py`, `scripts/print_insights.py`, tracker correlations | Heuristics today; deeper closed-loop tuning **📋** |
 
@@ -145,7 +145,7 @@ Legend: **✅** in place · **⚠️** partial / needs hardening · **📋** pla
 
 **Already strong:** modular UI (`ui/streamlit_app.py`), fit gate, internal ATS + iterative loop, multi-provider jobs, profile + answerer, resume naming, tracker + Postgres path, policy service, MCP autofill + runner, follow-ups + insights.
 
-**Highest-leverage upgrades (aligned with this vision):** Easy Apply **confirmation** coverage; **truth ceiling** messaging in optimizer UX; **address routing** (alternate truthful addresses by region); wire **answerer preview** into job exports so policy sees flags before run; MCP tool catalog doc; external ATS remains **manual-assist** by design.
+**Highest-leverage upgrades (aligned with this vision):** Easy Apply **confirmation** coverage; **real** per-board **`analyze_form`** (DOM) on top of `providers/ats/` stubs; insights rollups on new tracker columns; MCP tool catalog doc; external ATS remains **manual-assist** for live submit in v1.
 
 ---
 
