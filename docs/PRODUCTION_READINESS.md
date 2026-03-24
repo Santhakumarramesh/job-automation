@@ -37,6 +37,8 @@ Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI pr
 
 **Versioned base URL:** the same routes are mounted at `/api` and `/api/v1` by default. Set `API_V1_DUPLICATE_ROUTES=0` to expose only `/api` (slimmer OpenAPI).
 
+**CORS:** set `API_CORS_ORIGINS` to a comma-separated allowlist (or `*` for local dev only). Unset = no CORS middleware (`services/api_cors.py`).
+
 ## Known gaps
 
 1. **Easy Apply truthfulness** — `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter).

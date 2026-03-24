@@ -55,11 +55,13 @@ app = FastAPI(
 )
 app.add_middleware(_CorrelationMiddleware)
 
+from services.api_cors import install_cors_middleware
 from services.prometheus_setup import install_prometheus
 from services.rate_limit import install_rate_limit_middleware
 
 install_prometheus(app)
 install_rate_limit_middleware(app)
+install_cors_middleware(app)
 
 api_router = APIRouter()
 
