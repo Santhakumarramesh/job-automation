@@ -36,7 +36,7 @@ Single-page snapshot: **strong prototype**, **not production-ready** for unatten
 ## Red (blockers for “production”)
 
 - **Auth**: JWT + API key are supported; **open demo-user** is only acceptable outside production — startup fails in `APP_ENV=production` without credentials.
-- **API surface**: useful but not a full hardened public API product — rate limits, versioning, and WAF are operator-owned.
+- **API surface**: useful but not a full hardened public API product — optional in-process rate limit (`API_RATE_LIMIT_ENABLED`, `services/rate_limit.py`); versioning and WAF remain operator-owned at the edge.
 - **Workers**: Celery + Redis; treat broker/backend URLs and secrets as production infrastructure.
 - **Packaging**: `setuptools` includes `services`, `providers`, `ui`, `mcp_servers`, etc. **MCP/Playwright** are optional: `pip install -e ".[apply]"`. **Production bundle**: `pip install -e ".[production]"`.
 - **Easy Apply**: Auto-apply paths require **confirmed** Easy Apply on the job record and policy `auto_easy_apply`; otherwise **manual_assist** or **skip**.

@@ -36,8 +36,10 @@ app = FastAPI(title="Job Automation API", lifespan=lifespan)
 app.add_middleware(_CorrelationMiddleware)
 
 from services.prometheus_setup import install_prometheus
+from services.rate_limit import install_rate_limit_middleware
 
 install_prometheus(app)
+install_rate_limit_middleware(app)
 
 class JobRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)

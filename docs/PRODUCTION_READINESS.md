@@ -31,6 +31,10 @@ Auto-apply **only** proceeds when all of these are met:
 4. **No unsupported requirements** — When metadata provided, `unsupported_requirements` must be empty
 5. **External ATS = manual-assist** — Greenhouse/Lever/Workday not auto-submitted; engine skips them by default
 
+## API rate limiting (optional)
+
+Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI process (`services/rate_limit.py`). Exempt paths include `/health`, `/ready`, `/metrics`, and OpenAPI UI routes. Prefer **ingress / WAF limits** when running multiple API replicas (in-memory counts are not shared).
+
 ## Known gaps
 
 1. **Easy Apply truthfulness** — `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter).
