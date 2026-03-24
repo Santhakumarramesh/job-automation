@@ -2,6 +2,7 @@
 Phase 3.3.2 — idempotent job enqueue (file-backed).
 
 Same (user_id, idempotency_key) within TTL returns the original task id.
+The API accepts the key as JSON ``idempotency_key`` or ``Idempotency-Key`` header (see ``app.main``).
 
 Env:
   IDEMPOTENCY_DIR — default ``<project>/data/idempotency``

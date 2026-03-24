@@ -20,7 +20,7 @@
 
 ## Idempotent enqueue
 
-- Request body: **`idempotency_key`** (optional string, max 200 chars).
+- Request body: **`idempotency_key`** (optional string, max 200 chars), or HTTP header **`Idempotency-Key`** (same limits). If both are sent, they must be identical.
 - Same **`user_id` + idempotency_key** within **`IDEMPOTENCY_TTL_HOURS`** (default 24) returns the existing Celery task id without enqueueing again.
 - Storage: **`data/idempotency/`** (override with **`IDEMPOTENCY_DIR`**). File-backed; not safe for high-concurrency multi-host without Redis.
 

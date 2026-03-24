@@ -33,7 +33,7 @@ Auto-apply **only** proceeds when all of these are met:
 
 ## API rate limiting (optional)
 
-Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI process (`services/rate_limit.py`). Exempt paths include `/health`, `/ready`, `/metrics`, and OpenAPI UI routes. Prefer **ingress / WAF limits** when running multiple API replicas (in-memory counts are not shared).
+Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI process (`services/rate_limit.py`). Exempt paths include `/health`, `/ready`, `/metrics`, and OpenAPI UI routes. Prefer **ingress / WAF limits** when running multiple API replicas (in-memory counts are not shared). With `APP_ENV=production`, startup warns if in-app rate limiting is off unless you set `API_RATE_LIMIT_SKIP_STARTUP_WARN=1` (after confirming edge limits).
 
 ## Known gaps
 

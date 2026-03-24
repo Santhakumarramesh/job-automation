@@ -3,7 +3,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -47,7 +47,10 @@ class JobRequest(BaseModel):
     idempotency_key: Optional[str] = Field(
         default=None,
         max_length=200,
-        description="Optional key; same key+user returns the same job_id within TTL (see IDEMPOTENCY_TTL_HOURS).",
+        description=(
+            "Optional key; same key+user returns the same job_id within TTL (see IDEMPOTENCY_TTL_HOURS). "
+            "You may send Idempotency-Key HTTP header instead; if both are sent they must match."
+        ),
     )
 
 
@@ -152,14 +155,41 @@ def _artifacts_with_optional_signed_urls(artifacts: dict, signed_urls: bool) -> 
     return {**artifacts, "signed_urls": signed}
 
 
+def _resolve_job_idempotency_key(
+    header_key: Optional[str],
+    body_key: Optional[str],
+) -> Optional[str]:
+    h = (header_key or "").strip()
+    b = (body_key or "").strip()
+    if h and b and h != b:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key header and idempotency_key in JSON body must match when both are sent",
+        )
+    out = h or b or None
+    if out and len(out) > 200:
+        raise HTTPException(status_code=400, detail="idempotency key exceeds 200 characters")
+    return out
+
+
 @app.post("/api/jobs", status_code=202)
-def submit_job(req: JobRequest, request: Request, user=Depends(get_current_user)):
+def submit_job(
+    req: JobRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    idempotency_key_header: Optional[str] = Header(
+        None,
+        alias="Idempotency-Key",
+        description="Same semantics as idempotency_key in body; header and body must agree if both set.",
+    ),
+):
+    idem = _resolve_job_idempotency_key(idempotency_key_header, req.idempotency_key)
     payload = {**req.payload, "user_id": user.id}
     job_id = enqueue_job(
         req.name,
         payload,
         user.id,
-        idempotency_key=req.idempotency_key,
+        idempotency_key=idem,
     )
     try:
         from services.observability import audit_log

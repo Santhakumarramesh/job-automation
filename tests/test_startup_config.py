@@ -95,3 +95,57 @@ def test_is_strict_respects_strict_startup_off():
         clear=False,
     ):
         assert is_strict_startup() is False
+
+
+def test_production_warns_when_rate_limit_disabled():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "k",
+            "JWT_SECRET": "x" * 32,
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+        },
+        clear=False,
+    ):
+        os.environ.pop("API_RATE_LIMIT_ENABLED", None)
+        os.environ.pop("API_RATE_LIMIT_SKIP_STARTUP_WARN", None)
+        _, warnings = collect_startup_report("app")
+    assert any("API_RATE_LIMIT_ENABLED is not set" in w for w in warnings)
+
+
+def test_production_rate_limit_warning_suppressed():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "k",
+            "JWT_SECRET": "x" * 32,
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+            "API_RATE_LIMIT_SKIP_STARTUP_WARN": "1",
+        },
+        clear=False,
+    ):
+        os.environ.pop("API_RATE_LIMIT_ENABLED", None)
+        _, warnings = collect_startup_report("app")
+    assert not any("API_RATE_LIMIT_ENABLED is not set" in w for w in warnings)
+
+
+def test_development_does_not_warn_rate_limit():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {"APP_ENV": "development"},
+        clear=False,
+    ):
+        _, warnings = collect_startup_report("app")
+    assert not any("API_RATE_LIMIT_ENABLED is not set" in w for w in warnings)

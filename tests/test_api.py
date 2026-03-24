@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,3 +86,30 @@ def test_submit_job():
     body = response.json()
     assert body["status"] == "accepted"
     assert body["job_id"] == "00000000-0000-0000-0000-000000000099"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_idempotency_header():
+    job_data = {"name": "J", "payload": {}}
+    mock = MagicMock(return_value="job-uuid-1")
+    with patch("app.main.enqueue_job", mock):
+        r = client.post("/api/jobs", json=job_data, headers={"Idempotency-Key": " k1 "})
+    assert r.status_code == 202
+    mock.assert_called_once()
+    assert mock.call_args.kwargs["idempotency_key"] == "k1"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_idempotency_header_and_body_must_agree():
+    job_data = {"name": "J", "payload": {}, "idempotency_key": "a"}
+    with patch("app.main.enqueue_job", return_value="x"):
+        r = client.post("/api/jobs", json=job_data, headers={"Idempotency-Key": "b"})
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_idempotency_header_too_long():
+    job_data = {"name": "J", "payload": {}}
+    long_key = "x" * 201
+    r = client.post("/api/jobs", json=job_data, headers={"Idempotency-Key": long_key})
+    assert r.status_code == 400

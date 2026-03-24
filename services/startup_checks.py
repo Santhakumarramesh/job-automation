@@ -146,6 +146,14 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
                 "PROMETHEUS_METRICS=1 but prometheus_client missing — pip install .[metrics]"
             )
 
+    if context == "app" and prod:
+        if (os.getenv("API_RATE_LIMIT_ENABLED") or "").lower() not in ("1", "true", "yes"):
+            if (os.getenv("API_RATE_LIMIT_SKIP_STARTUP_WARN") or "").lower() not in ("1", "true", "yes"):
+                warnings.append(
+                    "API_RATE_LIMIT_ENABLED is not set — enable in-app limits (API_RATE_LIMIT_ENABLED=1) "
+                    "or set API_RATE_LIMIT_SKIP_STARTUP_WARN=1 after confirming ingress/WAF rate limits."
+                )
+
     return errors, warnings
 
 
