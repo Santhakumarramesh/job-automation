@@ -30,3 +30,5 @@ PYTHONPATH=. python scripts/check_startup.py app
 PYTHONPATH=. python scripts/check_startup.py worker --json
 python scripts/regenerate_resume_pdf.py input.md out.pdf "Your Name"
 ```
+
+**CI (GitHub Actions):** copy [`docs/setup/github-actions-ci.yml`](../docs/setup/github-actions-ci.yml) to `.github/workflows/ci.yml`. Pushing workflow files needs a GitHub PAT with the **workflow** scope.

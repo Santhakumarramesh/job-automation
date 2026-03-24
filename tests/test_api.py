@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -74,13 +76,13 @@ def test_get_application_by_job_id():
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 def test_submit_job():
-    # Mock data
     job_data = {
         "name": "Test Job",
-        "payload": {"url": "https://example.com/job"}
+        "payload": {"url": "https://example.com/job"},
     }
-    # Note: This might fail if the user dependency isn't properly handled in test
-    # but for a skeleton it's a good place to start.
-    response = client.post("/api/jobs", json=job_data)
+    with patch("app.main.enqueue_job", return_value="00000000-0000-0000-0000-000000000099"):
+        response = client.post("/api/jobs", json=job_data)
     assert response.status_code == 202
-    assert response.json()["status"] == "accepted"
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["job_id"] == "00000000-0000-0000-0000-000000000099"

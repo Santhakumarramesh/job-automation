@@ -160,7 +160,8 @@ def test_insights_api_includes_answerer_block():
             df = at.load_applications(for_user_id=None)
             rid = str(df.iloc[0]["id"])
             # Patch qa_audit on CSV row — log doesn't set qa; update via pandas
-            df2 = at.load_applications(for_user_id=None)
+            df2 = at.load_applications(for_user_id=None).copy()
+            df2["qa_audit"] = df2["qa_audit"].astype(object)
             qa = json.dumps({"_answerer_review": {"q": {"manual_review_required": True, "reason_codes": ["a"], "classified_type": "generic"}}})
             df2.loc[df2["id"].astype(str) == rid, "qa_audit"] = qa
             df2.to_csv(csv_path, index=False)

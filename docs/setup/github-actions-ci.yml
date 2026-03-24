@@ -1,0 +1,35 @@
+# Copy to .github/workflows/ci.yml to enable GitHub Actions.
+# Pushing files under .github/workflows/ requires a PAT with the **workflow** scope.
+# Pytest + profile/startup smoke (no Redis required for API job test — mocked enqueue).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e ".[dev,production]"
+
+      - name: Pytest
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Validate example candidate profile
+        run: python scripts/validate_profile.py --path config/candidate_profile.example.json
+
+      - name: Startup report (app)
+        run: python scripts/check_startup.py app

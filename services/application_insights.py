@@ -6,6 +6,7 @@ Phase 43 — answerer_review rollups from tracker ``qa_audit`` (apply runner met
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter, deque, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,19 @@ from services.observability import AUDIT_LOG_PATH
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively replace NaN/Inf floats so FastAPI/json.dumps never fails on tracker payloads."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 def _parse_ats_value(raw: Any) -> Optional[float]:
@@ -408,10 +422,12 @@ def build_application_insights(
             "See `tracker.crosstabs` for **submission_status × policy_reason** (and related pairs) to spot failure clusters."
         )
 
-    return {
-        "generated_at": _now_iso(),
-        "tracker": {k: v for k, v in tracker.items() if k != "suggestions"},
-        "answerer_review": answerer_stats,
-        "suggestions": suggestions[:14],
-        "audit": audit,
-    }
+    return _json_safe(
+        {
+            "generated_at": _now_iso(),
+            "tracker": {k: v for k, v in tracker.items() if k != "suggestions"},
+            "answerer_review": answerer_stats,
+            "suggestions": suggestions[:14],
+            "audit": audit,
+        }
+    )
