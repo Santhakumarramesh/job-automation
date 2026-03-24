@@ -42,6 +42,20 @@ def test_openapi_schema_grouped_by_tags():
     assert schema["paths"]["/api/jobs"]["post"]["tags"] == ["jobs"]
     assert schema["paths"]["/api/admin/applications"]["get"]["tags"] == ["admin"]
 
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_openapi_security_schemes_for_swagger_authorize():
+    schema = client.get("/openapi.json").json()
+    schemes = schema["components"]["securitySchemes"]
+    assert schemes["BearerAuth"]["type"] == "http"
+    assert schemes["BearerAuth"]["scheme"] == "bearer"
+    assert schemes["ApiKeyAuth"]["type"] == "apiKey"
+    assert schemes["ApiKeyAuth"]["name"] == "X-API-Key"
+    sec = schema["paths"]["/api/jobs"]["post"]["security"]
+    assert {} in sec
+    assert {"BearerAuth": []} in sec
+    assert {"ApiKeyAuth": []} in sec
+
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 def test_get_application_by_job_id():
     import os

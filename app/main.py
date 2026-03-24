@@ -529,3 +529,48 @@ def get_job_status(
         )
     except Exception as e:
         raise HTTPException(500, str(e)[:200])
+
+
+def _build_openapi_schema():
+    from fastapi.openapi.utils import get_openapi
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+    )
+    components = openapi_schema.setdefault("components", {})
+    schemes = components.setdefault("securitySchemes", {})
+    schemes["BearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT when `JWT_SECRET` is set (`sub` or `user_id`; optional role claims for admin).",
+    }
+    schemes["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Must match server `API_KEY` when that env var is set.",
+    }
+    optional_auth = [{}, {"BearerAuth": []}, {"ApiKeyAuth": []}]
+    for _path, path_item in openapi_schema.get("paths", {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+            op = path_item.get(method)
+            if not isinstance(op, dict):
+                continue
+            op["security"] = optional_auth
+    return openapi_schema
+
+
+def custom_openapi():
+    if app.openapi_schema is None:
+        app.openapi_schema = _build_openapi_schema()
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
