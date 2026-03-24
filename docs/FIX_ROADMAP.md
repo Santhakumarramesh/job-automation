@@ -8,7 +8,7 @@ Reconciliation of the full pass/fail checklist with current implementation. Item
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 1 | Repo structure | ✅ Pass | `app.py` entrypoint, `ui/`, `services/`, `providers/`, `agents/`, `mcp_servers/` |
+| 1 | Repo structure | ✅ Pass | `run_streamlit.py` entrypoint, `app/` (FastAPI), `ui/`, `services/`, `providers/`, `agents/`, `mcp_servers/` |
 | 2 | README honesty | ✅ Pass | Prototype wording, no guaranteed ATS/hiring claims |
 
 ---

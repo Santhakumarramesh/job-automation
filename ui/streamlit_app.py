@@ -20,7 +20,7 @@ from langgraph.graph import StateGraph, END
 from agents.state import AgentState
 from agents.job_analyzer import analyze_job_description
 from agents.job_guard import guard_job_quality
-from intelligent_project_generator import intelligent_project_generator
+from agents.intelligent_project_generator import intelligent_project_generator
 
 from services.document_service import (
     extract_text_from_pdf,
@@ -32,16 +32,21 @@ from services.document_service import (
 )
 from services.ats_service import score_resume, run_iterative_ats, check_fit_gate, run_live_optimizer
 from services.application_service import get_applications, log_to_tracker, save_tracker_edits
+from services.follow_up_service import list_follow_ups as list_follow_up_queue
+from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
-from interview_prep_agent import generate_interview_prep
-
-import application_tracker
+from agents.interview_prep_agent import generate_interview_prep
 
 _SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent
 _CREDS_FILE = os.path.join(_SCRIPT_DIR, ".env")
 
 
 # --- Helpers ---
+def _streamlit_tracker_user_id() -> str:
+    """Tag tracker rows from this UI (override with TRACKER_DEFAULT_USER_ID)."""
+    return (os.getenv("TRACKER_DEFAULT_USER_ID") or "streamlit-local").strip()
+
+
 def scrape_job_url(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -123,6 +128,9 @@ def iterative_ats_optimizer_node(state: AgentState):
     st.write(f"🔄 Running iterative ATS optimizer (target 100, truth-safe) for {state['target_company']}...")
     result = run_iterative_ats(state, target_score=100, max_attempts=5, truth_safe=True)
     st.write(f"✅ Iterative ATS complete. Score: {result['final_ats_score']}%")
+    if result.get("truth_safe_ats_ceiling") is not None:
+        st.metric("Truth-safe ATS ceiling (est.)", f"{result['truth_safe_ats_ceiling']}%")
+        st.caption(result.get("truth_safe_ceiling_reason", ""))
     return result
 
 
@@ -209,7 +217,7 @@ def run():
     with st.sidebar.expander("📋 Application Profile", expanded=False):
         try:
             from services.profile_service import load_profile, validate_profile, ensure_profile_exists
-            from agents.application_answerer import answer_question
+            from agents.application_answerer import answer_question_structured
             if ensure_profile_exists():
                 profile = load_profile()
                 if profile.get("full_name"):
@@ -224,8 +232,12 @@ def run():
                     st.caption("Profile OK")
                 sample_q = st.text_input("Test question", placeholder="e.g. Do you require sponsorship?", key="profile_test_q")
                 if sample_q:
-                    ans = answer_question(sample_q, profile=profile, master_resume_text="")
+                    meta = answer_question_structured(sample_q, profile=profile, master_resume_text="")
+                    ans = meta["answer"]
                     st.caption(f"→ {ans[:80]}{'...' if len(ans) > 80 else ''}")
+                    if meta["manual_review_required"]:
+                        rc = ", ".join(meta["reason_codes"][:6]) or "review suggested"
+                        st.caption(f"⚠️ manual_review_required — {rc}")
         except ImportError:
             st.caption("Copy config/candidate_profile.example.json to candidate_profile.json")
 
@@ -274,10 +286,14 @@ def run():
                             "target_location": target_location,
                             "base_resume_text": extract_text_from_pdf(st.session_state.base_resume_bytes),
                             "job_description": jd_text,
+                            "user_id": _streamlit_tracker_user_id(),
                         }
                         final_state = graph.invoke(initial_state)
                         st.success("Pipeline Complete!")
                         st.metric("Final Semantic ATS Score", f"{final_state.get('initial_ats_score', final_state.get('final_ats_score', 0))}%")
+                        if final_state.get("truth_safe_ats_ceiling") is not None:
+                            st.metric("Truth-safe ceiling (est.)", f"{final_state['truth_safe_ats_ceiling']}%")
+                            st.caption(final_state.get("truth_safe_ceiling_reason", ""))
                         if final_state.get("fit_decision"):
                             st.metric("Fit Decision", final_state["fit_decision"])
                         if final_state.get("unsupported_requirements"):
@@ -333,6 +349,7 @@ def run():
                                 "target_location": loc,
                                 "base_resume_text": extract_text_from_pdf(st.session_state.base_resume_bytes),
                                 "job_description": jd,
+                                "user_id": _streamlit_tracker_user_id(),
                             }
                             final_state = graph.invoke(initial_state)
                             st.success(f"Successfully generated documents for {company_name_from_url}!")
@@ -482,6 +499,7 @@ def run():
                                     "target_location": job["location"],
                                     "base_resume_text": extract_text_from_pdf(st.session_state.base_resume_bytes),
                                     "job_description": job["description"],
+                                    "user_id": _streamlit_tracker_user_id(),
                                 }
                                 final_state = graph.invoke(initial_state)
                                 st.success("Successfully generated documents!")
@@ -510,7 +528,7 @@ def run():
                     st.markdown("""
                     **Lane 1 — Auto-apply** (Easy Apply only):
                     - Easy Apply + fit ≥ 85 + truthful match + no blocker → auto-submit
-                    - Use export below and `apply_linkedin_jobs.py`
+                    - Use export below and `scripts/apply_linkedin_jobs.py`
 
                     **Lane 2 — Manual-assist** (external portals):
                     - Non–Easy Apply (Workday, Greenhouse, Lever) → prepare docs only
@@ -531,7 +549,7 @@ def run():
                         r["apply_mode"] = "auto_easy_apply"
                     json_bytes = json.dumps(jobs_export, indent=2).encode()
                     st.download_button("📤 Export Easy Apply jobs for auto-apply (JSON)", json_bytes, "linkedin_easy_apply_jobs.json", "application/json", key="export_linkedin")
-                    st.code("python apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")
+                    st.code("python scripts/apply_linkedin_jobs.py linkedin_easy_apply_jobs.json --no-headless\n# --dry-run to fill without submitting | --rate-limit 120", language="bash")
                     st.caption("Set LINKEDIN_EMAIL, LINKEDIN_PASSWORD. Only auto-apply when Fit Decision = Apply and ATS ≥ threshold.")
                 else:
                     if not manual_lane_jobs.empty:
@@ -597,6 +615,9 @@ def run():
                             }
                             opt_result = run_live_optimizer(state, target_ats=int(target_ats), truth_safe=truth_safe_live)
                             st.metric("Current ATS Score", f"{opt_result.get('final_ats_score', 0)}%")
+                            if opt_result.get("truth_safe_ats_ceiling") is not None:
+                                st.metric("Truth-safe ceiling (est.)", f"{opt_result['truth_safe_ats_ceiling']}%")
+                                st.caption(opt_result.get("truth_safe_ceiling_reason", ""))
                             with st.expander("Missing keywords"):
                                 st.write(", ".join(opt_result.get("missing_keywords", [])))
                             with st.expander("Unsupported JD requirements"):
@@ -633,6 +654,75 @@ def run():
                 if not edited_apps_df.equals(display_df):
                     save_tracker_edits(edited_apps_df)
                     st.success("Status updated!")
+
+                st.markdown("---")
+                st.subheader("📌 Follow-up queue")
+                st.caption("Rows with a scheduled follow-up, sorted by priority (ATS, fit, recency, overdue).")
+                try:
+                    fq = list_follow_up_queue(
+                        _streamlit_tracker_user_id(),
+                        due_only=False,
+                        include_snoozed=True,
+                        limit=80,
+                        sort_by_priority=True,
+                    )
+                    if fq:
+                        fq_df = pd.DataFrame(fq)
+                        show_cols = [
+                            c
+                            for c in (
+                                "follow_up_priority_score",
+                                "follow_up_at",
+                                "follow_up_status",
+                                "company",
+                                "position",
+                                "ats_score",
+                                "fit_decision",
+                                "follow_up_note",
+                                "job_url",
+                            )
+                            if c in fq_df.columns
+                        ]
+                        st.dataframe(fq_df[show_cols], hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No active follow-ups. Set `follow_up_at` on a tracker row (or via API) to appear here.")
+                except Exception as fe:
+                    st.warning(f"Could not load follow-up queue: {fe}")
+
+                with st.expander("📈 Application insights (Phase 13 + answerer QA)", expanded=False):
+                    st.caption("Tracker aggregates, answerer_review rollups from QA JSON, and hints.")
+                    try:
+                        ins = build_application_insights(None, include_audit=False)
+                        tr = ins.get("tracker") or {}
+                        ar = ins.get("answerer_review") or {}
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Tracker rows", int(tr.get("total") or 0))
+                        ats = tr.get("ats") or {}
+                        c2.metric("Avg ATS (logged)", f"{ats.get('mean')}" if ats.get("mean") is not None else "—")
+                        c3.metric("ATS values", int(ats.get("count_numeric") or 0))
+                        c4.metric("Rows w/ answerer QA", int(ar.get("tracker_rows_with_answerer_review") or 0))
+                        if int(ar.get("tracker_rows_with_manual_review_flag") or 0) > 0:
+                            st.caption(
+                                f"Manual-review flags in QA: **{ar.get('tracker_rows_with_manual_review_flag')}** application(s)"
+                            )
+                        rc = ar.get("reason_code_counts") or {}
+                        if rc:
+                            st.caption("Top answerer reason codes (from apply runner)")
+                            rc_df = pd.DataFrame(
+                                [{"reason_code": k, "count": v} for k, v in sorted(rc.items(), key=lambda x: -x[1])[:10]]
+                            )
+                            st.dataframe(rc_df, hide_index=True, use_container_width=True)
+                        for s in ins.get("suggestions") or []:
+                            st.markdown(f"- {s}")
+                        bpr = tr.get("by_policy_reason") or {}
+                        if bpr:
+                            st.caption("Top policy reasons")
+                            pr_df = pd.DataFrame(
+                                [{"reason": k, "count": v} for k, v in sorted(bpr.items(), key=lambda x: -x[1])[:12]]
+                            )
+                            st.dataframe(pr_df, hide_index=True, use_container_width=True)
+                    except Exception as ie:
+                        st.warning(str(ie))
 
                 st.markdown("---")
                 st.subheader("🎓 Interview Preparation Assistant")

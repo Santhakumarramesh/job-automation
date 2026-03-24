@@ -58,7 +58,7 @@ pip install mcp
 ## Architecture
 
 ```
-linkedin-mcp-server (HTTP)  ←→  providers/linkedin_mcp_jobs.py  ←→  enhanced_job_finder
+linkedin-mcp-server (HTTP)  ←→  providers/linkedin_mcp_jobs.py  ←→  services/enhanced_job_finder.py
                                                                          ↓
                                                               normalized JobListing
                                                                          ↓
@@ -101,7 +101,7 @@ After finding jobs via LinkedIn MCP:
 
 1. Select jobs in the Job Finder tab
 2. Click **Export jobs for LinkedIn apply (JSON)**
-3. Run: `python apply_linkedin_jobs.py linkedin_jobs_to_apply.json --no-headless`
+3. Run: `python scripts/apply_linkedin_jobs.py linkedin_jobs_to_apply.json --no-headless`
 4. Set `LINKEDIN_EMAIL` and `LINKEDIN_PASSWORD` in `.env` or environment
 5. Add your resume PDF to `Master_Resumes/` or set `RESUME_PATH`
 

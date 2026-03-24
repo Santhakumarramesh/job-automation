@@ -9,7 +9,7 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 
-# Paths - use root job_applications.csv (from application_tracker)
+# Paths - use root job_applications.csv (see services/application_tracker.py)
 BASE = Path(__file__).resolve().parent.parent
 CSV_PATH = BASE / "job_applications.csv"
 EXCEL_PATH = BASE / "dashboard" / "dashboard_data.xlsx"

@@ -3,7 +3,7 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
-from interview_prep_agent import get_company_info # Re-using the company scraper
+from agents.interview_prep_agent import get_company_info  # Re-using the company scraper
 
 def generate_cover_letter(state: AgentState):
     """

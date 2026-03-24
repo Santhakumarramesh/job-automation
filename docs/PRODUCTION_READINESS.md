@@ -4,10 +4,10 @@
 
 | Aspect | Status | Notes |
 |--------|--------|------|
-| Architecture | ✅ Good | Thin entry, modular UI, services layer |
+| Architecture | ✅ Good | Modular UI, `services/`, FastAPI `app/`, agents |
 | Prototype completeness | ✅ Good | Real MCP, fit gate, ATS, autofill engine |
 | Reliability for live auto-apply | ⚠️ Medium | LinkedIn Easy Apply works; external ATS fragile |
-| Production readiness | ❌ Not yet | See gaps below |
+| Production readiness | ❌ Not yet | See [FIX_ROADMAP.md](FIX_ROADMAP.md) and [PHASE_3_PLAN.md](PHASE_3_PLAN.md) |
 
 ## Hard backend rules (enforced in code)
 
@@ -19,15 +19,11 @@ Auto-apply **only** proceeds when all of these are met:
 4. **No unsupported requirements** — When metadata provided, `unsupported_requirements` must be empty
 5. **External ATS = manual-assist** — Greenhouse/Lever/Workday not auto-submitted; engine skips them by default
 
-## Gap list
-
-See [PRODUCTION_READINESS_GAPS.md](PRODUCTION_READINESS_GAPS.md) for the full P0–P3 list and what's done vs pending.
-
 ## Known gaps
 
-1. **Easy Apply truthfulness** — Addressed: `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter). See [PASS_FAIL_CHECKLIST.md](PASS_FAIL_CHECKLIST.md).
+1. **Easy Apply truthfulness** — `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter).
 2. **External ATS autofill** — Workday/Greenhouse/Lever forms vary; heuristic fill is prototype-only. Use manual-assist.
-3. **Login automation risk** — LinkedIn checkpoint/challenge pages can break the flow. Code handles this; user may need to complete verification manually.
+3. **Login automation risk** — LinkedIn checkpoint/challenge pages can break the flow.
 4. **Dry run first** — Recommended: run with `dry_run=True` before live submit.
 
 ## Before trusting for live applying

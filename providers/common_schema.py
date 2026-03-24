@@ -24,6 +24,7 @@ class JobListing:
     easy_apply_filter_used: bool = False   # True when search used easy_apply filter
     easy_apply_confirmed: bool = False     # True only when MCP/detail explicitly confirms Easy Apply
     apply_mode: str = "manual_assist"      # auto_easy_apply | manual_assist | skip
+    policy_reason: str = ""                # stable code from policy_service (audit)
     posted_at: str = ""
     apply_url: str = ""        # Dedicated apply URL if different from url
     source: str = ""           # apify, linkedin_mcp, url
@@ -45,6 +46,7 @@ class JobListing:
             "easy_apply_filter_used": self.easy_apply_filter_used,
             "easy_apply_confirmed": self.easy_apply_confirmed,
             "apply_mode": self.apply_mode,
+            "policy_reason": self.policy_reason,
             "posted_at": self.posted_at,
             "apply_url": self.apply_url or self.url,
             "source": self.source,
@@ -116,6 +118,7 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
     apply_mode = raw.get("apply_mode") or "manual_assist"
     if apply_mode not in ("auto_easy_apply", "manual_assist", "skip"):
         apply_mode = "manual_assist"
+    policy_reason = str(raw.get("policy_reason", "") or "")
     apply_url = raw.get("apply_url") or raw.get("applyUrl") or ""
 
     return JobListing(
@@ -132,6 +135,7 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
         easy_apply_filter_used=bool(easy_apply_filter_used),
         easy_apply_confirmed=bool(easy_apply_confirmed),
         apply_mode=str(apply_mode),
+        policy_reason=policy_reason,
         posted_at=str(posted_at),
         apply_url=str(apply_url),
         source=source,
@@ -139,7 +143,7 @@ def normalize_to_schema(raw: dict, source: str) -> JobListing:
         extra={k: v for k, v in raw.items() if k not in {
             "title", "company", "location", "description", "url",
             "job_id", "work_type", "job_type", "experience_level",
-            "easy_apply", "easy_apply_filter_used", "easy_apply_confirmed", "apply_mode", "posted_at", "apply_url", "salary",
+            "easy_apply", "easy_apply_filter_used", "easy_apply_confirmed", "apply_mode", "policy_reason", "posted_at", "apply_url", "salary",
             "jobTitle", "companyName", "jobDescription", "jobUrl",
             "workType", "postedAt", "datePosted", "salaryRange",
             "jobId", "easyApply", "applyUrl", "experienceLevel",

@@ -3,8 +3,7 @@ Application service. Log to tracker, load applications.
 """
 
 import os
-import application_tracker
-from application_tracker import log_application, load_applications, APPLICATION_FILE
+from services.application_tracker import log_application, load_applications, APPLICATION_FILE
 
 USE_DB = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
 

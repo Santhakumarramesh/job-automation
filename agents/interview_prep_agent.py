@@ -13,7 +13,7 @@ def get_company_info(company_name: str) -> str:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(google_url, headers=headers, timeout=5)
         soup = BeautifulSoup(response.content, 'html.parser')
-        
+
         # Step 2: Find the first organic search result link
         about_url = None
         for link in soup.find_all('a'):
@@ -22,7 +22,7 @@ def get_company_info(company_name: str) -> str:
                 about_url = href.split('/url?q=')[1].split('&')[0]
                 if company_name.lower() in about_url:
                     break # Found a likely candidate
-        
+
         if not about_url:
             print("⚠️ Could not find company 'About Us' page.")
             return "Could not automatically retrieve company information."
@@ -32,7 +32,7 @@ def get_company_info(company_name: str) -> str:
         soup = BeautifulSoup(response.content, 'html.parser')
         for script in soup(["script", "style", "nav", "footer"]):
             script.extract()
-        
+
         content = soup.get_text(separator=' ', strip=True)
         print("✅ Company information scraped successfully.")
         return content[:4000] # Limit content to avoid excessive token usage

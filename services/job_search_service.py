@@ -5,7 +5,7 @@ Job search service. get_jobs(provider, filters), uses registry.
 import pandas as pd
 from typing import Optional
 
-from enhanced_job_finder import EnhancedJobFinder
+from services.enhanced_job_finder import EnhancedJobFinder
 from providers.base_provider import SearchFilters
 
 

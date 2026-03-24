@@ -35,6 +35,8 @@ class RunConfig:
     screenshots_dir: str = ""
     use_answerer: bool = True
     easy_apply_only: bool = True  # When True, only LinkedIn Easy Apply; reject external ATS
+    # When True, LinkedIn live submit is skipped if any answerer-filled field has manual_review_required
+    block_submit_on_answerer_review: bool = True
 
 
 @dataclass
@@ -49,6 +51,8 @@ class RunResult:
     qa_audit: dict = field(default_factory=dict)
     unmapped_fields: list = field(default_factory=list)
     error: str = ""
+    # Filled fields sourced from application_answerer: label -> review metadata
+    answerer_review: dict = field(default_factory=dict)
 
 
 # Field name patterns -> profile key or answerer question
@@ -105,8 +109,13 @@ def _resolve_resume_path(config: RunConfig, job: Optional[dict] = None) -> str:
     return ""
 
 
-def _get_value_for_field(field_label: str, field_name: str, config: RunConfig, job: dict) -> str:
-    """Map form field to value from profile or answerer."""
+def _get_value_and_meta_for_field(
+    field_label: str, field_name: str, config: RunConfig, job: dict
+) -> tuple[str, Optional[dict]]:
+    """
+    Map form field to value from profile or answerer.
+    Returns (value, review_meta or None). review_meta is set for answerer-sourced fills.
+    """
     label = (field_label or "").lower() + " " + (field_name or "").lower()
     profile = config.profile or {}
 
@@ -117,34 +126,61 @@ def _get_value_for_field(field_label: str, field_name: str, config: RunConfig, j
                 if key == "full_name" and val:
                     parts = str(val).strip().split()
                     if "first" in label or "given" in label:
-                        return parts[0] if parts else val
+                        return (parts[0] if parts else val), None
                     if "last" in label or "surname" in label:
-                        return parts[-1] if len(parts) > 1 else parts[0]
-                return str(val or "").strip()
+                        return (parts[-1] if len(parts) > 1 else parts[0]), None
+                return str(val or "").strip(), None
             if source == "answerer" and config.use_answerer:
                 try:
-                    from agents.application_answerer import answer_question
-                    job_ctx = {"company": job.get("company", ""), "title": job.get("title", ""), "description": job.get("description", "")}
-                    return answer_question(key, profile=profile, job_context=job_ctx)
+                    from agents.application_answerer import answer_question_structured
+
+                    job_ctx = {
+                        "company": job.get("company", ""),
+                        "title": job.get("title", ""),
+                        "description": job.get("description", ""),
+                    }
+                    meta = answer_question_structured(key, profile=profile, job_context=job_ctx)
+                    preview = (meta.get("answer") or "")[:100]
+                    review = {
+                        "manual_review_required": meta.get("manual_review_required", False),
+                        "reason_codes": meta.get("reason_codes", []),
+                        "classified_type": meta.get("classified_type", ""),
+                        "value_preview": preview,
+                        "question_used": key,
+                    }
+                    return meta.get("answer") or "", review
                 except ImportError:
                     pass
-    return ""
+    return "", None
+
+
+def _get_value_for_field(field_label: str, field_name: str, config: RunConfig, job: dict) -> str:
+    """Map form field to value from profile or answerer (string only)."""
+    return _get_value_and_meta_for_field(field_label, field_name, config, job)[0]
+
+
+def answerer_review_pending(answerer_review: Optional[dict]) -> bool:
+    """True if any answerer-filled field requires manual confirmation."""
+    if not answerer_review:
+        return False
+    return any(bool(v.get("manual_review_required")) for v in answerer_review.values())
 
 
 async def fill_linkedin_easy_apply_modal(
     page: "Page",
     job: dict,
     config: RunConfig,
-) -> tuple[dict, list]:
+) -> tuple[dict, list, dict]:
     """
-    Fill LinkedIn Easy Apply modal fields. Returns (qa_audit, unmapped_fields).
+    Fill LinkedIn Easy Apply modal fields. Returns (qa_audit, unmapped_fields, answerer_review).
     Detects inputs, maps to profile/answerer, fills. Does not submit.
     """
     qa_audit = {}
     unmapped = []
+    answerer_review: dict = {}
 
     if not Page:
-        return qa_audit, unmapped
+        return qa_audit, unmapped, answerer_review
 
     # Common input types in LinkedIn Easy Apply
     selectors = [
@@ -162,10 +198,13 @@ async def fill_linkedin_easy_apply_modal(
                     label_el = await page.query_selector(f"label[for='{await el.get_attribute('id') or ''}']")
                     label = await label_el.inner_text() if label_el else ""
                     placeholder = await el.get_attribute("placeholder") or ""
-                    val = _get_value_for_field(label + " " + placeholder, name, config, job)
+                    val, rev = _get_value_and_meta_for_field(label + " " + placeholder, name, config, job)
                     if val:
                         await el.fill(val)
-                        qa_audit[label or name or placeholder or "field"] = val[:100]
+                        fk = label or name or placeholder or "field"
+                        qa_audit[fk] = val[:100]
+                        if rev:
+                            answerer_review[fk] = rev
                     else:
                         unmapped.append(label or name or placeholder or "unknown")
                 except Exception:
@@ -173,7 +212,7 @@ async def fill_linkedin_easy_apply_modal(
         except Exception:
             continue
 
-    return qa_audit, unmapped
+    return qa_audit, unmapped, answerer_review
 
 
 async def run_linkedin_application(
@@ -199,6 +238,7 @@ async def run_linkedin_application(
     screenshot_paths = []
     qa_audit = {}
     unmapped = []
+    answerer_review: dict = {}
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -222,7 +262,7 @@ async def run_linkedin_application(
                 continue
 
         # Fill text fields via profile + answerer
-        qa_audit, unmapped = await fill_linkedin_easy_apply_modal(page, job, config)
+        qa_audit, unmapped, answerer_review = await fill_linkedin_easy_apply_modal(page, job, config)
 
         # Resume upload (use job-specific path when available)
         resume_path = _resolve_resume_path(config, job) or config.resume_path
@@ -253,6 +293,23 @@ async def run_linkedin_application(
                 screenshot_paths=screenshot_paths,
                 qa_audit=qa_audit,
                 unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+            )
+
+        if (
+            config.block_submit_on_answerer_review
+            and answerer_review_pending(answerer_review)
+        ):
+            return RunResult(
+                status="manual_assist_ready",
+                company=company,
+                position=position,
+                job_url=url,
+                screenshot_paths=screenshot_paths,
+                qa_audit=qa_audit,
+                unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+                error="answerer_manual_review_required: confirm or edit answerer-filled fields before submit",
             )
 
         if config.confirm_before_submit:
@@ -275,6 +332,7 @@ async def run_linkedin_application(
                         screenshot_paths=screenshot_paths,
                         qa_audit=qa_audit,
                         unmapped_fields=unmapped,
+                        answerer_review=answerer_review,
                     )
             except Exception:
                 continue
@@ -287,6 +345,7 @@ async def run_linkedin_application(
             screenshot_paths=screenshot_paths,
             qa_audit=qa_audit,
             unmapped_fields=unmapped,
+            answerer_review=answerer_review,
             error="Submit button not found",
         )
 
@@ -300,7 +359,15 @@ async def run_linkedin_application(
                 screenshot_paths.append(str(fp))
             except Exception:
                 pass
-        return RunResult(status="failed", company=company, position=position, job_url=url, error=err, screenshot_paths=screenshot_paths)
+        return RunResult(
+            status="failed",
+            company=company,
+            position=position,
+            job_url=url,
+            error=err,
+            screenshot_paths=screenshot_paths,
+            answerer_review=answerer_review,
+        )
 
 
 # --- External ATS: Greenhouse, Lever, Workday ---
@@ -345,6 +412,7 @@ async def fill_external_ats_form(
     screenshot_paths = []
     qa_audit = {}
     unmapped = []
+    answerer_review: dict = {}
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -386,10 +454,13 @@ async def fill_external_ats_form(
                     name = await el.get_attribute("name") or await el.get_attribute("id") or ""
                     placeholder = await el.get_attribute("placeholder") or ""
                     label = (name + " " + placeholder).lower()
-                    val = _get_value_for_field(label, name, config, job)
+                    val, rev = _get_value_and_meta_for_field(label, name, config, job)
                     if val:
                         await el.fill(val)
-                        qa_audit[name or placeholder or "field"] = val[:100]
+                        fk = name or placeholder or "field"
+                        qa_audit[fk] = val[:100]
+                        if rev:
+                            answerer_review[fk] = rev
             except Exception:
                 continue
 
@@ -421,6 +492,7 @@ async def fill_external_ats_form(
                 screenshot_paths=screenshot_paths,
                 qa_audit=qa_audit,
                 unmapped_fields=unmapped,
+                answerer_review=answerer_review,
             )
 
         # Never auto-submit external ATS; form filled for manual review
@@ -432,6 +504,7 @@ async def fill_external_ats_form(
             screenshot_paths=screenshot_paths,
             qa_audit=qa_audit,
             unmapped_fields=unmapped,
+            answerer_review=answerer_review,
             error="External ATS: form filled. Review and submit manually.",
         )
 
@@ -445,7 +518,15 @@ async def fill_external_ats_form(
                 screenshot_paths.append(str(fp))
             except Exception:
                 pass
-        return RunResult(status="failed", company=company, position=position, job_url=url, error=err, screenshot_paths=screenshot_paths)
+        return RunResult(
+            status="failed",
+            company=company,
+            position=position,
+            job_url=url,
+            error=err,
+            screenshot_paths=screenshot_paths,
+            answerer_review=answerer_review,
+        )
 
 
 def _policy_blocked(job: dict) -> Optional[str]:
@@ -520,6 +601,7 @@ def save_run_results(results: list[RunResult], output_dir: str = "application_ru
             "qa_audit": r.qa_audit,
             "unmapped_fields": r.unmapped_fields,
             "error": r.error,
+            "answerer_review": getattr(r, "answerer_review", None) or {},
         }
         for r in results
     ]

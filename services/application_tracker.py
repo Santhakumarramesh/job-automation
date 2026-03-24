@@ -10,12 +10,13 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
-# Use project root so path works from any cwd
-_SCRIPT_DIR = Path(__file__).resolve().parent
-APPLICATION_FILE = _SCRIPT_DIR / "job_applications.csv"
+# Project root (this file lives in services/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+APPLICATION_FILE = _PROJECT_ROOT / "job_applications.csv"
 
 USE_DB = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
 
@@ -32,6 +33,7 @@ TRACKER_COLUMNS = [
     "submission_status",  # Applied, Manual Assist Ready, Skipped – Low Fit, Skipped – Unsupported Requirements, Dry Run Complete, Failed – Login Challenge, Failed – Form Unmapped
     "easy_apply_confirmed",
     "apply_mode",       # auto_easy_apply, manual_assist, skip
+    "policy_reason",    # stable code from policy_service.decide_apply_mode_with_reason
     "fit_decision",
     "ats_score",
     "resume_path",
@@ -41,11 +43,34 @@ TRACKER_COLUMNS = [
     "recruiter_response",  # Pending, positive, negative
     "screenshots_path",    # JSON list
     "qa_audit",           # JSON
+    "artifacts_manifest",  # Phase 3.2.3 — JSON: S3 URIs, run ids, extra paths
     "retry_state",        # For failed
+    "user_id",            # Phase 3.1.2 — scope rows per authenticated user
+    "follow_up_at",       # Phase 12 — ISO 8601 when to follow up (empty = none)
+    "follow_up_status",   # pending | done | snoozed | dismissed | empty
+    "follow_up_note",     # free text reminder
 ]
 
 # Legacy columns for backward compat
 LEGACY_COLUMNS = ["Date Applied", "Company", "Position", "Status", "Resume Path", "Cover Letter Path", "Job Description"]
+
+
+def _artifacts_manifest_cell(value) -> str:
+    """Serialize artifacts_manifest for DB/CSV (JSON object string)."""
+    if value is None or value == "":
+        return "{}"
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return "{}"
+        try:
+            json.loads(s)
+            return s[:8000]
+        except json.JSONDecodeError:
+            return json.dumps({"raw": s[:2000]})
+    if isinstance(value, dict):
+        return json.dumps(value)[:8000]
+    return json.dumps({"value": str(value)})[:8000]
 
 
 def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -99,6 +124,7 @@ def log_application(state: dict):
         "submission_status": "submitted",
         "easy_apply_confirmed": state.get("easy_apply_confirmed", ""),
         "apply_mode": state.get("apply_mode", ""),
+        "policy_reason": str(state.get("policy_reason", "") or ""),
         "fit_decision": state.get("fit_decision", ""),
         "ats_score": state.get("final_ats_score", state.get("initial_ats_score", "")),
         "resume_path": state.get("final_pdf_path", ""),
@@ -108,7 +134,13 @@ def log_application(state: dict):
         "recruiter_response": "Pending",
         "screenshots_path": "",
         "qa_audit": "",
+        "artifacts_manifest": _artifacts_manifest_cell(state.get("artifacts_manifest")),
         "retry_state": "",
+        "user_id": str(
+            state.get("user_id")
+            or state.get("authenticated_user_id")
+            or ""
+        ).strip(),
     }
     if USE_DB:
         try:
@@ -130,13 +162,17 @@ def log_application(state: dict):
 
 def log_application_from_result(run_result, resume_path: str = "", cover_path: str = "", job_metadata: dict = None):
     """
-    Log from ApplicationRunner RunResult. Used by apply_linkedin_jobs.py.
+    Log from ApplicationRunner RunResult. Used by scripts/apply_linkedin_jobs.py.
     job_metadata: optional dict with fit_decision, ats_score, apply_mode, easy_apply_confirmed, unsupported_requirements.
     """
     initialize_tracker()
     job_metadata = job_metadata or {}
     screenshots_json = json.dumps(run_result.screenshot_paths) if run_result.screenshot_paths else ""
-    qa_json = json.dumps(run_result.qa_audit) if run_result.qa_audit else ""
+    qa_combined = dict(run_result.qa_audit) if run_result.qa_audit else {}
+    ar = getattr(run_result, "answerer_review", None) or {}
+    if ar:
+        qa_combined["_answerer_review"] = ar
+    qa_json = json.dumps(qa_combined) if qa_combined else ""
     status_map = {
         "applied": "Applied",
         "manual_assist_ready": "Manual Assist Ready",
@@ -157,6 +193,7 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "submission_status": status_map.get(run_result.status, run_result.status),
         "easy_apply_confirmed": job_metadata.get("easy_apply_confirmed", ""),
         "apply_mode": job_metadata.get("apply_mode", ""),
+        "policy_reason": str(job_metadata.get("policy_reason", "") or ""),
         "fit_decision": job_metadata.get("fit_decision", ""),
         "ats_score": job_metadata.get("ats_score", job_metadata.get("final_ats_score", "")),
         "resume_path": resume_path,
@@ -166,7 +203,9 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "recruiter_response": "Pending",
         "screenshots_path": screenshots_json,
         "qa_audit": qa_json,
+        "artifacts_manifest": _artifacts_manifest_cell(job_metadata.get("artifacts_manifest")),
         "retry_state": "",
+        "user_id": str(job_metadata.get("user_id", "") or "").strip(),
     }
     if USE_DB:
         try:
@@ -183,18 +222,95 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     return row["id"]
 
 
-def load_applications() -> pd.DataFrame:
-    """Load all logged applications. Handles legacy and rich schema."""
+def load_applications(for_user_id: Optional[str] = None) -> pd.DataFrame:
+    """
+    Load logged applications. If for_user_id is set, return only rows for that user
+    (empty user_id rows are excluded — use for_user_id=None for admin / Streamlit local).
+    """
     initialize_tracker()
     if USE_DB:
         try:
             from services.tracker_db import load_applications_db
-            return load_applications_db()
+            df = load_applications_db()
         except ImportError:
-            pass
+            df = None
+        if df is not None:
+            return _filter_by_user_id(df, for_user_id)
     try:
         df = pd.read_csv(APPLICATION_FILE)
         df = _ensure_columns(df)
-        return df
+        return _filter_by_user_id(df, for_user_id)
     except (pd.errors.EmptyDataError, Exception):
         return pd.DataFrame(columns=TRACKER_COLUMNS)
+
+
+def _filter_by_user_id(df: pd.DataFrame, for_user_id: Optional[str]) -> pd.DataFrame:
+    if for_user_id is None or str(for_user_id).strip() == "":
+        return df
+    uid = str(for_user_id).strip()
+    if "user_id" not in df.columns:
+        return df.iloc[0:0].copy()
+    col = df["user_id"].fillna("").astype(str)
+    return df[col == uid].copy()
+
+
+def get_application_row_by_job_id(
+    job_id: str,
+    for_user_id: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Return one tracker row as dict for the given job_id, scoped by for_user_id
+    (same semantics as load_applications: None = all users).
+    """
+    if not str(job_id).strip():
+        return None
+    df = load_applications(for_user_id=for_user_id)
+    if df.empty or "job_id" not in df.columns:
+        return None
+    j = str(job_id).strip()
+    m = df[df["job_id"].fillna("").astype(str) == j]
+    if m.empty:
+        return None
+    row = m.iloc[0].fillna("").to_dict()
+    return row
+
+
+def update_follow_up_for_row(
+    row_id: str,
+    scope_user_id: Optional[str],
+    updates: dict,
+) -> bool:
+    """
+    PATCH follow_up_* fields. scope_user_id None skips user_id check (demo/admin).
+    """
+    from services.tracker_db import FOLLOW_UP_COLUMN_SET, update_application_follow_up_partial
+
+    patch = {k: v for k, v in updates.items() if k in FOLLOW_UP_COLUMN_SET}
+    if not patch:
+        return False
+    if USE_DB:
+        try:
+            return update_application_follow_up_partial(row_id, scope_user_id, patch)
+        except ImportError:
+            pass
+    df = load_applications(for_user_id=None)
+    df = _ensure_columns(df)
+    rid = str(row_id).strip()
+    m = df["id"].astype(str) == rid
+    if not m.any():
+        return False
+    idx = int(df.index[m][0])
+    if scope_user_id is not None:
+        row_uid = str(df.at[idx, "user_id"] or "").strip()
+        if row_uid != str(scope_user_id).strip():
+            return False
+    for col in ("follow_up_at", "follow_up_status", "follow_up_note"):
+        if col in df.columns:
+            df[col] = df[col].astype(object)
+    for k, v in patch.items():
+        if v is None:
+            df.at[idx, k] = ""
+        else:
+            df.at[idx, k] = str(v).strip() if isinstance(v, str) else v
+    df.to_csv(APPLICATION_FILE, index=False)
+    return True

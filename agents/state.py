@@ -2,6 +2,7 @@ from typing import TypedDict, List, Optional
 
 class AgentState(TypedDict, total=False):
     # User Inputs
+    user_id: str  # Phase 3.1.2 — tracker / multi-user scope
     candidate_name: str
     target_position: str
     target_company: str
@@ -26,6 +27,10 @@ class AgentState(TypedDict, total=False):
     job_fit_score: Optional[int]
     fit_decision: str  # Apply | Review | Reject
     unsupported_requirements: List[str]
+    truthful_missing_keywords: List[str]
+    truth_safe_ats_ceiling: int
+    truth_safe_ceiling_reason: str
+    ceiling_limited_by: List[str]
     
     # Resume Editor Outputs
     tailored_resume_text: str

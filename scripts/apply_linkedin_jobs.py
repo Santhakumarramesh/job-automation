@@ -4,7 +4,9 @@ Apply to LinkedIn jobs using Playwright + Application Runner.
 Uses jobs from JSON file (e.g. exported from Job Finder).
 Fills form fields via candidate_profile + application_answerer.
 Requires: pip install playwright && playwright install chromium
-Env: LINKEDIN_EMAIL, LINKEDIN_PASSWORD, (optional) RESUME_PATH
+Env: LINKEDIN_EMAIL, LINKEDIN_PASSWORD, (optional) RESUME_PATH.
+Live submit is skipped when any answerer-filled field has manual_review_required (default).
+Override: pass RunConfig(block_submit_on_answerer_review=False) if you customize this script.
 """
 import argparse
 import asyncio
@@ -14,11 +16,19 @@ import random
 import sys
 from pathlib import Path
 
-# Ensure project root on path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
 
-async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True, dry_run: bool = False, rate_limit: float = 120.0):
+async def run_apply(
+    jobs_path: str,
+    resume_path: str = "",
+    headless: bool = True,
+    dry_run: bool = False,
+    rate_limit: float = 120.0,
+    *,
+    allow_answerer_submit: bool = False,
+):
     from playwright.async_api import async_playwright
     from agents.application_runner import RunConfig, run_application, save_run_results
 
@@ -37,7 +47,7 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
 
     resume_path = resume_path or os.getenv("RESUME_PATH")
     if not resume_path:
-        for p in [Path(__file__).parent / "Master_Resumes", Path(__file__).parent / "candidate_resumes", Path.home() / "Desktop" / "resume ai agent" / "Master_Resumes"]:
+        for p in [_ROOT / "Master_Resumes", _ROOT / "candidate_resumes", Path.home() / "Desktop" / "resume ai agent" / "Master_Resumes"]:
             if p.exists():
                 for f in p.glob("*.pdf"):
                     resume_path = str(f)
@@ -55,9 +65,10 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
         confirm_before_submit=not dry_run,
         screenshots_dir="application_runs/screenshots",
         use_answerer=True,
+        block_submit_on_answerer_review=not allow_answerer_submit,
     )
 
-    screenshot_dir = Path(__file__).parent / "application_runs" / "screenshots"
+    screenshot_dir = _ROOT / "application_runs" / "screenshots"
     screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     email = os.getenv("LINKEDIN_EMAIL") or os.getenv("EMAIL")
@@ -68,6 +79,8 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
 
     if dry_run:
         print("🔬 DRY RUN: Will fill forms but NOT submit.")
+    elif allow_answerer_submit:
+        print("⚠️ allow_answerer_submit: will submit even if answerer fields need manual_review.")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless)
@@ -103,17 +116,27 @@ async def run_apply(jobs_path: str, resume_path: str = "", headless: bool = True
                 print(f"  Filled: {list(result.qa_audit.keys())[:5]}")
             if result.unmapped_fields:
                 print(f"  Unmapped: {result.unmapped_fields[:3]}")
+            ar = getattr(result, "answerer_review", None) or {}
+            if ar:
+                pending = [k for k, v in ar.items() if v.get("manual_review_required")]
+                if pending:
+                    print(f"  Answerer manual review: {pending[:5]}")
             if result.status == "applied":
                 applied += 1
                 try:
-                    from application_tracker import log_application_from_result
+                    from services.application_tracker import log_application_from_result
+                    from services.policy_service import policy_from_exported_job
+
+                    mode, reason = policy_from_exported_job(job)
                     meta = {
                         "job_id": job.get("job_id", ""),
                         "fit_decision": job.get("fit_decision", ""),
                         "ats_score": job.get("ats_score", job.get("final_ats_score")),
-                        "apply_mode": job.get("apply_mode", ""),
+                        "apply_mode": mode,
+                        "policy_reason": reason,
                         "easy_apply_confirmed": job.get("easy_apply_confirmed"),
                         "description": (job.get("description", "") or "")[:2000],
+                        "user_id": (os.getenv("TRACKER_DEFAULT_USER_ID") or "cli-linkedin-apply").strip(),
                     }
                     log_application_from_result(result, resume_path=config.resume_path or "", job_metadata=meta)
                 except ImportError:
@@ -132,12 +155,18 @@ def main():
     parser.add_argument("--no-headless", action="store_true", help="Show browser")
     parser.add_argument("--dry-run", action="store_true", help="Fill forms but do not submit")
     parser.add_argument("--rate-limit", type=float, default=120.0, help="Min seconds between applications (default: 120)")
+    parser.add_argument(
+        "--allow-answerer-submit",
+        action="store_true",
+        help="Allow LinkedIn submit even when answerer-filled fields have manual_review_required (default: blocked).",
+    )
     args = parser.parse_args()
     asyncio.run(run_apply(
         args.jobs_file, args.resume,
         headless=not args.no_headless,
         dry_run=args.dry_run,
         rate_limit=args.rate_limit,
+        allow_answerer_submit=args.allow_answerer_submit,
     ))
 
 

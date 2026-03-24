@@ -149,7 +149,7 @@ For each job URL:
     ↓
 Resume: ensure_resume_exists_for_job → {Name}_{Position}_at_{Company}_Resume.pdf
     ↓
-Log to application_tracker
+Log to `services/application_tracker.py`
 ```
 
 ## Supported URLs

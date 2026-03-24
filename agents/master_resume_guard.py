@@ -61,6 +61,27 @@ class FitResult:
     reject: bool
 
 
+def extract_search_keywords(master_resume_text: str) -> dict:
+    """
+    Extract job titles, locations, and skills from master resume for job search.
+    Returns dict: {job_titles, locations, skills}. Used by job discovery layer.
+    """
+    profile = parse_master_resume(master_resume_text or "")
+    job_titles = list(profile.preferred_roles) if profile.preferred_roles else []
+    if not job_titles:
+        if any(x in profile.raw_text_lower for x in ("engineer", "ml", "ai", "machine learning")):
+            job_titles = ["AI Engineer", "Machine Learning Engineer", "Software Engineer"]
+        if any(x in profile.raw_text_lower for x in ("data scientist", "data science")):
+            job_titles.append("Data Scientist")
+        if not job_titles:
+            job_titles = ["AI/ML Engineer", "Machine Learning Engineer", "Data Scientist"]
+    skills = list((profile.skills | profile.tools))[:15]
+    if not skills:
+        skills = ["Python", "Machine Learning", "AI"]
+    locations = list(profile.locations) if profile.locations else ["USA", "Remote"]
+    return {"job_titles": job_titles[:5], "locations": locations[:5], "skills": skills}
+
+
 def parse_master_resume(master_resume_text: str) -> CandidateProfile:
     """
     Parse master resume to build allowed inventory:

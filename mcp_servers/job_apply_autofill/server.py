@@ -74,7 +74,7 @@ def get_autofill_values(
     """
     try:
         from services.profile_service import load_profile
-        from agents.application_answerer import answer_question
+        from agents.application_answerer import answer_question_structured
 
         profile = load_profile()
         if not profile:
@@ -94,15 +94,22 @@ def get_autofill_values(
             "availability": profile.get("notice_period", "Immediate") or "Immediate",
         }
 
+        review_flags: dict = {}
         if question_hints:
             hints = [h.strip() for h in question_hints.split(",") if h.strip()]
             job_ctx = {"company": "", "title": ""}
             for hint in hints:
-                ans = answer_question(hint, profile=profile, job_context=job_ctx)
-                if ans:
-                    values[f"q_{hint[:30]}"] = ans[:150]
+                meta = answer_question_structured(hint, profile=profile, job_context=job_ctx)
+                key = f"q_{hint[:30]}"
+                if meta["answer"]:
+                    values[key] = meta["answer"][:150]
+                review_flags[key] = {
+                    "manual_review_required": meta["manual_review_required"],
+                    "reason_codes": meta["reason_codes"],
+                    "classified_type": meta["classified_type"],
+                }
 
-        return {"status": "ok", "values": values}
+        return {"status": "ok", "values": values, "answer_review": review_flags}
     except Exception as e:
         return {"status": "error", "message": str(e)[:200]}
 
@@ -126,10 +133,16 @@ def apply_to_jobs(
     """
     try:
         from playwright.async_api import async_playwright
-        from agents.application_runner import RunConfig, RunResult, run_application, save_run_results
+        from agents.application_runner import (
+            RunConfig,
+            RunResult,
+            answerer_review_pending,
+            run_application,
+            save_run_results,
+        )
 
         from services.profile_service import load_profile
-        from application_tracker import log_application_from_result
+        from services.application_tracker import log_application_from_result
     except ImportError as e:
         return {"status": "error", "message": f"Import failed: {e}. Install: pip install playwright mcp && playwright install chromium"}
 
@@ -241,7 +254,7 @@ def apply_to_jobs(
                 await browser.close()
                 return {
                     "status": "error",
-                    "message": "LinkedIn verification required. Complete login manually in a browser (https://linkedin.com), then retry. See docs/JOB_APPLY_AUTOFILL_MCP_SETUP.md#login-challenges for troubleshooting.",
+                    "message": "LinkedIn verification required. Complete login manually in a browser (https://linkedin.com), then retry. See docs/setup/job-apply-autofill-mcp.md for troubleshooting.",
                 }
             await page.wait_for_timeout(2000)
 
@@ -261,15 +274,21 @@ def apply_to_jobs(
                     "position": result.position,
                     "status": result.status,
                     "error": result.error or "",
+                    "answerer_manual_review_required": answerer_review_pending(result.answerer_review),
+                    "answerer_review_field_keys": list((result.answerer_review or {}).keys())[:12],
                 })
                 if result.status == "applied":
                     applied += 1
                     try:
+                        from services.policy_service import policy_from_exported_job
+
+                        mode, reason = policy_from_exported_job(j)
                         meta = {
                             "job_id": j.get("job_id", ""),
                             "fit_decision": j.get("fit_decision", ""),
                             "ats_score": j.get("ats_score", j.get("final_ats_score")),
-                            "apply_mode": j.get("apply_mode", ""),
+                            "apply_mode": mode,
+                            "policy_reason": reason,
                             "easy_apply_confirmed": j.get("easy_apply_confirmed"),
                             "description": j.get("description", "")[:2000],
                         }
@@ -325,15 +344,19 @@ def decide_apply_mode(
     Returns apply_mode and reason.
     """
     try:
-        from services.policy_service import decide_apply_mode as _decide
+        from services.policy_service import decide_apply_mode_with_reason as _decide_wr
+        from services.profile_service import load_profile, is_auto_apply_ready
 
         job = json.loads(job_json) if isinstance(job_json, str) else (job_json or {})
         ats = int(ats_score) if ats_score and str(ats_score).strip() else None
         unsup = json.loads(unsupported_requirements_json) if isinstance(unsupported_requirements_json, str) else []
-        mode = _decide(job, fit_decision or "", ats, unsup)
-        return {"apply_mode": mode, "status": "ok"}
+        profile_ready = is_auto_apply_ready(load_profile())
+        mode, reason = _decide_wr(
+            job, fit_decision or "", ats, unsup, profile_ready=profile_ready
+        )
+        return {"apply_mode": mode, "policy_reason": reason, "status": "ok"}
     except Exception as e:
-        return {"apply_mode": "manual_assist", "status": "error", "message": str(e)[:150]}
+        return {"apply_mode": "manual_assist", "policy_reason": "error", "status": "error", "message": str(e)[:150]}
 
 
 @mcp.tool()
@@ -409,14 +432,36 @@ def score_job_fit(
             master_resume_text=master_resume_text,
         )
         missing = ats_results.get("detailed_breakdown", {}).get("missing_keywords", [])
+        merged_unsup = sorted(
+            {
+                str(x).strip()
+                for x in (fit_result.get("unsupported_requirements") or [])
+                + (ats_results.get("unsupported_requirements") or [])
+                if str(x).strip()
+            }
+        )
+        from services.truth_safe_ats import compute_truth_safe_ats_ceiling
+
+        truthful_left = ats_results.get("truthful_missing_keywords") or []
+        ceiling = compute_truth_safe_ats_ceiling(
+            final_ats_score=ats_results.get("ats_score", 0),
+            target_score=100,
+            truth_safe=True,
+            converged=int(ats_results.get("ats_score", 0) or 0) >= 100,
+            no_truthful_improvement=not bool(truthful_left),
+            unsupported_requirements=merged_unsup,
+            truthful_missing_keywords=truthful_left,
+        )
         return {
             "status": "ok",
             "fit_score": fit_result.get("job_fit_score", 0),
             "fit_decision": fit_result.get("fit_decision", "Review"),
             "ats_score": ats_results.get("ats_score", 0),
             "missing_keywords": missing[:15],
-            "unsupported_requirements": fit_result.get("unsupported_requirements", [])[:10],
+            "unsupported_requirements": merged_unsup[:10] or fit_result.get("unsupported_requirements", [])[:10],
             "ats_feasible": ats_results.get("ats_score", 0) >= 85,
+            "truth_safe_ats_ceiling": ceiling["truth_safe_ats_ceiling"],
+            "truth_safe_ceiling_reason": ceiling["truth_safe_ceiling_reason"],
         }
     except Exception as e:
         return {"status": "error", "message": str(e)[:200]}
@@ -496,7 +541,7 @@ def prepare_application_package(
     try:
         from services.resume_naming import ensure_resume_exists_for_job
         from services.profile_service import load_profile
-        from agents.application_answerer import answer_question
+        from agents.application_answerer import answer_question_structured
 
         job = {"title": job_title, "company": company, "description": job_description}
         resume_path = ensure_resume_exists_for_job(
@@ -505,6 +550,10 @@ def prepare_application_package(
             output_dir=str(PROJECT_ROOT / "generated_resumes"),
         )
         profile = load_profile()
+        jc = {"company": company, "title": job_title}
+        sp = answer_question_structured("Do you require sponsorship?", profile=profile, job_context=jc)
+        wr = answer_question_structured("Why this role?", profile=profile, job_context=jc)
+        wc = answer_question_structured("Why this company?", profile=profile, job_context=jc)
         values = {
             "first_name": (profile.get("full_name", "") or "").split()[0] or "",
             "last_name": " ".join((profile.get("full_name", "") or "").split()[1:]) or "",
@@ -513,9 +562,26 @@ def prepare_application_package(
             "linkedin_url": profile.get("linkedin_url", ""),
             "github_url": profile.get("github_url", ""),
             "work_authorization": profile.get("work_authorization_note", ""),
-            "sponsorship": answer_question("Do you require sponsorship?", profile=profile, job_context={"company": company, "title": job_title}),
-            "why_this_role": answer_question("Why this role?", profile=profile, job_context={"company": company, "title": job_title}),
-            "why_this_company": answer_question("Why this company?", profile=profile, job_context={"company": company, "title": job_title}),
+            "sponsorship": sp["answer"],
+            "why_this_role": wr["answer"],
+            "why_this_company": wc["answer"],
+        }
+        answer_review = {
+            "sponsorship": {
+                "manual_review_required": sp["manual_review_required"],
+                "reason_codes": sp["reason_codes"],
+                "classified_type": sp["classified_type"],
+            },
+            "why_this_role": {
+                "manual_review_required": wr["manual_review_required"],
+                "reason_codes": wr["reason_codes"],
+                "classified_type": wr["classified_type"],
+            },
+            "why_this_company": {
+                "manual_review_required": wc["manual_review_required"],
+                "reason_codes": wc["reason_codes"],
+                "classified_type": wc["classified_type"],
+            },
         }
         fit_result = {}
         if job_description and master_resume_text:
@@ -526,6 +592,7 @@ def prepare_application_package(
             "status": "ok",
             "resume_path": resume_path or "",
             "autofill_values": values,
+            "answer_review": answer_review,
             "fit_decision": fit_result.get("fit_decision", ""),
             "job_fit_score": fit_result.get("job_fit_score", 0),
             "unsupported_requirements": fit_result.get("unsupported_requirements", []),

@@ -85,12 +85,18 @@ def get_jobs(
     if not jobs:
         return pd.DataFrame(), []
 
-    # Compute apply_mode for each job (central policy)
+    # Compute apply_mode + policy_reason (central policy; profile gates auto-apply)
     try:
-        from services.policy_service import decide_apply_mode
+        from services.policy_service import decide_apply_mode_with_reason
+        from services.profile_service import load_profile, is_auto_apply_ready
+
+        prof = load_profile()
+        profile_ready = is_auto_apply_ready(prof)
         for j in jobs:
             job_dict = {"url": j.url, "apply_url": j.apply_url or j.url, "easy_apply_confirmed": j.easy_apply_confirmed}
-            j.apply_mode = decide_apply_mode(job_dict)
+            mode, reason = decide_apply_mode_with_reason(job_dict, profile_ready=profile_ready)
+            j.apply_mode = mode
+            j.policy_reason = reason
     except ImportError:
         pass
 

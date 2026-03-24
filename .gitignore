@@ -10,6 +10,7 @@ generated_resumes/
 ATS_Report_*.xlsx
 job_applications.csv
 job_applications.db
+application_audit.jsonl
 candidate_resumes/
 config/candidate_profile.json
 application_runs/
@@ -20,3 +21,5 @@ application_runs/
 tp/
 build/
 *.egg-info/
+data/task_state/
+data/idempotency/

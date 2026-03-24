@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
 Regenerate a resume PDF from markdown with proper alignment.
-Usage: python regenerate_resume_pdf.py input.md output.pdf [candidate_name]
+Usage: python scripts/regenerate_resume_pdf.py input.md output.pdf [candidate_name]
 """
 import sys
 from pathlib import Path
 
-# Add project root
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 from agents.file_manager import build_styled_resume_pdf
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python regenerate_resume_pdf.py input.md output.pdf [candidate_name]")
-        print("Example: python regenerate_resume_pdf.py resume.md Santhakumar_Resume.pdf 'Santhakumar Ramesh'")
+        print("Usage: python scripts/regenerate_resume_pdf.py input.md output.pdf [candidate_name]")
+        print("Example: python scripts/regenerate_resume_pdf.py resume.md Santhakumar_Resume.pdf 'Santhakumar Ramesh'")
         sys.exit(1)
     inp = Path(sys.argv[1])
     out = Path(sys.argv[2])

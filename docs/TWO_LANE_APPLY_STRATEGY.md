@@ -18,7 +18,7 @@ Auto-submit only for:
 1. Search with "Easy Apply only" (default ON in LinkedIn filters)
 2. Select high-fit jobs
 3. Export for auto-apply (only Easy Apply jobs included)
-4. Run `apply_linkedin_jobs.py` to fill and submit
+4. Run `scripts/apply_linkedin_jobs.py` to fill and submit
 
 **Why Easy Apply only:**
 - Faster submission

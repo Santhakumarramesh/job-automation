@@ -1,0 +1,3 @@
+Postgres application-tracker migrations.
+
+See ../docs/MIGRATIONS.md for usage (`alembic upgrade head`, env vars).
