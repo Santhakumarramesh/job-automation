@@ -33,6 +33,12 @@ dev = [
     "ruff",
     "mypy"
 ]
+# LinkedIn MCP + Playwright apply path (same as `mcp`; alias for docs / review clarity)
+apply = [
+    "mcp",
+    "fastmcp",
+    "playwright",
+]
 mcp = [
     "mcp",
     "fastmcp",
@@ -42,6 +48,15 @@ full = [
     "mcp",
     "fastmcp",
     "playwright"
+]
+# Typical production install: tracker DB, JWT, migrations, optional S3 + metrics
+production = [
+    "psycopg2-binary>=2.9",
+    "PyJWT>=2.8",
+    "alembic>=1.13",
+    "sqlalchemy>=2.0",
+    "boto3>=1.34",
+    "prometheus-client>=0.20",
 ]
 auth = [
     "PyJWT>=2.8",

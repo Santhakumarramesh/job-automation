@@ -14,7 +14,7 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
 - **Job Apply Autofill MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md).
-- **Production status**: Strong prototype, not production-ready. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
+- **Production status**: Strong prototype, not production-ready. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) and one-page [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md).
 
 ### Automation Rules (explicit)
 
@@ -78,6 +78,8 @@ graph TD
    ```
 
 ### Backend (FastAPI + Celery)
+
+Optional installs: `pip install -e ".[apply]"` (MCP + Playwright for apply tools), `pip install -e ".[production]"` (Postgres, JWT, Alembic, S3, metrics extras).
 
 1. **Run API**:
    ```bash

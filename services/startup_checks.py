@@ -96,7 +96,14 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
         if backend and "localhost" in backend.lower():
             warnings.append("REDIS_BACKEND points at localhost in production — confirm this is intentional.")
 
-    if os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes"):
+    tracker_db_on = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
+    if (strict or prod) and context in ("app", "worker", "streamlit") and not tracker_db_on:
+        errors.append(
+            "TRACKER_USE_DB is not enabled — set TRACKER_USE_DB=1 and DATABASE_URL "
+            "(e.g. sqlite:///./job_applications.db or postgresql://...) for durable tracker persistence."
+        )
+
+    if tracker_db_on:
         turl = (os.getenv("TRACKER_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
         if turl.startswith(("postgresql://", "postgres://")):
             try:
