@@ -2,7 +2,7 @@
 
 **Purpose:** Describe how Career Co-Pilot Pro should work **after recommended upgrades**, aligned with what exists today: MCP job search, fit gate, ATS optimization, candidate profile, answerer, resume naming, tracker, and apply runner.
 
-**Related:** [WORKFLOW_MODULE_MAP.md](WORKFLOW_MODULE_MAP.md) (phase → file map), [ARCHITECTURE.md](ARCHITECTURE.md) (current implementation layers).
+**Related:** [VISION_ARCHITECTURE_MAP.md](VISION_ARCHITECTURE_MAP.md) (diagram + pillar → module table), [WORKFLOW_MODULE_MAP.md](WORKFLOW_MODULE_MAP.md) (phase → file map), [ARCHITECTURE.md](ARCHITECTURE.md) (current implementation layers).
 
 ---
 

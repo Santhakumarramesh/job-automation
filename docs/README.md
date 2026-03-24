@@ -3,6 +3,7 @@
 | Doc | What it is |
 |-----|------------|
 | [TARGET_OPERATING_MODEL.md](TARGET_OPERATING_MODEL.md) | North-star product workflow (phases 1–13 + end-to-end chain) |
+| [VISION_ARCHITECTURE_MAP.md](VISION_ARCHITECTURE_MAP.md) | Combined vision, mermaid diagram, pillar → module ownership |
 | [WORKFLOW_MODULE_MAP.md](WORKFLOW_MODULE_MAP.md) | Each capability → repo path + implementation status |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical layers, data flow, decision logic, module index |
 | [PHASE_3_PLAN.md](PHASE_3_PLAN.md) | Multi-user / production roadmap |
