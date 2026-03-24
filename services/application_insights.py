@@ -6,7 +6,7 @@ Phase 43 — answerer_review rollups from tracker ``qa_audit`` (apply runner met
 from __future__ import annotations
 
 import json
-from collections import Counter, deque
+from collections import Counter, deque, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -174,6 +174,86 @@ def compute_pipeline_correlations(df) -> Dict[str, Any]:
     return out
 
 
+def _crosstab_top_pairs(
+    df,
+    col_a: str,
+    col_b: str,
+    *,
+    label_a: str,
+    label_b: str,
+    limit: int = 32,
+) -> List[Dict[str, Any]]:
+    """Top (col_a, col_b) pair counts for failure / policy correlation views."""
+    if df.empty or col_a not in df.columns or col_b not in df.columns:
+        return []
+    a = df[col_a].fillna("").astype(str).str.strip().replace("", "(empty)")
+    b = df[col_b].fillna("").astype(str).str.strip().replace("", "(empty)")
+    ctr: Counter[tuple[str, str]] = Counter(zip(a.tolist(), b.tolist()))
+    return [
+        {label_a: pair[0], label_b: pair[1], "count": n}
+        for pair, n in ctr.most_common(max(1, min(limit, 80)))
+    ]
+
+
+def compute_tracker_crosstabs(df) -> Dict[str, Any]:
+    """
+    Pairwise counts for common tracker dimensions (submission vs policy, etc.).
+    """
+    return {
+        "submission_status_by_policy_reason": _crosstab_top_pairs(
+            df,
+            "submission_status",
+            "policy_reason",
+            label_a="submission_status",
+            label_b="policy_reason",
+            limit=36,
+        ),
+        "submission_status_by_apply_mode": _crosstab_top_pairs(
+            df,
+            "submission_status",
+            "apply_mode",
+            label_a="submission_status",
+            label_b="apply_mode",
+            limit=28,
+        ),
+        "apply_mode_by_policy_reason": _crosstab_top_pairs(
+            df,
+            "apply_mode",
+            "policy_reason",
+            label_a="apply_mode",
+            label_b="policy_reason",
+            limit=28,
+        ),
+    }
+
+
+def _failure_hint_from_crosstabs(crosstabs: Dict[str, Any]) -> Optional[str]:
+    """Single heuristic when failed / skipped submissions cluster on one policy reason."""
+    rows = crosstabs.get("submission_status_by_policy_reason") or []
+    if not rows:
+        return None
+    fail_kw = ("fail", "skipped", "skip", "error", "challenge", "unmapped")
+    agg: defaultdict[str, int] = defaultdict(int)
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        sub = str(r.get("submission_status") or "").lower()
+        if not any(k in sub for k in fail_kw):
+            continue
+        pol = str(r.get("policy_reason") or "(empty)")
+        agg[pol] += int(r.get("count") or 0)
+    if not agg:
+        return None
+    top_pol, top_n = max(agg.items(), key=lambda x: x[1])
+    total = sum(agg.values())
+    if total >= 3 and top_n >= 2 and top_n / total >= 0.5:
+        return (
+            f"Most tracker rows with failed/skipped **submission_status** share policy_reason "
+            f"`{top_pol}` ({top_n}/{total} in the top cross-tab slice) — inspect that policy path and MCP apply logs."
+        )
+    return None
+
+
 def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
     from services.application_tracker import load_applications
 
@@ -189,6 +269,7 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
             "by_interview_stage": {},
             "by_offer_outcome": {},
             "pipeline_correlations": compute_pipeline_correlations(df),
+            "crosstabs": compute_tracker_crosstabs(df),
             "ats": _ats_summary(df),
             "suggestions": ["No tracker rows for this scope yet; run the pipeline or log applications first."],
         }
@@ -201,6 +282,11 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
     by_iv = _top_counts(df, "interview_stage", 20)
     by_of = _top_counts(df, "offer_outcome", 20)
     pipe_corr = compute_pipeline_correlations(df)
+    xtabs = compute_tracker_crosstabs(df)
+    sug = _suggestions(by_pol, by_mode, by_sub)
+    xh = _failure_hint_from_crosstabs(xtabs)
+    if xh:
+        sug = [xh] + [s for s in sug if s != xh][:12]
 
     return {
         "total": int(len(df)),
@@ -212,8 +298,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
         "by_interview_stage": by_iv,
         "by_offer_outcome": by_of,
         "pipeline_correlations": pipe_corr,
+        "crosstabs": xtabs,
         "ats": _ats_summary(df),
-        "suggestions": _suggestions(by_pol, by_mode, by_sub),
+        "suggestions": sug,
     }
 
 
@@ -314,6 +401,11 @@ def build_application_insights(
         suggestions.append(
             f"Recorded **{acc_n}** accepted offer(s); review `pipeline_correlations.policy_reason_when_offer_accepted` "
             "to see which apply-policy paths correlate with wins."
+        )
+    xt = (tracker.get("crosstabs") or {}) if isinstance(tracker, dict) else {}
+    if isinstance(xt, dict) and any(xt.values()):
+        suggestions.append(
+            "See `tracker.crosstabs` for **submission_status × policy_reason** (and related pairs) to spot failure clusters."
         )
 
     return {

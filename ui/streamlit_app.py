@@ -736,6 +736,19 @@ def run():
                                 [{"reason": k, "count": v} for k, v in sorted(bpr.items(), key=lambda x: -x[1])[:12]]
                             )
                             st.dataframe(pr_df, hide_index=True, use_container_width=True)
+                        xtabs = tr.get("crosstabs") or {}
+                        sp = xtabs.get("submission_status_by_policy_reason") or []
+                        if sp:
+                            st.caption("Submission status × policy reason (top pairs)")
+                            st.dataframe(pd.DataFrame(sp), hide_index=True, use_container_width=True)
+                        sm = xtabs.get("submission_status_by_apply_mode") or []
+                        if sm:
+                            st.caption("Submission status × apply mode")
+                            st.dataframe(pd.DataFrame(sm), hide_index=True, use_container_width=True)
+                        ap = xtabs.get("apply_mode_by_policy_reason") or []
+                        if ap:
+                            st.caption("Apply mode × policy reason")
+                            st.dataframe(pd.DataFrame(ap), hide_index=True, use_container_width=True)
                         by_iv = tr.get("by_interview_stage") or {}
                         by_of = tr.get("by_offer_outcome") or {}
                         if by_iv:

@@ -10,8 +10,10 @@ import pytest
 import pandas as pd
 
 from services.application_insights import (
+    _failure_hint_from_crosstabs,
     compute_answerer_review_insights,
     compute_pipeline_correlations,
+    compute_tracker_crosstabs,
     compute_tracker_insights,
 )
 
@@ -48,6 +50,32 @@ def test_compute_pipeline_correlations_offer_accepted():
     assert acc.get("auto_easy_apply") == 2
     dec = pc["policy_reason_when_offer_declined"]
     assert dec.get("manual_assist") == 1
+
+
+def test_compute_tracker_crosstabs_pairs():
+    df = pd.DataFrame(
+        [
+            {"submission_status": "Failed – X", "policy_reason": "p1", "apply_mode": "auto_easy_apply"},
+            {"submission_status": "Failed – X", "policy_reason": "p1", "apply_mode": "auto_easy_apply"},
+            {"submission_status": "Applied", "policy_reason": "p2", "apply_mode": "manual_assist"},
+        ]
+    )
+    xt = compute_tracker_crosstabs(df)
+    sp = xt["submission_status_by_policy_reason"]
+    assert any(r["count"] == 2 for r in sp)
+    assert sp[0]["count"] >= 2
+
+
+def test_failure_hint_from_crosstabs_clusters():
+    xt = {
+        "submission_status_by_policy_reason": [
+            {"submission_status": "Failed – Form", "policy_reason": "manual_assist", "count": 4},
+            {"submission_status": "Failed – Form", "policy_reason": "skip_fit", "count": 1},
+        ]
+    }
+    h = _failure_hint_from_crosstabs(xt)
+    assert h is not None
+    assert "manual_assist" in h
 
 
 def test_tracker_insights_includes_pipeline(monkeypatch):
@@ -92,6 +120,8 @@ def test_tracker_insights_empty():
             assert ins["by_interview_stage"] == {}
             assert ins["by_offer_outcome"] == {}
             assert "pipeline_correlations" in ins
+            assert "crosstabs" in ins
+            assert ins["crosstabs"]["submission_status_by_policy_reason"] == []
         finally:
             at.APPLICATION_FILE = orig
             os.environ.pop("TRACKER_USE_DB", None)
@@ -142,6 +172,7 @@ def test_insights_api_includes_answerer_block():
             data = r.json()
             assert "answerer_review" in data
             assert data["answerer_review"].get("tracker_rows_with_answerer_review", 0) >= 1
+            assert "crosstabs" in (data.get("tracker") or {})
         finally:
             at.APPLICATION_FILE = prev
             app.dependency_overrides.clear()

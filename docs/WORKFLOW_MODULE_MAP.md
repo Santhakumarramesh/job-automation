@@ -171,6 +171,7 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | 42 | Audit tail summary (JSONL) | `summarize_audit_log`, `GET /api/insights?include_audit=true`, `GET /api/admin/insights` | ✅ |
 | 43 | Answerer QA rollups in insights | `compute_answerer_review_insights` in `application_insights.py`, `GET /api/insights` field `answerer_review` | ✅ (light) |
 | 44 | Interview / offer pipeline on tracker + policy correlations | `interview_stage`, `offer_outcome` columns; `PATCH /api/applications/{id}/pipeline`; `pipeline_correlations` in insights; Alembic `tracker_0003` | ✅ |
+| — | Tracker crosstabs (submission × policy / apply mode) | `compute_tracker_crosstabs`, `tracker.crosstabs` in `GET /api/insights`, Streamlit | ✅ (light) |
 | — | Deep failure correlation, profile auto-tuning | MCP tools + analytics | ⚠️ Manual / future |
 
 ---
