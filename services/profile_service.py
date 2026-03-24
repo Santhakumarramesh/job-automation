@@ -6,7 +6,7 @@ Used by application_answerer and application_runner (Phase 4–5).
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 # Default paths: actual (gitignored) or example (template)
@@ -58,6 +58,62 @@ AUTO_APPLY_REQUIRED = [
 ]
 
 
+def format_application_locations_summary(profile: dict) -> str:
+    """
+    Human-readable summary of ``application_locations`` for forms (relocation / work location).
+    Each item: optional label, city, state_region, country, remote_ok (bool).
+    """
+    profile = profile or {}
+    locs = profile.get("application_locations")
+    if not isinstance(locs, list) or not locs:
+        return ""
+    chunks: List[str] = []
+    for raw in locs:
+        if not isinstance(raw, dict):
+            continue
+        label = str(raw.get("label") or "").strip()
+        city = str(raw.get("city") or "").strip()
+        st = str(raw.get("state_region") or "").strip()
+        country = str(raw.get("country") or "").strip()
+        remote = raw.get("remote_ok")
+
+        if label:
+            core = label
+        else:
+            core = ", ".join(p for p in (city, st) if p)
+        if not core and country:
+            core = country
+        if not core:
+            continue
+        if country and country.lower() not in core.lower():
+            core = f"{core}, {country}" if core else country
+        if remote is True:
+            core = f"{core} (remote OK)"
+        elif remote is False:
+            core = f"{core} (on-site preferred)"
+        chunks.append(core)
+    return "; ".join(chunks)
+
+
+def format_mailing_address_oneline(profile: dict) -> str:
+    """
+    Single-line mailing address from ``mailing_address`` (street, city, state, postal, country).
+    """
+    profile = profile or {}
+    ma = profile.get("mailing_address")
+    if not isinstance(ma, dict):
+        return ""
+    line1 = str(ma.get("street_line1") or "").strip()
+    line2 = str(ma.get("street_line2") or "").strip()
+    city = str(ma.get("city") or "").strip()
+    st = str(ma.get("state_region") or "").strip()
+    postal = str(ma.get("postal_code") or "").strip()
+    country = str(ma.get("country") or "").strip()
+    city_state = ", ".join(p for p in (city, st, postal) if p)
+    parts = [p for p in (line1, line2, city_state, country) if p]
+    return ", ".join(parts)
+
+
 def validate_profile(profile: dict) -> list[str]:
     """
     Validate profile and return list of warnings (missing fields, invalid formats).
@@ -81,6 +137,13 @@ def validate_profile(profile: dict) -> list[str]:
     short = profile.get("short_answers", {})
     if not isinstance(short, dict):
         warnings.append("short_answers should be an object")
+
+    locs = profile.get("application_locations")
+    if locs is not None and not isinstance(locs, list):
+        warnings.append("application_locations should be a list of location objects")
+    ma = profile.get("mailing_address")
+    if ma is not None and not isinstance(ma, dict):
+        warnings.append("mailing_address should be an object with street/city/state fields")
 
     return warnings
 

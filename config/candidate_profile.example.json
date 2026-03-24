@@ -6,6 +6,30 @@
   "github_url": "https://github.com/yourusername",
   "portfolio_url": "",
   "current_location": "City, State",
+  "application_locations": [
+    {
+      "label": "SF Bay Area",
+      "city": "San Francisco",
+      "state_region": "CA",
+      "country": "US",
+      "remote_ok": true
+    },
+    {
+      "label": "NYC",
+      "city": "New York",
+      "state_region": "NY",
+      "country": "US",
+      "remote_ok": false
+    }
+  ],
+  "mailing_address": {
+    "street_line1": "123 Main St",
+    "street_line2": "Apt 4",
+    "city": "San Francisco",
+    "state_region": "CA",
+    "postal_code": "94102",
+    "country": "US"
+  },
   "work_authorization_note": "Authorized to work in the US. No sponsorship required.",
   "visa_status": "",
   "relocation_preference": "Open to remote",

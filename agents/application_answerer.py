@@ -12,6 +12,8 @@ from typing import List, Optional, TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
+from services.profile_service import format_application_locations_summary, format_mailing_address_oneline
+
 
 MAX_ANSWER_LENGTH = 150
 MAX_ANSWER_LENGTH_LONG = 280  # For why_role, why_company when needed
@@ -27,11 +29,18 @@ REASON_MISSING_WHY_ROLE = "missing_why_this_role"
 REASON_MISSING_WHY_COMPANY = "missing_why_this_company"
 REASON_MISSING_AVAILABILITY = "missing_availability_or_notice"
 REASON_MISSING_URL = "missing_url_field"
+REASON_MISSING_MAILING_ADDRESS = "missing_mailing_address_structured"
 REASON_TRUNCATED = "answer_truncated"
 
 # Question type keywords for auto-classification
 QUESTION_PATTERNS = [
     (r"sponsor|work\s*(auth|permit|visa|authorization)|require\s*sponsor|h1.?b|green\s*card", "sponsorship"),
+    (
+        r"mailing\s*address|street\s*address|address\s*line\s*1|address\s*line\s*2|"
+        r"home\s*address|residential\s*address|^\s*zip\s*code|^\s*postal\s*code|"
+        r"\bapt\.?\s*\/\s*suite|^\s*city\b.*\bstate\b",
+        "mailing_address",
+    ),
     (r"relocat|willing\s*to\s*move|remote|work\s*location|on.?site", "relocation"),
     (r"salary|compensation|pay\s*expect|expected\s*salary|hourly|annual", "salary"),
     (r"years?\s*(of\s*)?(experience\s*)?(in\s*)?(python|sql|ml|machine\s*learning|nlp|aws|data)", "years"),
@@ -102,10 +111,23 @@ def answer_question_structured(
             reasons.append(REASON_PLACEHOLDER_MANUAL)
 
     elif qtype == "relocation":
-        answer = profile.get("relocation_preference", "")
-        if not str(answer).strip():
+        answer = str(profile.get("relocation_preference", "") or "").strip()
+        if not answer:
+            answer = format_application_locations_summary(profile).strip()
+        if not answer:
+            answer = str(profile.get("current_location", "") or "").strip()
+        if not answer:
             manual = True
             reasons.append(REASON_MISSING_RELOCATION)
+            reasons.append(REASON_EMPTY)
+
+    elif qtype == "mailing_address":
+        answer = format_mailing_address_oneline(profile).strip()
+        if not answer:
+            answer = str(profile.get("current_location", "") or "").strip()
+        if not answer:
+            manual = True
+            reasons.append(REASON_MISSING_MAILING_ADDRESS)
             reasons.append(REASON_EMPTY)
 
     elif qtype == "salary":

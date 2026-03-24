@@ -216,7 +216,12 @@ def run():
 
     with st.sidebar.expander("📋 Application Profile", expanded=False):
         try:
-            from services.profile_service import load_profile, validate_profile, ensure_profile_exists
+            from services.profile_service import (
+                ensure_profile_exists,
+                format_application_locations_summary,
+                load_profile,
+                validate_profile,
+            )
             from agents.application_answerer import answer_question_structured
             if ensure_profile_exists():
                 profile = load_profile()
@@ -230,6 +235,9 @@ def run():
                         st.caption(f"⚠️ {msg}")
                 else:
                     st.caption("Profile OK")
+                loc_s = format_application_locations_summary(profile)
+                if loc_s:
+                    st.caption(f"📍 application_locations: {loc_s[:220]}{'…' if len(loc_s) > 220 else ''}")
                 sample_q = st.text_input("Test question", placeholder="e.g. Do you require sponsorship?", key="profile_test_q")
                 if sample_q:
                     meta = answer_question_structured(sample_q, profile=profile, master_resume_text="")

@@ -28,6 +28,7 @@ Single-page snapshot: **strong prototype**, **not production-ready** for unatten
 - Two-lane strategy is documented; keep verifying **per-job** Easy Apply signals (`easy_apply_confirmed` vs search filters) in exports and MCP payloads.
 - External ATS (Greenhouse/Lever/Workday) is **prototype** — prefer **manual_assist**; runner defaults to Easy Apply–only auto path.
 - Tracker **defaults to CSV** in dev; **production/strict startup now requires `TRACKER_USE_DB=1`** ([startup_checks.py](services/startup_checks.py)).
+- Candidate profile supports optional **`application_locations`** (target markets / remote) and **`mailing_address`** (structured street/city/state); answerer uses them for location and address questions ([profile_service.py](services/profile_service.py), [application_answerer.py](agents/application_answerer.py)).
 
 ---
 
