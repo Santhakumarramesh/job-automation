@@ -40,6 +40,7 @@ def test_openapi_schema_grouped_by_tags():
     tag_names = {t["name"] for t in schema.get("tags", [])}
     assert "jobs" in tag_names and "admin" in tag_names
     assert schema["paths"]["/api/jobs"]["post"]["tags"] == ["jobs"]
+    assert schema["paths"]["/api/v1/jobs"]["post"]["tags"] == ["jobs"]
     assert schema["paths"]["/api/admin/applications"]["get"]["tags"] == ["admin"]
 
 
@@ -97,6 +98,15 @@ def test_get_application_by_job_id():
                 os.environ.pop("TRACKER_USE_DB", None)
             else:
                 os.environ["TRACKER_USE_DB"] = prev_db
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_v1_path_alias():
+    job_data = {"name": "V1 Job", "payload": {"url": "https://example.com/j"}}
+    with patch("app.main.enqueue_job", return_value="11111111-1111-1111-1111-111111111111"):
+        response = client.post("/api/v1/jobs", json=job_data)
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "11111111-1111-1111-1111-111111111111"
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")

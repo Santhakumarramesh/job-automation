@@ -35,6 +35,8 @@ Auto-apply **only** proceeds when all of these are met:
 
 Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI process (`services/rate_limit.py`). Exempt paths include `/health`, `/ready`, `/metrics`, and OpenAPI UI routes. Prefer **ingress / WAF limits** when running multiple API replicas (in-memory counts are not shared). With `APP_ENV=production`, startup warns if in-app rate limiting is off unless you set `API_RATE_LIMIT_SKIP_STARTUP_WARN=1` (after confirming edge limits).
 
+**Versioned base URL:** the same routes are mounted at `/api` and `/api/v1` by default. Set `API_V1_DUPLICATE_ROUTES=0` to expose only `/api` (slimmer OpenAPI).
+
 ## Known gaps
 
 1. **Easy Apply truthfulness** — `easy_apply_confirmed` (MCP) vs `easy_apply_filter_used` (search filter).

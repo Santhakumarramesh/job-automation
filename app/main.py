@@ -3,7 +3,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -45,6 +45,7 @@ app = FastAPI(
     title="Career Co-Pilot Pro API",
     description=(
         "REST API for job pipelines, application tracking, follow-ups, and operations. "
+        "Base URLs: **`/api`** (stable) and **`/api/v1`** (duplicate alias unless `API_V1_DUPLICATE_ROUTES=0`). "
         "Authenticate with **X-API-Key**, **Authorization: Bearer** (JWT when `JWT_SECRET` is set), "
         "or the open **demo-user** when `API_KEY` is unset (development only)."
     ),
@@ -59,6 +60,9 @@ from services.rate_limit import install_rate_limit_middleware
 
 install_prometheus(app)
 install_rate_limit_middleware(app)
+
+api_router = APIRouter()
+
 
 class JobRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -191,7 +195,7 @@ def _resolve_job_idempotency_key(
     return out
 
 
-@app.post("/api/jobs", status_code=202, tags=["jobs"])
+@api_router.post("/jobs", status_code=202, tags=["jobs"])
 def submit_job(
     req: JobRequest,
     request: Request,
@@ -226,7 +230,7 @@ def submit_job(
     return {"job_id": job_id, "status": "accepted"}
 
 
-@app.get("/api/applications", tags=["applications"])
+@api_router.get("/applications", tags=["applications"])
 def list_applications(user=Depends(get_current_user)):
     """List tracker rows for the authenticated user (all rows for demo-user)."""
     from services.application_tracker import load_applications
@@ -237,7 +241,7 @@ def list_applications(user=Depends(get_current_user)):
     return {"count": len(records), "items": records[:500]}
 
 
-@app.get("/api/insights", tags=["insights"])
+@api_router.get("/insights", tags=["insights"])
 def application_insights(
     user=Depends(get_current_user),
     include_audit: bool = Query(
@@ -257,7 +261,7 @@ def application_insights(
     )
 
 
-@app.get("/api/admin/insights", tags=["admin"])
+@api_router.get("/admin/insights", tags=["admin"])
 def admin_application_insights(
     admin=Depends(require_admin),
     include_audit: bool = Query(True),
@@ -273,7 +277,7 @@ def admin_application_insights(
     )
 
 
-@app.get("/api/applications/by-job/{job_id}", tags=["applications"])
+@api_router.get("/applications/by-job/{job_id}", tags=["applications"])
 def get_application_by_job_id(
     job_id: str,
     user=Depends(get_current_user),
@@ -300,7 +304,7 @@ def get_application_by_job_id(
     return {"application": row, "artifacts": artifacts}
 
 
-@app.get("/api/admin/applications/by-job/{job_id}", tags=["admin"])
+@api_router.get("/admin/applications/by-job/{job_id}", tags=["admin"])
 def admin_get_application_by_job_id(
     job_id: str,
     admin=Depends(require_admin),
@@ -323,7 +327,7 @@ def admin_get_application_by_job_id(
     return {"application": row, "artifacts": artifacts}
 
 
-@app.get("/api/admin/applications", tags=["admin"])
+@api_router.get("/admin/applications", tags=["admin"])
 def admin_list_applications(admin=Depends(require_admin)):
     """
     List all tracker rows (no user_id filter). Phase 3.1.4 — requires admin role.
@@ -335,7 +339,7 @@ def admin_list_applications(admin=Depends(require_admin)):
     return {"count": len(records), "items": records[:2000], "scoped": False}
 
 
-@app.get("/api/admin/metrics/summary", tags=["admin"])
+@api_router.get("/admin/metrics/summary", tags=["admin"])
 def admin_metrics_summary(admin=Depends(require_admin)):
     """
     Celery aggregate counters from Redis (Phase 3.6). Enable workers with CELERY_METRICS_REDIS=1.
@@ -345,7 +349,7 @@ def admin_metrics_summary(admin=Depends(require_admin)):
     return get_celery_metrics_summary()
 
 
-@app.get("/api/follow-ups", tags=["follow-ups"])
+@api_router.get("/follow-ups", tags=["follow-ups"])
 def list_follow_ups(
     user=Depends(get_current_user),
     due_only: bool = Query(True, description="Only rows with follow_up_at <= now (UTC)"),
@@ -370,7 +374,7 @@ def list_follow_ups(
     return {"count": len(items), "items": items}
 
 
-@app.get("/api/follow-ups/digest", tags=["follow-ups"])
+@api_router.get("/follow-ups/digest", tags=["follow-ups"])
 def follow_ups_digest(
     user=Depends(get_current_user),
     include_snoozed: bool = Query(True),
@@ -392,7 +396,7 @@ def follow_ups_digest(
     return {"count": len(items), "items": items, "text": text}
 
 
-@app.get("/api/admin/follow-ups/digest", tags=["admin"])
+@api_router.get("/admin/follow-ups/digest", tags=["admin"])
 def admin_follow_ups_digest(
     admin=Depends(require_admin),
     include_snoozed: bool = Query(True),
@@ -412,7 +416,7 @@ def admin_follow_ups_digest(
     return {"count": len(items), "items": items, "text": text}
 
 
-@app.get("/api/admin/follow-ups", tags=["admin"])
+@api_router.get("/admin/follow-ups", tags=["admin"])
 def admin_list_follow_ups(
     admin=Depends(require_admin),
     due_only: bool = Query(True),
@@ -433,7 +437,7 @@ def admin_list_follow_ups(
     return {"count": len(items), "items": items}
 
 
-@app.patch("/api/applications/{application_id}/follow-up", tags=["applications"])
+@api_router.patch("/applications/{application_id}/follow-up", tags=["applications"])
 def patch_application_follow_up(
     application_id: str,
     body: FollowUpPatch,
@@ -452,7 +456,7 @@ def patch_application_follow_up(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/admin/applications/{application_id}/follow-up", tags=["admin"])
+@api_router.patch("/admin/applications/{application_id}/follow-up", tags=["admin"])
 def admin_patch_application_follow_up(
     application_id: str,
     body: FollowUpPatch,
@@ -469,7 +473,7 @@ def admin_patch_application_follow_up(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/applications/{application_id}/pipeline", tags=["applications"])
+@api_router.patch("/applications/{application_id}/pipeline", tags=["applications"])
 def patch_application_pipeline(
     application_id: str,
     body: PipelinePatch,
@@ -488,7 +492,7 @@ def patch_application_pipeline(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/admin/applications/{application_id}/pipeline", tags=["admin"])
+@api_router.patch("/admin/applications/{application_id}/pipeline", tags=["admin"])
 def admin_patch_application_pipeline(
     application_id: str,
     body: PipelinePatch,
@@ -505,7 +509,7 @@ def admin_patch_application_pipeline(
     return {"ok": True, "id": application_id}
 
 
-@app.get("/api/jobs/{job_id}", tags=["jobs"])
+@api_router.get("/jobs/{job_id}", tags=["jobs"])
 def get_job_status(
     job_id: str,
     user=Depends(get_current_user),
@@ -529,6 +533,15 @@ def get_job_status(
         )
     except Exception as e:
         raise HTTPException(500, str(e)[:200])
+
+
+def _api_v1_duplicate_enabled() -> bool:
+    return (os.getenv("API_V1_DUPLICATE_ROUTES", "1").lower() in ("1", "true", "yes"))
+
+
+app.include_router(api_router, prefix="/api")
+if _api_v1_duplicate_enabled():
+    app.include_router(api_router, prefix="/api/v1")
 
 
 def _build_openapi_schema():

@@ -44,6 +44,7 @@ def test_path_group_limits_cardinality():
     from services.prometheus_setup import _path_group
 
     assert _path_group("/api/jobs/uuid-here") == "/api/jobs"
+    assert _path_group("/api/v1/jobs/uuid-here") == "/api/v1"
     assert _path_group("/api/admin/metrics/summary") == "/api/admin"
     assert _path_group("/health") == "/health"
     assert _path_group("/") == "/"
