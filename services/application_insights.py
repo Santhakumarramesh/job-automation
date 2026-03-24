@@ -141,6 +141,39 @@ def compute_answerer_review_insights(records: Sequence[Dict[str, Any]]) -> Dict[
     }
 
 
+def _norm_pipeline_val(s: str) -> str:
+    t = str(s or "").strip().lower()
+    return "" if t in ("", "(empty)", "none") else t
+
+
+def compute_pipeline_correlations(df) -> Dict[str, Any]:
+    """
+    Conditional ``policy_reason`` counts for rows with meaningful interview/offer outcomes.
+    """
+    out: Dict[str, Any] = {
+        "policy_reason_when_offer_accepted": {},
+        "policy_reason_when_offer_declined": {},
+        "policy_reason_when_interview_ended_negative": {},
+    }
+    if df.empty or "policy_reason" not in df.columns:
+        return out
+
+    pol = df["policy_reason"].fillna("").astype(str).str.strip()
+    if "offer_outcome" in df.columns:
+        off = df["offer_outcome"].fillna("").map(_norm_pipeline_val)
+        acc = off.isin(("accepted", "yes"))
+        dec = off.isin(("declined", "rejected"))
+        out["policy_reason_when_offer_accepted"] = _top_counts(df[acc], "policy_reason", 15)
+        out["policy_reason_when_offer_declined"] = _top_counts(df[dec], "policy_reason", 15)
+
+    if "interview_stage" in df.columns:
+        stg = df["interview_stage"].fillna("").map(_norm_pipeline_val)
+        neg = stg.isin(("rejected", "withdrew", "no_show"))
+        out["policy_reason_when_interview_ended_negative"] = _top_counts(df[neg], "policy_reason", 15)
+
+    return out
+
+
 def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
     from services.application_tracker import load_applications
 
@@ -153,6 +186,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
             "by_policy_reason": {},
             "by_fit_decision": {},
             "by_recruiter_response": {},
+            "by_interview_stage": {},
+            "by_offer_outcome": {},
+            "pipeline_correlations": compute_pipeline_correlations(df),
             "ats": _ats_summary(df),
             "suggestions": ["No tracker rows for this scope yet; run the pipeline or log applications first."],
         }
@@ -162,6 +198,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
     by_pol = _top_counts(df, "policy_reason", 25)
     by_fit = _top_counts(df, "fit_decision", 10)
     by_rec = _top_counts(df, "recruiter_response", 10)
+    by_iv = _top_counts(df, "interview_stage", 20)
+    by_of = _top_counts(df, "offer_outcome", 20)
+    pipe_corr = compute_pipeline_correlations(df)
 
     return {
         "total": int(len(df)),
@@ -170,6 +209,9 @@ def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
         "by_policy_reason": by_pol,
         "by_fit_decision": by_fit,
         "by_recruiter_response": by_rec,
+        "by_interview_stage": by_iv,
+        "by_offer_outcome": by_of,
+        "pipeline_correlations": pipe_corr,
         "ats": _ats_summary(df),
         "suggestions": _suggestions(by_pol, by_mode, by_sub),
     }
@@ -265,6 +307,13 @@ def build_application_insights(
         suggestions.append(
             "Multiple tracker rows include answerer `manual_review_required` in QA audit — "
             "tune candidate_profile short_answers or keep `block_submit_on_answerer_review` enabled."
+        )
+    pc = (tracker.get("pipeline_correlations") or {}) if isinstance(tracker, dict) else {}
+    acc_n = sum((pc.get("policy_reason_when_offer_accepted") or {}).values())
+    if acc_n >= 2:
+        suggestions.append(
+            f"Recorded **{acc_n}** accepted offer(s); review `pipeline_correlations.policy_reason_when_offer_accepted` "
+            "to see which apply-policy paths correlate with wins."
         )
 
     return {

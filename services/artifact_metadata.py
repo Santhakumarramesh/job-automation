@@ -50,4 +50,10 @@ def build_artifact_metadata(row: dict) -> dict:
     }
     if any(str(v).strip() for v in fu.values()):
         out["follow_up"] = fu
+    pipe = {
+        "interview_stage": str(row.get("interview_stage") or ""),
+        "offer_outcome": str(row.get("offer_outcome") or ""),
+    }
+    if any(str(v).strip() for v in pipe.values()):
+        out["pipeline"] = pipe
     return out

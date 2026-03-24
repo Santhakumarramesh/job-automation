@@ -49,6 +49,8 @@ TRACKER_COLUMNS = [
     "follow_up_at",       # Phase 12 — ISO 8601 when to follow up (empty = none)
     "follow_up_status",   # pending | done | snoozed | dismissed | empty
     "follow_up_note",     # free text reminder
+    "interview_stage",    # Phase 13+ — pipeline: none, scheduled, completed, advanced, rejected, withdrew, no_show
+    "offer_outcome",      # none, pending, extended, accepted, declined, ghosted
 ]
 
 # Legacy columns for backward compat
@@ -141,6 +143,11 @@ def log_application(state: dict):
             or state.get("authenticated_user_id")
             or ""
         ).strip(),
+        "follow_up_at": str(state.get("follow_up_at", "") or ""),
+        "follow_up_status": str(state.get("follow_up_status", "") or ""),
+        "follow_up_note": str(state.get("follow_up_note", "") or ""),
+        "interview_stage": str(state.get("interview_stage", "") or ""),
+        "offer_outcome": str(state.get("offer_outcome", "") or ""),
     }
     if USE_DB:
         try:
@@ -206,6 +213,11 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "artifacts_manifest": _artifacts_manifest_cell(job_metadata.get("artifacts_manifest")),
         "retry_state": "",
         "user_id": str(job_metadata.get("user_id", "") or "").strip(),
+        "follow_up_at": "",
+        "follow_up_status": "",
+        "follow_up_note": "",
+        "interview_stage": "",
+        "offer_outcome": "",
     }
     if USE_DB:
         try:
@@ -305,6 +317,45 @@ def update_follow_up_for_row(
         if row_uid != str(scope_user_id).strip():
             return False
     for col in ("follow_up_at", "follow_up_status", "follow_up_note"):
+        if col in df.columns:
+            df[col] = df[col].astype(object)
+    for k, v in patch.items():
+        if v is None:
+            df.at[idx, k] = ""
+        else:
+            df.at[idx, k] = str(v).strip() if isinstance(v, str) else v
+    df.to_csv(APPLICATION_FILE, index=False)
+    return True
+
+
+def update_pipeline_for_row(
+    row_id: str,
+    scope_user_id: Optional[str],
+    updates: dict,
+) -> bool:
+    """PATCH interview_stage / offer_outcome. scope_user_id None skips user_id check (demo/admin)."""
+    from services.tracker_db import PIPELINE_COLUMN_SET, update_application_pipeline_partial
+
+    patch = {k: v for k, v in updates.items() if k in PIPELINE_COLUMN_SET}
+    if not patch:
+        return False
+    if USE_DB:
+        try:
+            return update_application_pipeline_partial(row_id, scope_user_id, patch)
+        except ImportError:
+            pass
+    df = load_applications(for_user_id=None)
+    df = _ensure_columns(df)
+    rid = str(row_id).strip()
+    m = df["id"].astype(str) == rid
+    if not m.any():
+        return False
+    idx = int(df.index[m][0])
+    if scope_user_id is not None:
+        row_uid = str(df.at[idx, "user_id"] or "").strip()
+        if row_uid != str(scope_user_id).strip():
+            return False
+    for col in ("interview_stage", "offer_outcome"):
         if col in df.columns:
             df[col] = df[col].astype(object)
     for k, v in patch.items():

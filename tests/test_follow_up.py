@@ -216,6 +216,56 @@ def test_follow_up_api_patch():
                 os.environ["TRACKER_USE_DB"] = prev_db
 
 
+@pytest.mark.skipif(not _FOLLOW_UP_APP_OK, reason="app.main not available")
+def test_pipeline_api_patch():
+    import os
+    import tempfile
+    from pathlib import Path
+
+    import services.application_tracker as at
+    from app.auth import User, get_current_user
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with tempfile.TemporaryDirectory() as td:
+        csv_path = Path(td) / "job_applications.csv"
+        prev = at.APPLICATION_FILE
+        prev_db = os.environ.get("TRACKER_USE_DB")
+        os.environ["TRACKER_USE_DB"] = "0"
+        at.APPLICATION_FILE = csv_path
+        try:
+            at.initialize_tracker()
+            at.log_application(
+                {
+                    "target_company": "Co",
+                    "target_position": "Dev",
+                    "job_id": "j-pipe",
+                    "user_id": "alice",
+                    "policy_reason": "auto_easy_apply",
+                }
+            )
+            df = at.load_applications(for_user_id=None)
+            rid = str(df.iloc[0]["id"])
+            app.dependency_overrides[get_current_user] = lambda: User("alice", [])
+            c = TestClient(app)
+            r = c.patch(
+                f"/api/applications/{rid}/pipeline",
+                json={"interview_stage": "completed", "offer_outcome": "accepted"},
+            )
+            assert r.status_code == 200, r.text
+            df2 = at.load_applications(for_user_id="alice")
+            row = df2[df2["id"].astype(str) == rid].iloc[0]
+            assert str(row["interview_stage"]).lower() == "completed"
+            assert str(row["offer_outcome"]).lower() == "accepted"
+        finally:
+            at.APPLICATION_FILE = prev
+            app.dependency_overrides.clear()
+            if prev_db is None:
+                os.environ.pop("TRACKER_USE_DB", None)
+            else:
+                os.environ["TRACKER_USE_DB"] = prev_db
+
+
 def test_artifact_metadata_includes_follow_up_when_set():
     from services.artifact_metadata import build_artifact_metadata
 
@@ -227,3 +277,12 @@ def test_artifact_metadata_includes_follow_up_when_set():
     meta = build_artifact_metadata(row)
     assert "follow_up" in meta
     assert meta["follow_up"]["follow_up_status"] == "pending"
+
+
+def test_artifact_metadata_includes_pipeline_when_set():
+    from services.artifact_metadata import build_artifact_metadata
+
+    row = {"resume_path": "/r.pdf", "interview_stage": "scheduled", "offer_outcome": "pending"}
+    meta = build_artifact_metadata(row)
+    assert meta["pipeline"]["interview_stage"] == "scheduled"
+    assert meta["pipeline"]["offer_outcome"] == "pending"

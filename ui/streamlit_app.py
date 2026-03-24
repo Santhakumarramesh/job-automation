@@ -650,7 +650,22 @@ def run():
                 if "company" in display_df.columns and "Company" not in display_df.columns:
                     display_df = display_df.rename(columns={"company": "Company", "position": "Position", "status": "Status", "job_description": "Job Description"})
                 status_col = "Status" if "Status" in display_df.columns else "status"
-                edited_apps_df = st.data_editor(display_df, column_config={status_col: st.column_config.SelectboxColumn("Status", options=["Applied", "Interviewing", "Offer", "Rejected"])}, hide_index=True)
+                _iv_opts = ["", "none", "scheduled", "completed", "advanced", "rejected", "withdrew", "no_show"]
+                _of_opts = ["", "none", "pending", "extended", "accepted", "declined", "ghosted"]
+                col_cfg = {
+                    status_col: st.column_config.SelectboxColumn(
+                        "Status", options=["Applied", "Interviewing", "Offer", "Rejected"]
+                    ),
+                }
+                if "interview_stage" in display_df.columns:
+                    col_cfg["interview_stage"] = st.column_config.SelectboxColumn(
+                        "Interview stage", options=_iv_opts, help="Pipeline tracking (insights + correlations)"
+                    )
+                if "offer_outcome" in display_df.columns:
+                    col_cfg["offer_outcome"] = st.column_config.SelectboxColumn(
+                        "Offer outcome", options=_of_opts, help="Set when you have an offer decision"
+                    )
+                edited_apps_df = st.data_editor(display_df, column_config=col_cfg, hide_index=True)
                 if not edited_apps_df.equals(display_df):
                     save_tracker_edits(edited_apps_df)
                     st.success("Status updated!")
@@ -721,6 +736,31 @@ def run():
                                 [{"reason": k, "count": v} for k, v in sorted(bpr.items(), key=lambda x: -x[1])[:12]]
                             )
                             st.dataframe(pr_df, hide_index=True, use_container_width=True)
+                        by_iv = tr.get("by_interview_stage") or {}
+                        by_of = tr.get("by_offer_outcome") or {}
+                        if by_iv:
+                            st.caption("Interview stage (tracker)")
+                            st.dataframe(
+                                pd.DataFrame([{"stage": k, "count": v} for k, v in sorted(by_iv.items(), key=lambda x: -x[1])[:15]]),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                        if by_of:
+                            st.caption("Offer outcome (tracker)")
+                            st.dataframe(
+                                pd.DataFrame([{"outcome": k, "count": v} for k, v in sorted(by_of.items(), key=lambda x: -x[1])[:15]]),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                        pc = tr.get("pipeline_correlations") or {}
+                        pacc = pc.get("policy_reason_when_offer_accepted") or {}
+                        if pacc:
+                            st.caption("Policy reasons when offer accepted")
+                            st.dataframe(
+                                pd.DataFrame([{"policy_reason": k, "count": v} for k, v in sorted(pacc.items(), key=lambda x: -x[1])[:10]]),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
                     except Exception as ie:
                         st.warning(str(ie))
 

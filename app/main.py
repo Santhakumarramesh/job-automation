@@ -51,6 +51,13 @@ class JobRequest(BaseModel):
 
 _ALLOWED_FOLLOW_UP_STATUS = frozenset({"", "pending", "done", "snoozed", "dismissed"})
 
+_ALLOWED_INTERVIEW_STAGES = frozenset(
+    {"", "none", "scheduled", "completed", "advanced", "rejected", "withdrew", "no_show"}
+)
+_ALLOWED_OFFER_OUTCOMES = frozenset(
+    {"", "none", "pending", "extended", "accepted", "declined", "ghosted"}
+)
+
 
 class FollowUpPatch(BaseModel):
     follow_up_at: Optional[str] = Field(None, max_length=64, description="ISO 8601; omit to leave unchanged")
@@ -71,6 +78,35 @@ def _follow_up_updates_from_body(body: FollowUpPatch) -> dict:
                 detail="follow_up_status must be one of: pending, done, snoozed, dismissed (or empty)",
             )
         raw["follow_up_status"] = v
+    return raw
+
+
+class PipelinePatch(BaseModel):
+    interview_stage: Optional[str] = Field(None, max_length=120)
+    offer_outcome: Optional[str] = Field(None, max_length=120)
+
+
+def _pipeline_updates_from_body(body: PipelinePatch) -> dict:
+    try:
+        raw = body.model_dump(exclude_unset=True)
+    except AttributeError:
+        raw = body.dict(exclude_unset=True)
+    if "interview_stage" in raw and raw["interview_stage"] is not None:
+        v = str(raw["interview_stage"]).strip().lower()
+        if v not in _ALLOWED_INTERVIEW_STAGES:
+            raise HTTPException(
+                status_code=400,
+                detail="interview_stage must be one of: none, scheduled, completed, advanced, rejected, withdrew, no_show (or empty)",
+            )
+        raw["interview_stage"] = v
+    if "offer_outcome" in raw and raw["offer_outcome"] is not None:
+        v = str(raw["offer_outcome"]).strip().lower()
+        if v not in _ALLOWED_OFFER_OUTCOMES:
+            raise HTTPException(
+                status_code=400,
+                detail="offer_outcome must be one of: none, pending, extended, accepted, declined, ghosted (or empty)",
+            )
+        raw["offer_outcome"] = v
     return raw
 
 
@@ -377,6 +413,42 @@ def admin_patch_application_follow_up(
     if not patch:
         raise HTTPException(400, detail="No fields to update")
     ok = update_follow_up_for_row(application_id, None, patch)
+    if not ok:
+        raise HTTPException(404, detail="Application not found")
+    return {"ok": True, "id": application_id}
+
+
+@app.patch("/api/applications/{application_id}/pipeline")
+def patch_application_pipeline(
+    application_id: str,
+    body: PipelinePatch,
+    user=Depends(get_current_user),
+):
+    """Update interview_stage / offer_outcome on a tracker row (by row ``id``)."""
+    from services.application_tracker import update_pipeline_for_row
+
+    patch = _pipeline_updates_from_body(body)
+    if not patch:
+        raise HTTPException(400, detail="No fields to update")
+    scope = _tracker_list_scope(user.id)
+    ok = update_pipeline_for_row(application_id, scope, patch)
+    if not ok:
+        raise HTTPException(404, detail="Application not found or not owned by this user")
+    return {"ok": True, "id": application_id}
+
+
+@app.patch("/api/admin/applications/{application_id}/pipeline")
+def admin_patch_application_pipeline(
+    application_id: str,
+    body: PipelinePatch,
+    admin=Depends(require_admin),
+):
+    from services.application_tracker import update_pipeline_for_row
+
+    patch = _pipeline_updates_from_body(body)
+    if not patch:
+        raise HTTPException(400, detail="No fields to update")
+    ok = update_pipeline_for_row(application_id, None, patch)
     if not ok:
         raise HTTPException(404, detail="Application not found")
     return {"ok": True, "id": application_id}

@@ -30,9 +30,11 @@ TRACKER_COLUMNS = [
     "job_description", "applied_at", "recruiter_response", "screenshots_path",
     "qa_audit", "artifacts_manifest", "retry_state", "user_id",
     "follow_up_at", "follow_up_status", "follow_up_note",
+    "interview_stage", "offer_outcome",
 ]
 
 FOLLOW_UP_COLUMN_SET = frozenset({"follow_up_at", "follow_up_status", "follow_up_note"})
+PIPELINE_COLUMN_SET = frozenset({"interview_stage", "offer_outcome"})
 
 _PG_PLACEHOLDER = "%s"
 _SQLITE_PLACEHOLDER = "?"
@@ -182,6 +184,8 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             follow_up_at TEXT DEFAULT '',
             follow_up_status TEXT DEFAULT '',
             follow_up_note TEXT DEFAULT '',
+            interview_stage TEXT DEFAULT '',
+            offer_outcome TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -209,6 +213,12 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
         conn.commit()
     if "follow_up_note" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN follow_up_note TEXT DEFAULT ''")
+        conn.commit()
+    if "interview_stage" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN interview_stage TEXT DEFAULT ''")
+        conn.commit()
+    if "offer_outcome" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN offer_outcome TEXT DEFAULT ''")
         conn.commit()
 
 
@@ -243,6 +253,8 @@ def _init_schema_postgres(conn) -> None:
             follow_up_at TEXT DEFAULT '',
             follow_up_status TEXT DEFAULT '',
             follow_up_note TEXT DEFAULT '',
+            interview_stage TEXT DEFAULT '',
+            offer_outcome TEXT DEFAULT '',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -253,6 +265,8 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "follow_up_at", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "follow_up_status", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "follow_up_note", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "interview_stage", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "offer_outcome", "TEXT DEFAULT ''")
 
 
 def migrate_from_csv_sqlite(conn: sqlite3.Connection) -> int:
@@ -333,6 +347,8 @@ def _row_vals(row, col: str) -> str:
         return str(v or "")[:8000] if v not in (None, "") else "{}"
     if col == "follow_up_note":
         return str(v or "")[:2000]
+    if col in ("interview_stage", "offer_outcome"):
+        return str(v or "").strip()[:120]
     return str(v or "")[:500]
 
 
@@ -391,6 +407,8 @@ def _cell(row: dict, c: str) -> str:
         return str(v or "")[:8000] if v not in (None, "") else "{}"
     if c == "follow_up_note":
         return str(v or "")[:2000]
+    if c in ("interview_stage", "offer_outcome"):
+        return str(v or "").strip()[:120]
     return str(v or "")[:500]
 
 
@@ -407,6 +425,59 @@ def update_application_follow_up_partial(
     if not rid:
         return False
     patch = {k: v for k, v in updates.items() if k in FOLLOW_UP_COLUMN_SET}
+    if not patch:
+        return False
+    for k, v in list(patch.items()):
+        if v is None:
+            patch[k] = ""
+        elif isinstance(v, str):
+            patch[k] = v.strip()
+
+    if _use_postgres():
+        with _pg_connection() as conn:
+            _init_schema_postgres(conn)
+            set_parts = [f"{k} = {_PG_PLACEHOLDER}" for k in patch]
+            vals = [_cell(patch, k) for k in patch]
+            if scope_user_id is None:
+                sql = f"UPDATE applications SET {', '.join(set_parts)} WHERE id = {_PG_PLACEHOLDER}"
+                vals.append(rid)
+            else:
+                sql = (
+                    f"UPDATE applications SET {', '.join(set_parts)} "
+                    f"WHERE id = {_PG_PLACEHOLDER} AND user_id = {_PG_PLACEHOLDER}"
+                )
+                vals.extend([rid, str(scope_user_id)])
+            cur = conn.cursor()
+            cur.execute(sql, vals)
+            return cur.rowcount > 0
+
+    with _sqlite_connection() as conn:
+        _init_schema_sqlite(conn)
+        set_parts = [f"{k} = ?" for k in patch]
+        vals = [_cell(patch, k) for k in patch]
+        if scope_user_id is None:
+            sql = f"UPDATE applications SET {', '.join(set_parts)} WHERE id = ?"
+            vals.append(rid)
+        else:
+            sql = (
+                f"UPDATE applications SET {', '.join(set_parts)} "
+                "WHERE id = ? AND user_id = ?"
+            )
+            vals.extend([rid, str(scope_user_id)])
+        cur = conn.cursor()
+        cur.execute(sql, vals)
+        return cur.rowcount > 0
+
+
+def update_application_pipeline_partial(
+    row_id: str,
+    scope_user_id: Optional[str],
+    updates: dict,
+) -> bool:
+    rid = str(row_id or "").strip()
+    if not rid:
+        return False
+    patch = {k: v for k, v in updates.items() if k in PIPELINE_COLUMN_SET}
     if not patch:
         return False
     for k, v in list(patch.items()):

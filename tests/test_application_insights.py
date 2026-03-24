@@ -7,8 +7,11 @@ from pathlib import Path
 
 import pytest
 
+import pandas as pd
+
 from services.application_insights import (
     compute_answerer_review_insights,
+    compute_pipeline_correlations,
     compute_tracker_insights,
 )
 
@@ -32,6 +35,47 @@ def test_compute_answerer_review_insights_from_qa_audit():
     assert out["classified_type_counts"].get("sponsorship") == 1
 
 
+def test_compute_pipeline_correlations_offer_accepted():
+    df = pd.DataFrame(
+        [
+            {"policy_reason": "auto_easy_apply", "offer_outcome": "accepted", "interview_stage": ""},
+            {"policy_reason": "auto_easy_apply", "offer_outcome": "Accepted", "interview_stage": "completed"},
+            {"policy_reason": "manual_assist", "offer_outcome": "declined", "interview_stage": ""},
+        ]
+    )
+    pc = compute_pipeline_correlations(df)
+    acc = pc["policy_reason_when_offer_accepted"]
+    assert acc.get("auto_easy_apply") == 2
+    dec = pc["policy_reason_when_offer_declined"]
+    assert dec.get("manual_assist") == 1
+
+
+def test_tracker_insights_includes_pipeline(monkeypatch):
+    df = pd.DataFrame(
+        [
+            {
+                "submission_status": "Applied",
+                "apply_mode": "auto_easy_apply",
+                "policy_reason": "auto_easy_apply",
+                "fit_decision": "apply",
+                "recruiter_response": "Pending",
+                "interview_stage": "scheduled",
+                "offer_outcome": "none",
+                "ats_score": "80",
+            }
+        ]
+    )
+
+    def fake_load(for_user_id=None):
+        return df
+
+    monkeypatch.setattr("services.application_tracker.load_applications", fake_load)
+    ins = compute_tracker_insights("any")
+    assert ins["total"] == 1
+    assert ins["by_interview_stage"].get("scheduled") == 1
+    assert "pipeline_correlations" in ins
+
+
 def test_tracker_insights_empty():
     import services.application_tracker as at
 
@@ -45,6 +89,9 @@ def test_tracker_insights_empty():
             ins = compute_tracker_insights(None)
             assert ins["total"] == 0
             assert ins["suggestions"]
+            assert ins["by_interview_stage"] == {}
+            assert ins["by_offer_outcome"] == {}
+            assert "pipeline_correlations" in ins
         finally:
             at.APPLICATION_FILE = orig
             os.environ.pop("TRACKER_USE_DB", None)
