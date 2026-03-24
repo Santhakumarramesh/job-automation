@@ -37,10 +37,23 @@ Default API sort is **by this score** (descending). Use `sort_by_priority=false`
 
 - `PYTHONPATH=. python scripts/follow_up_digest.py` — print due follow-ups to stdout (`--user-id` optional).
 - `PYTHONPATH=. python scripts/email_follow_up_digest.py` — same digest via **SMTP** when `FOLLOW_UP_SMTP_HOST` and `FOLLOW_UP_EMAIL_TO` are set; `--dry-run` prints digest and whether SMTP env is complete.
+- `PYTHONPATH=. python scripts/webhook_follow_up_digest.py` — POST the same digest to **`FOLLOW_UP_WEBHOOK_URL`** (Slack incoming webhook by default: JSON `{"text": "..."}`); `--dry-run` prints whether the URL is set.
 
 ## Email (optional)
 
 Use an app-specific password (Gmail, Outlook, etc.). TLS defaults to on (`STARTTLS` on port 587). Set `FOLLOW_UP_SMTP_USE_TLS=0` only if your relay does not use STARTTLS.
+
+## Webhook / Slack / Discord (optional)
+
+- **`FOLLOW_UP_WEBHOOK_URL`** — required to send; used by `services/follow_up_webhook.py` and `scripts/webhook_follow_up_digest.py`.
+- **`FOLLOW_UP_WEBHOOK_STYLE`** — `slack` (default, `{"text": "..."}`), `discord` (`{"content": "..."}`), or `raw` (`text/plain` body).
+- Optional: **`FOLLOW_UP_WEBHOOK_BEARER`** (`Authorization: Bearer …`), **`FOLLOW_UP_WEBHOOK_HEADERS_JSON`** (merge extra headers, JSON object), **`FOLLOW_UP_WEBHOOK_TIMEOUT`** (seconds, default 30).
+
+Long digests are truncated (~3500 chars) so Slack-style webhooks are less likely to reject the payload.
+
+## Automation (cron / CI)
+
+Schedule `scripts/email_follow_up_digest.py` and/or `scripts/webhook_follow_up_digest.py` with cron, a CI runner, or GitHub Actions. Use the same environment variables as locally; for Postgres-backed trackers in CI, set `TRACKER_USE_DB`, `DATABASE_URL` (or `TRACKER_DATABASE_URL`), and optionally `TRACKER_DEFAULT_USER_ID`.
 
 ## Storage
 

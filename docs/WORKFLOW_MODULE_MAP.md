@@ -157,7 +157,9 @@ Maps the **target operating model** ([TARGET_OPERATING_MODEL.md](TARGET_OPERATIN
 | 38 | Recruiter follow-up text | MCP `generate_recruiter_followup` | ✅ |
 | 39 | Follow-up columns + queue API | `services/follow_up_service.py`, `GET /api/follow-ups`, `PATCH .../follow-up` | ✅ |
 | 40 | Priority follow-up scoring (sorted queue) | `services/follow_up_service.py` (`follow_up_priority_score`), `GET /api/follow-ups?sort_by_priority=`, Streamlit tracker tab | ✅ |
-| — | Follow-up email/push notifications | — | 📋 (future) |
+| — | Follow-up email (SMTP) | `services/follow_up_email.py`, `scripts/email_follow_up_digest.py` | ✅ |
+| — | Webhook / Slack / Discord digest | `services/follow_up_webhook.py`, `scripts/webhook_follow_up_digest.py`, `FOLLOW_UP_WEBHOOK_*` | ✅ |
+| — | Telegram bot API | — | 📋 (future) |
 
 ---
 
