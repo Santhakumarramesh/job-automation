@@ -11,6 +11,15 @@ from starlette.responses import Response
 from .auth import get_current_user, require_admin
 from .tasks import enqueue_job
 
+_OPENAPI_TAGS = [
+    {"name": "service", "description": "Process health and root."},
+    {"name": "jobs", "description": "Enqueue and inspect Celery background jobs."},
+    {"name": "applications", "description": "Application tracker rows for the authenticated user."},
+    {"name": "insights", "description": "Tracker aggregates, audit hints, and answerer rollups."},
+    {"name": "follow-ups", "description": "Follow-up queue and digests per user."},
+    {"name": "admin", "description": "Cross-user operations (requires admin role or API_KEY_IS_ADMIN)."},
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,7 +41,17 @@ class _CorrelationMiddleware(BaseHTTPMiddleware):
         return response
 
 
-app = FastAPI(title="Job Automation API", lifespan=lifespan)
+app = FastAPI(
+    title="Career Co-Pilot Pro API",
+    description=(
+        "REST API for job pipelines, application tracking, follow-ups, and operations. "
+        "Authenticate with **X-API-Key**, **Authorization: Bearer** (JWT when `JWT_SECRET` is set), "
+        "or the open **demo-user** when `API_KEY` is unset (development only)."
+    ),
+    version="0.1.0",
+    lifespan=lifespan,
+    openapi_tags=_OPENAPI_TAGS,
+)
 app.add_middleware(_CorrelationMiddleware)
 
 from services.prometheus_setup import install_prometheus
@@ -115,18 +134,18 @@ def _pipeline_updates_from_body(body: PipelinePatch) -> dict:
     return raw
 
 
-@app.get("/")
+@app.get("/", tags=["service"])
 def read_root():
     return {"status": "Job Automation API is active"}
 
 
-@app.get("/health")
+@app.get("/health", tags=["service"])
 def health():
     """Liveness: service is running."""
     return {"status": "ok"}
 
 
-@app.get("/ready")
+@app.get("/ready", tags=["service"])
 def ready():
     """Readiness: service can accept work."""
     return {"status": "ready"}
@@ -172,7 +191,7 @@ def _resolve_job_idempotency_key(
     return out
 
 
-@app.post("/api/jobs", status_code=202)
+@app.post("/api/jobs", status_code=202, tags=["jobs"])
 def submit_job(
     req: JobRequest,
     request: Request,
@@ -207,7 +226,7 @@ def submit_job(
     return {"job_id": job_id, "status": "accepted"}
 
 
-@app.get("/api/applications")
+@app.get("/api/applications", tags=["applications"])
 def list_applications(user=Depends(get_current_user)):
     """List tracker rows for the authenticated user (all rows for demo-user)."""
     from services.application_tracker import load_applications
@@ -218,7 +237,7 @@ def list_applications(user=Depends(get_current_user)):
     return {"count": len(records), "items": records[:500]}
 
 
-@app.get("/api/insights")
+@app.get("/api/insights", tags=["insights"])
 def application_insights(
     user=Depends(get_current_user),
     include_audit: bool = Query(
@@ -238,7 +257,7 @@ def application_insights(
     )
 
 
-@app.get("/api/admin/insights")
+@app.get("/api/admin/insights", tags=["admin"])
 def admin_application_insights(
     admin=Depends(require_admin),
     include_audit: bool = Query(True),
@@ -254,7 +273,7 @@ def admin_application_insights(
     )
 
 
-@app.get("/api/applications/by-job/{job_id}")
+@app.get("/api/applications/by-job/{job_id}", tags=["applications"])
 def get_application_by_job_id(
     job_id: str,
     user=Depends(get_current_user),
@@ -281,7 +300,7 @@ def get_application_by_job_id(
     return {"application": row, "artifacts": artifacts}
 
 
-@app.get("/api/admin/applications/by-job/{job_id}")
+@app.get("/api/admin/applications/by-job/{job_id}", tags=["admin"])
 def admin_get_application_by_job_id(
     job_id: str,
     admin=Depends(require_admin),
@@ -304,7 +323,7 @@ def admin_get_application_by_job_id(
     return {"application": row, "artifacts": artifacts}
 
 
-@app.get("/api/admin/applications")
+@app.get("/api/admin/applications", tags=["admin"])
 def admin_list_applications(admin=Depends(require_admin)):
     """
     List all tracker rows (no user_id filter). Phase 3.1.4 — requires admin role.
@@ -316,7 +335,7 @@ def admin_list_applications(admin=Depends(require_admin)):
     return {"count": len(records), "items": records[:2000], "scoped": False}
 
 
-@app.get("/api/admin/metrics/summary")
+@app.get("/api/admin/metrics/summary", tags=["admin"])
 def admin_metrics_summary(admin=Depends(require_admin)):
     """
     Celery aggregate counters from Redis (Phase 3.6). Enable workers with CELERY_METRICS_REDIS=1.
@@ -326,7 +345,7 @@ def admin_metrics_summary(admin=Depends(require_admin)):
     return get_celery_metrics_summary()
 
 
-@app.get("/api/follow-ups")
+@app.get("/api/follow-ups", tags=["follow-ups"])
 def list_follow_ups(
     user=Depends(get_current_user),
     due_only: bool = Query(True, description="Only rows with follow_up_at <= now (UTC)"),
@@ -351,7 +370,7 @@ def list_follow_ups(
     return {"count": len(items), "items": items}
 
 
-@app.get("/api/follow-ups/digest")
+@app.get("/api/follow-ups/digest", tags=["follow-ups"])
 def follow_ups_digest(
     user=Depends(get_current_user),
     include_snoozed: bool = Query(True),
@@ -373,7 +392,7 @@ def follow_ups_digest(
     return {"count": len(items), "items": items, "text": text}
 
 
-@app.get("/api/admin/follow-ups/digest")
+@app.get("/api/admin/follow-ups/digest", tags=["admin"])
 def admin_follow_ups_digest(
     admin=Depends(require_admin),
     include_snoozed: bool = Query(True),
@@ -393,7 +412,7 @@ def admin_follow_ups_digest(
     return {"count": len(items), "items": items, "text": text}
 
 
-@app.get("/api/admin/follow-ups")
+@app.get("/api/admin/follow-ups", tags=["admin"])
 def admin_list_follow_ups(
     admin=Depends(require_admin),
     due_only: bool = Query(True),
@@ -414,7 +433,7 @@ def admin_list_follow_ups(
     return {"count": len(items), "items": items}
 
 
-@app.patch("/api/applications/{application_id}/follow-up")
+@app.patch("/api/applications/{application_id}/follow-up", tags=["applications"])
 def patch_application_follow_up(
     application_id: str,
     body: FollowUpPatch,
@@ -433,7 +452,7 @@ def patch_application_follow_up(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/admin/applications/{application_id}/follow-up")
+@app.patch("/api/admin/applications/{application_id}/follow-up", tags=["admin"])
 def admin_patch_application_follow_up(
     application_id: str,
     body: FollowUpPatch,
@@ -450,7 +469,7 @@ def admin_patch_application_follow_up(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/applications/{application_id}/pipeline")
+@app.patch("/api/applications/{application_id}/pipeline", tags=["applications"])
 def patch_application_pipeline(
     application_id: str,
     body: PipelinePatch,
@@ -469,7 +488,7 @@ def patch_application_pipeline(
     return {"ok": True, "id": application_id}
 
 
-@app.patch("/api/admin/applications/{application_id}/pipeline")
+@app.patch("/api/admin/applications/{application_id}/pipeline", tags=["admin"])
 def admin_patch_application_pipeline(
     application_id: str,
     body: PipelinePatch,
@@ -486,7 +505,7 @@ def admin_patch_application_pipeline(
     return {"ok": True, "id": application_id}
 
 
-@app.get("/api/jobs/{job_id}")
+@app.get("/api/jobs/{job_id}", tags=["jobs"])
 def get_job_status(
     job_id: str,
     user=Depends(get_current_user),

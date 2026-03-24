@@ -31,6 +31,17 @@ def test_read_root():
     assert response.status_code == 200
     assert response.json() == {"status": "Job Automation API is active"}
 
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_openapi_schema_grouped_by_tags():
+    schema = client.get("/openapi.json").json()
+    assert schema["info"]["title"] == "Career Co-Pilot Pro API"
+    assert schema["info"].get("version") == "0.1.0"
+    tag_names = {t["name"] for t in schema.get("tags", [])}
+    assert "jobs" in tag_names and "admin" in tag_names
+    assert schema["paths"]["/api/jobs"]["post"]["tags"] == ["jobs"]
+    assert schema["paths"]["/api/admin/applications"]["get"]["tags"] == ["admin"]
+
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 def test_get_application_by_job_id():
     import os
