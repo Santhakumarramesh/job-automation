@@ -36,7 +36,7 @@
 | **DB enums** | No Alembic migration adding dedicated `job_state` / `answer_state` columns; tracker uses strings (`apply_mode`, `policy_reason`, etc.). |
 | **Streamlit supervision UX** | **Partial:** Job Finder “Supervision — application decision” + tracker snapshot expander + REST tab POST; **open:** explicit “I approve submit” audit + shadow toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
-| **Shadow mode** | Not implemented as a first-class run mode (log “would have applied” vs human). |
+| **Shadow mode** | **v0 done** (MCP/API/CLI + tracker labels); Job Finder toggle syncs **shadow_mode** to the batch-apply API tab. |
 | **CI depth** | Ruff/mypy not required in CI yet; coverage targets not enforced. |
 
 ---
@@ -83,7 +83,7 @@
 - [x] **UI:** Streamlit **ATS / REST API** tab — batch apply expander with `dry_run` + **`shadow_mode`** checkboxes.
 - [ ] Metrics: formal alignment rate, FP/FN estimates, DOM failure rate (deeper telemetry).
 - [ ] Tune fit/ATS thresholds from shadow data (closed loop).
-- [ ] Single Streamlit **Job Finder** toggle “next run: shadow” (without opening API tab) — optional.
+- [x] Single Streamlit **Job Finder** toggle for **shadow_mode** on the next **LinkedIn batch apply** (syncs session `api_baj_shadow` with the ATS / REST API tab when LinkedIn rows are selected).
 
 ---
 

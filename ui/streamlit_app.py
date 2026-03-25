@@ -142,6 +142,13 @@ def _streamlit_tracker_user_id() -> str:
     return (os.getenv("TRACKER_DEFAULT_USER_ID") or "streamlit-local").strip()
 
 
+def _on_jobfinder_batch_shadow_change() -> None:
+    """Mirror Job Finder shadow toggle into the ATS / REST batch-apply ``api_baj_shadow`` flag."""
+    st.session_state["api_baj_shadow"] = bool(
+        st.session_state.get("jobfinder_shadow_for_batch_apply", False)
+    )
+
+
 def _career_api_base_default() -> str:
     return (
         os.getenv("STREAMLIT_CAREER_API_BASE") or os.getenv("CAREER_API_BASE_URL") or "http://127.0.0.1:8000"
@@ -344,6 +351,9 @@ def run():
 
     st.title("🚀 Career Co-Pilot Pro")
     st.markdown("LLM-Powered Job Finding, Semantic Analysis, and Interview Preparation")
+
+    if "api_baj_shadow" not in st.session_state:
+        st.session_state["api_baj_shadow"] = False
 
     saved = _load_saved_creds()
     st.sidebar.header("🔑 API Configuration")
@@ -727,6 +737,16 @@ def run():
             if not linkedin_jobs.empty:
                 st.markdown("---")
                 st.subheader("🔗 Two-Lane Apply Strategy")
+                st.session_state["jobfinder_shadow_for_batch_apply"] = st.session_state.get(
+                    "api_baj_shadow", False
+                )
+                st.checkbox(
+                    "Next **LinkedIn batch apply** (🔗 ATS / REST API tab): use **shadow_mode** "
+                    "— fill through pre-submit, never submit",
+                    key="jobfinder_shadow_for_batch_apply",
+                    on_change=_on_jobfinder_batch_shadow_change,
+                    help="Syncs with **LinkedIn batch apply → shadow_mode** on the ATS / REST API tab (Phase 2).",
+                )
                 with st.expander("📋 Decision rules", expanded=True):
                     st.markdown("""
                     **Lane 1 — Auto-apply** (Easy Apply only):
@@ -1598,7 +1618,8 @@ def run():
             )
             baj_dry = st.checkbox("dry_run", value=False, key="api_baj_dry")
             baj_shadow = st.checkbox(
-                "shadow_mode (Phase 2 — no submit; Shadow – Would Apply / Not Apply in tracker)",
+                "shadow_mode (Phase 2 — no submit; Shadow – Would Apply / Not Apply in tracker). "
+                "Also set from **AI Job Finder → Two-Lane Apply Strategy** when LinkedIn rows are selected.",
                 value=False,
                 key="api_baj_shadow",
             )
