@@ -9,6 +9,10 @@ def test_compute_slo_inputs_avg_and_blocked_share():
         "linkedin_fill_total_seconds_count": "5",
         "linkedin_fill_dom_scan_seconds_sum": "200",
         "linkedin_fill_dom_scan_seconds_count": "5",
+        "linkedin_fill_value_resolution_seconds_sum": "300",
+        "linkedin_fill_value_resolution_seconds_count": "5",
+        "linkedin_fill_field_fill_seconds_sum": "150",
+        "linkedin_fill_field_fill_seconds_count": "5",
         "linkedin_fill_unmapped_fields_sum": "60",
         "linkedin_fill_unmapped_fields_count": "10",
         "linkedin_live_submit_attempt_total": "100",
@@ -18,10 +22,13 @@ def test_compute_slo_inputs_avg_and_blocked_share():
     inputs = compute_slo_inputs(fields, timeouts_in_15m=None)
     assert inputs.avg_fill_total_seconds == 120.0
     assert inputs.avg_dom_scan_seconds == 40.0
+    assert inputs.avg_value_resolution_seconds == 60.0
+    assert inputs.avg_field_fill_seconds == 30.0
     assert inputs.avg_unmapped_fields == 6.0
     assert inputs.blocked_share == 0.3
     assert inputs.timeouts_total == 7
     assert inputs.timeouts_in_15m is None
+    assert inputs.likely_slowest_stage == "linkedin_fill_value_resolution"
 
 
 def test_triage_fires_expected_alerts_from_thresholds():
@@ -31,6 +38,10 @@ def test_triage_fires_expected_alerts_from_thresholds():
         "linkedin_fill_total_seconds_count": "5",  # 300s avg
         "linkedin_fill_dom_scan_seconds_sum": "500",
         "linkedin_fill_dom_scan_seconds_count": "10",  # 50s avg (does not exceed >40? yes, exceeds)
+        "linkedin_fill_value_resolution_seconds_sum": "100",
+        "linkedin_fill_value_resolution_seconds_count": "10",  # 10s avg
+        "linkedin_fill_field_fill_seconds_sum": "50",
+        "linkedin_fill_field_fill_seconds_count": "10",  # 5s avg
         "linkedin_fill_unmapped_fields_sum": "90",
         "linkedin_fill_unmapped_fields_count": "10",  # 9 avg (>8)
         "linkedin_live_submit_attempt_total": "80",
@@ -45,4 +56,5 @@ def test_triage_fires_expected_alerts_from_thresholds():
         "TruthGateBlockedShareHigh",
         "ApplyRunnerPlaywrightTimeoutSpike",
     }
+    assert out["inputs"].likely_slowest_stage == "linkedin_fill_dom_scan"
 

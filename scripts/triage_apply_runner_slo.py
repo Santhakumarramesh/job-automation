@@ -36,11 +36,14 @@ def _safe_int(v: Any, default: int = 0) -> int:
 class SloInputs:
     avg_fill_total_seconds: Optional[float]
     avg_dom_scan_seconds: Optional[float]
+    avg_value_resolution_seconds: Optional[float]
+    avg_field_fill_seconds: Optional[float]
     avg_unmapped_fields: Optional[float]
     blocked_share: Optional[float]
 
     timeouts_total: Optional[int]
     timeouts_in_15m: Optional[int]
+    likely_slowest_stage: Optional[str]
 
 
 def compute_slo_inputs(fields: Dict[str, str], *, timeouts_in_15m: Optional[int] = None) -> SloInputs:
@@ -59,6 +62,14 @@ def compute_slo_inputs(fields: Dict[str, str], *, timeouts_in_15m: Optional[int]
         "linkedin_fill_dom_scan_seconds_sum",
         "linkedin_fill_dom_scan_seconds_count",
     )
+    avg_value_resolution_seconds = avg_sum_count(
+        "linkedin_fill_value_resolution_seconds_sum",
+        "linkedin_fill_value_resolution_seconds_count",
+    )
+    avg_field_fill_seconds = avg_sum_count(
+        "linkedin_fill_field_fill_seconds_sum",
+        "linkedin_fill_field_fill_seconds_count",
+    )
     avg_unmapped_fields = avg_sum_count(
         "linkedin_fill_unmapped_fields_sum",
         "linkedin_fill_unmapped_fields_count",
@@ -73,13 +84,29 @@ def compute_slo_inputs(fields: Dict[str, str], *, timeouts_in_15m: Optional[int]
 
     timeouts_total = _safe_int(fields.get("linkedin_fill_playwright_timeout_total"))
 
+    stage_candidates: Dict[str, Optional[float]] = {
+        "linkedin_fill_dom_scan": avg_dom_scan_seconds,
+        "linkedin_fill_value_resolution": avg_value_resolution_seconds,
+        "linkedin_fill_field_fill": avg_field_fill_seconds,
+    }
+    # Pick the highest average among available stage candidates.
+    likely_slowest_stage = None
+    best_val: float = -1.0
+    for stage, val in stage_candidates.items():
+        if val is not None and val > best_val:
+            best_val = val
+            likely_slowest_stage = stage
+
     return SloInputs(
         avg_fill_total_seconds=avg_fill_total_seconds,
         avg_dom_scan_seconds=avg_dom_scan_seconds,
+        avg_value_resolution_seconds=avg_value_resolution_seconds,
+        avg_field_fill_seconds=avg_field_fill_seconds,
         avg_unmapped_fields=avg_unmapped_fields,
         blocked_share=blocked_share,
         timeouts_total=timeouts_total,
         timeouts_in_15m=timeouts_in_15m,
+        likely_slowest_stage=likely_slowest_stage,
     )
 
 
@@ -172,6 +199,8 @@ def main() -> int:
 
     print(f"Avg fill total seconds: {fmt_opt(inputs.avg_fill_total_seconds)}")
     print(f"Avg DOM scan seconds:   {fmt_opt(inputs.avg_dom_scan_seconds)}")
+    print(f"Avg value resolution:    {fmt_opt(inputs.avg_value_resolution_seconds)}")
+    print(f"Avg field fill:          {fmt_opt(inputs.avg_field_fill_seconds)}")
     print(f"Avg unmapped/run:      {fmt_opt(inputs.avg_unmapped_fields)}")
     if inputs.blocked_share is None:
         print("Blocked share:         n/a (no attempts)")
@@ -189,6 +218,10 @@ def main() -> int:
         for a in fired:
             print(f"- {a}")
         print("")
+        if inputs.likely_slowest_stage:
+            print(f"Likely slowest stage (avg): {inputs.likely_slowest_stage}")
+            print("Use this to focus what to inspect first in the browser.")
+            print("")
         print("Use these sections in docs/APPLY_RECOVERY_PLAYBOOKS.md:")
         print("- Metrics-driven triage (Phase 7.4)")
     else:
