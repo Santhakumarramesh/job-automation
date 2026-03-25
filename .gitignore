@@ -25,3 +25,7 @@ build/
 data/task_state/
 data/idempotency/
 data/.metrics_alert_last_sent
+
+# Claude Desktop / Cursor — keep secrets out of git
+claude_desktop_config.json
+.cursor/mcp.json

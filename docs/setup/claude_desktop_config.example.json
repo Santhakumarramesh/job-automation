@@ -1,16 +1,25 @@
 {
+  "_notes": [
+    "Copy the mcpServers block into ~/Library/Application Support/Claude/claude_desktop_config.json (Mac)",
+    "or %APPDATA%\\Claude\\claude_desktop_config.json (Windows).",
+    "Replace every /ABSOLUTE/PATH/TO placeholder with your real folder path.",
+    "Fill in your real API keys — never commit this file with real secrets.",
+    "TRACKER_USE_DB=1 enables SQLite tracking (recommended). DB lands at TRACKER_DB_PATH.",
+    "OUTPUT_DIR is NOT used by this project — omit it.",
+    "ANTHROPIC_API_KEY is NOT used by this project — omit it unless you add custom Claude tooling."
+  ],
   "mcpServers": {
     "career-copilot-mcp": {
       "command": "bash",
       "args": ["/ABSOLUTE/PATH/TO/Career Copilot MCP/start.sh"],
       "env": {
         "PYTHONPATH": "/ABSOLUTE/PATH/TO/Career Copilot MCP",
-        "TRACKER_USE_DB": "1",
-        "TRACKER_DB_PATH": "/ABSOLUTE/PATH/TO/career-copilot-output/job_applications.db",
         "OPENAI_API_KEY": "sk-...",
         "APIFY_API_TOKEN": "apify_api_...",
         "LINKEDIN_EMAIL": "you@example.com",
-        "LINKEDIN_PASSWORD": "your_linkedin_password"
+        "LINKEDIN_PASSWORD": "your_linkedin_password",
+        "TRACKER_USE_DB": "1",
+        "TRACKER_DB_PATH": "/ABSOLUTE/PATH/TO/career-copilot-output/job_applications.db"
       }
     }
   }
