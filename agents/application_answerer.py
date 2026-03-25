@@ -287,6 +287,9 @@ _CANONICAL_EXPORT_KEYS: list[tuple[str, str]] = [
 # Keys only (for application decision contract / policy export loops).
 CANONICAL_SCREENING_FIELD_KEYS: list[str] = [pair[0] for pair in _CANONICAL_EXPORT_KEYS]
 
+# Human-readable canonical question text (UI / exports).
+CANONICAL_SCREENING_FIELD_LABELS: dict[str, str] = dict(_CANONICAL_EXPORT_KEYS)
+
 
 def build_answerer_preview_for_export(
     profile: Optional[dict],

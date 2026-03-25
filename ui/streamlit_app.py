@@ -22,6 +22,7 @@ from agents.state import AgentState
 from agents.job_analyzer import analyze_job_description
 from agents.job_guard import guard_job_quality
 from agents.intelligent_project_generator import intelligent_project_generator
+from agents.application_answerer import CANONICAL_SCREENING_FIELD_LABELS
 
 from services.document_service import (
     extract_text_from_pdf,
@@ -76,6 +77,33 @@ def _parse_application_decision_cell(val) -> dict:
         return out if isinstance(out, dict) else {}
     except json.JSONDecodeError:
         return {}
+
+
+def _decision_answer_rows(decision: dict, *, max_text: int = 500) -> list[dict]:
+    """Flatten v0.1 decision ``answers`` for Streamlit (missing → review → safe)."""
+    ans = (decision or {}).get("answers") or {}
+    if not isinstance(ans, dict):
+        return []
+    order = {"missing": 0, "review": 1, "safe": 2}
+    rows: list[dict] = []
+    for k, meta in ans.items():
+        if not isinstance(meta, dict):
+            continue
+        ast = str(meta.get("answer_state") or "")
+        text = str(meta.get("text") or "")[:max_text]
+        rows.append(
+            {
+                "field": k,
+                "screening_question": CANONICAL_SCREENING_FIELD_LABELS.get(k, k),
+                "answer_state": ast,
+                "truth_safe": meta.get("truth_safe"),
+                "submit_safe": meta.get("submit_safe"),
+                "autofill_preview": text,
+                "reason_codes": ", ".join(str(x) for x in (meta.get("reason_codes") or [])),
+            }
+        )
+    rows.sort(key=lambda r: (order.get(r["answer_state"], 9), str(r["field"])))
+    return rows
 
 
 def _job_dict_for_application_decision(row: dict) -> dict:
@@ -776,29 +804,48 @@ def run():
                             crit = _dec.get("critical_unsatisfied") or []
                             if crit:
                                 st.warning("Critical / not submit-safe: " + ", ".join(str(x) for x in crit))
-                            ans = _dec.get("answers") or {}
-                            if isinstance(ans, dict) and ans:
-                                rows_ans = []
-                                for k, meta in ans.items():
-                                    if not isinstance(meta, dict):
-                                        continue
-                                    rows_ans.append(
-                                        {
-                                            "field": k,
-                                            "answer_state": meta.get("answer_state"),
-                                            "truth_safe": meta.get("truth_safe"),
-                                            "submit_safe": meta.get("submit_safe"),
-                                            "text": (meta.get("text") or "")[:120],
-                                            "reason_codes": ", ".join(
-                                                str(x) for x in (meta.get("reason_codes") or [])
-                                            ),
-                                        }
+                            rows_ans = _decision_answer_rows(_dec, max_text=500)
+                            if rows_ans:
+                                js = str(_dec.get("job_state") or "")
+                                if js == "manual_assist":
+                                    st.markdown("##### Manual assist — screening fields & autofill preview")
+                                    st.caption(
+                                        "Suggested text is profile/resume grounded (v0.1 answerer). "
+                                        "Copy into the employer portal; double-check **review** and **missing** rows."
                                     )
-                                st.dataframe(
-                                    pd.DataFrame(rows_ans),
-                                    hide_index=True,
-                                    use_container_width=True,
-                                )
+                                    show_all_ma = st.checkbox(
+                                        "Show all canonical fields (including safe)",
+                                        value=False,
+                                        key=f"jobfinder_ma_show_all_{pick}",
+                                    )
+                                    disp = rows_ans if show_all_ma else [r for r in rows_ans if r.get("answer_state") != "safe"]
+                                    if not disp:
+                                        st.success("All canonical screening fields are **safe** for autofill.")
+                                    else:
+                                        st.dataframe(
+                                            pd.DataFrame(disp),
+                                            hide_index=True,
+                                            use_container_width=True,
+                                        )
+                                        bundle = "\n".join(
+                                            f"{r['field']}: {r['autofill_preview']}"
+                                            for r in disp
+                                            if (r.get("autofill_preview") or "").strip()
+                                        )
+                                        if bundle.strip():
+                                            st.text_area(
+                                                "Copy — field → suggested answer",
+                                                value=bundle,
+                                                height=200,
+                                                key=f"jobfinder_ma_copy_{pick}",
+                                            )
+                                else:
+                                    st.caption("Per-field screening (canonical export questions)")
+                                    st.dataframe(
+                                        pd.DataFrame(rows_ans),
+                                        hide_index=True,
+                                        use_container_width=True,
+                                    )
                             with st.expander("Raw decision JSON"):
                                 st.json(_dec)
                 if st.button(
