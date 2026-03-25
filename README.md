@@ -147,7 +147,26 @@ Security is a top priority for `career-co-pilot-pro`. Please follow these guidel
 - **Authentication**:
   - API: `X-API-Key` when `API_KEY` is set; optional JWT (`JWT_SECRET` and/or OIDC `JWT_JWKS_URL` / `JWT_ISSUER`) + `Authorization: Bearer` (`pip install .[auth]`). See [docs/PHASE_3_PLAN.md](docs/PHASE_3_PLAN.md) and [docs/PHASE_4_PLAN.md](docs/PHASE_4_PLAN.md).
 - **Production config**:
-  - Set `APP_ENV=production` for stricter startup checks; optional AWS Secrets Manager via `AWS_SECRETS_MANAGER_SECRET_ID`. See [docs/SECRETS_AND_CONFIG.md](docs/SECRETS_AND_CONFIG.md).
+  - Example production env (minimal “won’t start in prod by accident” set):
+    ```bash
+    APP_ENV=production
+    STRICT_STARTUP=1
+
+    # Auth (pick one path):
+    API_KEY=...
+    # or JWT: JWT_SECRET=... (HS256) and/or JWT_JWKS_URL/JWT_ISSUER (OIDC)
+    # or worker identity: M2M_API_KEY=...
+
+    # Tracker persistence:
+    TRACKER_USE_DB=1
+    DATABASE_URL=sqlite:////data/job_applications.db
+    # or DATABASE_URL=postgresql://... (recommended for multi-replica)
+    ```
+  - Optional AWS Secrets Manager via `AWS_SECRETS_MANAGER_SECRET_ID`. See [docs/SECRETS_AND_CONFIG.md](docs/SECRETS_AND_CONFIG.md).
+  - If you want faster iteration on fills, you can also enable:
+    - `CCP_FAST_PIPELINE=1` (LLM pipeline speed mode)
+    - `CCP_FAST_BROWSER_PIPELINE=1` (Playwright runner wait/scanning speed mode)
+    - See [docs/SECRETS_AND_CONFIG.md](docs/SECRETS_AND_CONFIG.md) for full knobs.
 - **Observability**:
   - Every job execution is enqueued with a unique UUID for tracking and auditing.
 

@@ -120,7 +120,7 @@ OpenClaw **should:**
 
 - [x] Visible CI: **`.github/workflows/ci.yml`** — pytest, example profile validation, `check_startup.py app` (template also kept at [setup/github-actions-ci.yml](setup/github-actions-ci.yml)).
 - [x] README: CI badge + production links; health/metrics paths documented in [DEPLOY.md](DEPLOY.md) / [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).
-- [ ] Example prod env narrative in README (beyond badge): short pointer block for `APP_ENV=production`, auth, `TRACKER_USE_DB`, rate limits — [.env.example](../.env.example) + [SECRETS_AND_CONFIG.md](SECRETS_AND_CONFIG.md) remain source of truth.
+- [x] Example prod env narrative in README (beyond badge): short pointer block for `APP_ENV=production`, auth, `TRACKER_USE_DB` — [.env.example](../.env.example) + [SECRETS_AND_CONFIG.md](SECRETS_AND_CONFIG.md) remain source of truth.
 
 **Status:** Public CI signal **green** once the workflow runs on `main` after push; extend with ruff/mypy when ready.
 
