@@ -20,7 +20,7 @@
 | Milestone | Deliverable |
 |-----------|-------------|
 | 6.2.1 | **`docker-compose.yml`** — Redis, API, Celery worker, shared volume for SQLite tracker ✅ |
-| 6.2.2 | Env via Compose `${VAR}` substitution from project **`.env`** — see [DEPLOY.md](DEPLOY.md#docker) |
+| 6.2.2 | Env via Compose `${VAR}` substitution from project **`.env`** (including Phase 5 speed-mode knobs) — see [DEPLOY.md](DEPLOY.md#docker) ✅ |
 
 ---
 
