@@ -135,7 +135,9 @@ At the end of Phase 3, the system can truthfully claim **narrow, well‑governed
 - **Enqueue / batch apply workspace guard:** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` so tenants cannot stamp another `workspace_id` on `POST /api/jobs` or LinkedIn `apply-to-jobs` (batch default or per-job) ([DEPLOY.md](DEPLOY.md)).
 - **LinkedIn ATS auth:** optional `API_ATS_LINKEDIN_REQUIRE_AUTH` so headless apply / confirm routes require a real API key or JWT (not open `demo-user`).
 
-**Still roadmap:** multi-tenant RBAC hardening, mobile/PWA approvals, role templates, time-series / BI exports.
+**Shipped (see [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md)):** admin tenant reads, mobile-friendly Streamlit approval UX, JWT role templates, BI export / `timeseries_v0`, indexed `job_state` ingest normalization.
+
+**Still roadmap:** full org-level RBAC beyond workspace string, optional Postgres ENUMs, bundled Grafana JSON, installable PWA (manifest/service worker) behind your ingress.
 
 **CI:** Run **pytest**, **`ruff check .`**, example profile validation, and startup smoke in Actions (or locally). A full workflow sample lives in **`contrib/github-actions-ci.yml`** (copy to `.github/workflows/` when your PAT has **workflow** scope).
 

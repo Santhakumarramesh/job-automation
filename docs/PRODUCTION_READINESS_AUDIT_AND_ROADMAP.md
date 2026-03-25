@@ -33,8 +33,8 @@
 | Gap | Detail |
 |-----|--------|
 | **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; **indexed `job_state` column** populated on new writes (Postgres: `tracker_0008`; SQLite: `tracker_db` migrate). |
-| **DB enums** | No Alembic migration adding dedicated `job_state` / `answer_state` columns; tracker uses strings (`apply_mode`, `policy_reason`, etc.). |
-| **Streamlit supervision UX** | **Partial:** Job Finder “Supervision — application decision” + tracker snapshot expander + REST tab POST; **open:** explicit “I approve submit” audit + shadow toggle (Phase 2). |
+| **DB enums** | **Indexed `job_state` (v0):** VARCHAR + **contract normalization** at ingest (`normalize_job_state_for_tracker`); unknown values stored as empty in the index column. Native Postgres **ENUM** for `job_state` / per-field `answer_state` remains optional future work. |
+| **Streamlit supervision UX** | **Done (v0):** decision preview + tracker snapshot + REST tab; batch-apply **operator_submit_approved** path + **shadow_mode** toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
 | **Shadow mode** | **v0 done** (MCP/API/CLI + tracker labels); Job Finder toggle syncs **shadow_mode** to the batch-apply API tab. |
 | **CI depth** | Ruff/mypy not required in CI yet; coverage targets not enforced. |
@@ -109,11 +109,19 @@
 
 ---
 
+## Phase 5 — Data quality & ops (ongoing)
+
+- [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
+- [ ] **mypy** (optional) when the tree is ready — same spirit as Phase 1 checkbox; not blocking releases.
+- [ ] **Postgres ENUM** for `job_state` (optional) — design + Alembic only if ops want DB-enforced enums; SQLite/CSV trackers would keep strings.
+
+---
+
 ## “Next 48 hours” checklist (reconciled with repo)
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Enums / DB columns for `job_state` | **Open** — design migration + tracker write path |
+| 1 | Enums / DB columns for `job_state` | **Done (v0):** VARCHAR index + ingest normalization; optional Postgres ENUM still open |
 | 2 | MCP decision structured states | **Done** — `get_application_decision` + `build_application_decision` |
 | 3 | README “Current production scope” + doc links | **Done** |
 | 4 | `.github/workflows/ci.yml` | **Done** (pytest + profile + startup; extend later) |

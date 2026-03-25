@@ -10,7 +10,7 @@ See docs/MCP_APPLICATION_DECISION_CONTRACT.md.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, FrozenSet, Optional
 
 from agents.application_answerer import (
     CANONICAL_SCREENING_FIELD_KEYS,
@@ -20,6 +20,17 @@ from agents.application_answerer import (
 from services.policy_service import (
     enrich_job_dict_for_policy_export,
     normalize_fit_decision_label,
+)
+
+# Contract: docs/MCP_APPLICATION_DECISION_CONTRACT.md — indexed tracker column must not admit arbitrary strings.
+CANONICAL_JOB_STATES: FrozenSet[str] = frozenset(
+    {
+        "skip",
+        "manual_review",
+        "manual_assist",
+        "safe_auto_apply",
+        "blocked",
+    }
 )
 
 
@@ -204,6 +215,17 @@ def safe_auto_apply_precondition_checklist(
     ]
 
 
+def normalize_job_state_for_tracker(value: Optional[str]) -> str:
+    """
+    Return a lowercase contract ``job_state`` for the indexed tracker column, or ``""``.
+
+    Unknown values (typos, future enum drift) normalize to empty so admin rollups and
+    SQL filters stay trustworthy without a Postgres ENUM migration.
+    """
+    s = str(value or "").strip().lower()[:64]
+    return s if s in CANONICAL_JOB_STATES else ""
+
+
 def extract_job_state_from_decision_json(raw: Optional[str]) -> str:
     """
     Parse v0.1 ``application_decision`` JSON and return indexed ``job_state`` (max 64 chars).
@@ -216,8 +238,7 @@ def extract_job_state_from_decision_json(raw: Optional[str]) -> str:
         d = json.loads(s)
         js = d.get("job_state")
         if isinstance(js, str):
-            t = js.strip()
-            return t[:64] if t else ""
+            return normalize_job_state_for_tracker(js)
     except Exception:
         pass
     return ""

@@ -6,6 +6,7 @@ from services.application_decision import (
     application_decision_json_for_tracker_job,
     build_application_decision,
     extract_job_state_from_decision_json,
+    normalize_job_state_for_tracker,
     safe_auto_apply_precondition_checklist,
 )
 
@@ -147,3 +148,10 @@ def test_application_decision_json_for_tracker_job_roundtrip():
     assert extract_job_state_from_decision_json(raw) == "skip"
     assert extract_job_state_from_decision_json("") == ""
     assert extract_job_state_from_decision_json("not json") == ""
+
+
+def test_extract_job_state_normalizes_case_and_rejects_unknown():
+    assert normalize_job_state_for_tracker("Manual_Assist") == "manual_assist"
+    assert normalize_job_state_for_tracker("not-a-real-state") == ""
+    raw = json.dumps({"schema_version": "0.1", "job_state": "totally_invalid"})
+    assert extract_job_state_from_decision_json(raw) == ""
