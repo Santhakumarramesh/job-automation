@@ -1111,6 +1111,22 @@ def run():
                         c2.metric("Avg ATS (logged)", f"{ats.get('mean')}" if ats.get("mean") is not None else "—")
                         c3.metric("ATS values", int(ats.get("count_numeric") or 0))
                         c4.metric("Rows w/ answerer QA", int(ar.get("tracker_rows_with_answerer_review") or 0))
+                        sh = tr.get("shadow") or {}
+                        if int(sh.get("shadow_rows") or 0) > 0 or int(sh.get("shadow_would_apply_rows") or 0) > 0:
+                            st.caption("Phase 2 **shadow** rollups (same tracker scope)")
+                            s1, s2, s3 = st.columns(3)
+                            s1.metric("Shadow rows", int(sh.get("shadow_rows") or 0))
+                            s2.metric("Shadow would apply", int(sh.get("shadow_would_apply_rows") or 0))
+                            s3.metric("Applied (submission_status)", int(sh.get("applied_submission_rows") or 0))
+                            bss = sh.get("by_shadow_submission") or {}
+                            if bss:
+                                st.dataframe(
+                                    pd.DataFrame(
+                                        [{"submission_status": k, "count": v} for k, v in bss.items()]
+                                    ),
+                                    hide_index=True,
+                                    use_container_width=True,
+                                )
                         ap = tr.get("by_ats_provider") or {}
                         if ap:
                             st.caption("Top **ats_provider** (listing URL)")
@@ -1417,6 +1433,66 @@ def run():
                         _show_api_response(r)
                     except requests.RequestException as ex:
                         st.error(f"Connection error: {ex}")
+
+        with st.expander("LinkedIn batch apply (browser API)", expanded=False):
+            st.caption(
+                "POST /api/ats/apply-to-jobs — runs on the **API server** (needs `ATS_ALLOW_LINKEDIN_BROWSER=1`, "
+                "Playwright, LinkedIn credentials). Use **shadow_mode** for Phase 2 (fill, no submit). "
+                "Max 50 jobs per request."
+            )
+            baj_jobs = st.text_area(
+                "jobs (JSON array)",
+                height=180,
+                key="api_baj_jobs",
+                value=json.dumps(
+                    [
+                        {
+                            "title": "Engineer",
+                            "company": "ACME",
+                            "url": "https://www.linkedin.com/jobs/view/1234567890/",
+                            "easy_apply_confirmed": True,
+                            "apply_mode": "auto_easy_apply",
+                            "fit_decision": "apply",
+                            "ats_score": 90,
+                            "unsupported_requirements": [],
+                        }
+                    ],
+                    indent=2,
+                ),
+            )
+            baj_dry = st.checkbox("dry_run", value=False, key="api_baj_dry")
+            baj_shadow = st.checkbox(
+                "shadow_mode (Phase 2 — no submit; Shadow – Would Apply / Not Apply in tracker)",
+                value=False,
+                key="api_baj_shadow",
+            )
+            baj_safe = st.checkbox("require_safeguards", value=True, key="api_baj_safe")
+            baj_rl = st.number_input("rate_limit_seconds", min_value=5.0, max_value=600.0, value=90.0, key="api_baj_rl")
+            if st.button("POST /api/ats/apply-to-jobs", key="api_baj_btn"):
+                try:
+                    jobs_parsed = json.loads(baj_jobs)
+                except json.JSONDecodeError as je:
+                    st.error(f"Invalid jobs JSON: {je}")
+                else:
+                    if not isinstance(jobs_parsed, list):
+                        st.error("jobs must be a JSON array")
+                    else:
+                        try:
+                            r = _call(
+                                "POST",
+                                "/api/ats/apply-to-jobs",
+                                json_body={
+                                    "jobs": jobs_parsed,
+                                    "dry_run": baj_dry,
+                                    "shadow_mode": baj_shadow,
+                                    "require_safeguards": baj_safe,
+                                    "rate_limit_seconds": float(baj_rl),
+                                },
+                                timeout=600.0,
+                            )
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
 
         with st.expander("Score job fit, address, static analyze-form", expanded=False):
             st.caption("POST /api/ats/score-job-fit — JD + resume text required (min length enforced by API).")

@@ -239,6 +239,60 @@ def _crosstab_top_pairs(
     ]
 
 
+def compute_shadow_insights(df) -> Dict[str, Any]:
+    """
+    Phase 2 — aggregate shadow-mode tracker rows (``submission_status`` / ``status``).
+    Use with real **Applied** counts to reason about pilot readiness (manual cohort compare for v0).
+    """
+    empty = {
+        "shadow_rows": 0,
+        "by_shadow_submission": {},
+        "shadow_would_apply_rows": 0,
+        "shadow_would_not_apply_rows": 0,
+        "applied_submission_rows": 0,
+        "tracker_status_shadow_rows": 0,
+    }
+    if df is None or getattr(df, "empty", True):
+        return {**empty, "note": "No rows in scope."}
+
+    sub = (
+        df["submission_status"].fillna("").astype(str).str.strip()
+        if "submission_status" in df.columns
+        else None
+    )
+    if sub is None:
+        return {**empty, "note": "No submission_status column."}
+
+    is_shadow = sub.str.startswith("Shadow", na=False)
+    shadow_df = df[is_shadow]
+    would_apply = int((sub == "Shadow – Would Apply").sum())
+    would_not = int((sub == "Shadow – Would Not Apply").sum())
+    applied_n = int((sub == "Applied").sum())
+
+    st_shadow = 0
+    if "status" in df.columns:
+        st_shadow = int(
+            df["status"].fillna("").astype(str).str.strip().str.lower().eq("shadow").sum()
+        )
+
+    by_sub: Dict[str, int] = {}
+    if not shadow_df.empty and "submission_status" in shadow_df.columns:
+        by_sub = _top_counts(shadow_df, "submission_status", 12)
+
+    return {
+        "shadow_rows": int(is_shadow.sum()),
+        "by_shadow_submission": by_sub,
+        "shadow_would_apply_rows": would_apply,
+        "shadow_would_not_apply_rows": would_not,
+        "applied_submission_rows": applied_n,
+        "tracker_status_shadow_rows": st_shadow,
+        "note": (
+            "Compare **shadow_would_apply_rows** with **applied_submission_rows** over the same job cohort "
+            "when evaluating a live pilot (v0: manual analysis)."
+        ),
+    }
+
+
 def compute_tracker_crosstabs(df) -> Dict[str, Any]:
     """
     Pairwise counts for common tracker dimensions (submission vs policy, etc.).
@@ -323,6 +377,7 @@ def compute_tracker_insights(
 
     df = load_applications(for_user_id=for_user_id, workspace_id=workspace_id)
     if df.empty:
+        sh_empty = compute_shadow_insights(df)
         return {
             "total": 0,
             "by_submission_status": {},
@@ -338,6 +393,7 @@ def compute_tracker_insights(
             "pipeline_correlations": compute_pipeline_correlations(df),
             "crosstabs": compute_tracker_crosstabs(df),
             "ats": _ats_summary(df),
+            "shadow": sh_empty,
             "suggestions": ["No tracker rows for this scope yet; run the pipeline or log applications first."],
         }
 
@@ -350,10 +406,19 @@ def compute_tracker_insights(
     by_of = _top_counts(df, "offer_outcome", 20)
     pipe_corr = compute_pipeline_correlations(df)
     xtabs = compute_tracker_crosstabs(df)
+    shadow_stats = compute_shadow_insights(df)
     sug = _suggestions(by_pol, by_mode, by_sub)
     xh = _failure_hint_from_crosstabs(xtabs)
     if xh:
         sug = [xh] + [s for s in sug if s != xh][:12]
+    swa = int(shadow_stats.get("shadow_would_apply_rows") or 0)
+    asn = int(shadow_stats.get("applied_submission_rows") or 0)
+    if swa >= 5 and asn <= 1:
+        sug.insert(
+            0,
+            "Several **Shadow – Would Apply** rows but few **Applied** submissions — review blockers before a live pilot, "
+            "or run shadow and live on the same export cohort to compare.",
+        )
 
     return {
         "total": int(len(df)),
@@ -370,6 +435,7 @@ def compute_tracker_insights(
         "pipeline_correlations": pipe_corr,
         "crosstabs": xtabs,
         "ats": _ats_summary(df),
+        "shadow": shadow_stats,
         "suggestions": sug,
     }
 

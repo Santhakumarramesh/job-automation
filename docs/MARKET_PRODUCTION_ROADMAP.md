@@ -94,6 +94,11 @@ At the end of Phase 2, the system has **evidence** for where autonomy is safe.
 
 **Goal:** Enable real `safe_auto_apply` for a narrow, well‑justified class.
 
+**Prerequisites (this repo, incremental):**
+
+- Use **Phase 2 shadow** runs + tracker rollups (`insights` → `tracker.shadow`) to compare **Shadow – Would Apply** vs real **Applied** on the same job cohort before widening live submit.
+- Keep external ATS in **manual_assist**; pilot scope stays **LinkedIn Easy Apply** only until evidence says otherwise.
+
 **Key steps:**
 
 - Pilot enablement:

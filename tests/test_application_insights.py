@@ -13,6 +13,7 @@ from services.application_insights import (
     _failure_hint_from_crosstabs,
     compute_answerer_review_insights,
     compute_pipeline_correlations,
+    compute_shadow_insights,
     compute_tracker_crosstabs,
     compute_tracker_insights,
 )
@@ -50,6 +51,23 @@ def test_compute_pipeline_correlations_offer_accepted():
     assert acc.get("auto_easy_apply") == 2
     dec = pc["policy_reason_when_offer_declined"]
     assert dec.get("manual_assist") == 1
+
+
+def test_compute_shadow_insights_counts():
+    df = pd.DataFrame(
+        [
+            {"submission_status": "Shadow – Would Apply", "status": "Shadow"},
+            {"submission_status": "Shadow – Would Not Apply", "status": "Shadow"},
+            {"submission_status": "Applied", "status": "Applied"},
+            {"submission_status": "Dry Run Complete", "status": "Rejected"},
+        ]
+    )
+    sh = compute_shadow_insights(df)
+    assert sh["shadow_rows"] == 2
+    assert sh["shadow_would_apply_rows"] == 1
+    assert sh["shadow_would_not_apply_rows"] == 1
+    assert sh["applied_submission_rows"] == 1
+    assert sh["tracker_status_shadow_rows"] == 2
 
 
 def test_compute_tracker_crosstabs_pairs():
@@ -104,6 +122,8 @@ def test_tracker_insights_includes_pipeline(monkeypatch):
     assert ins["total"] == 1
     assert ins["by_interview_stage"].get("scheduled") == 1
     assert "pipeline_correlations" in ins
+    assert "shadow" in ins
+    assert ins["shadow"]["shadow_rows"] == 0
 
 
 def test_tracker_insights_audit_provider_and_ceiling(monkeypatch):
@@ -170,6 +190,8 @@ def test_tracker_insights_empty():
             assert "pipeline_correlations" in ins
             assert "crosstabs" in ins
             assert ins["crosstabs"]["submission_status_by_policy_reason"] == []
+            assert ins.get("shadow") is not None
+            assert ins["shadow"]["shadow_rows"] == 0
         finally:
             at.APPLICATION_FILE = orig
             os.environ.pop("TRACKER_USE_DB", None)

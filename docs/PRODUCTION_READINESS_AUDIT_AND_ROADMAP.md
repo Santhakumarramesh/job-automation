@@ -77,10 +77,11 @@
 ## Phase 2 — Shadow autonomy (4–6 weeks)
 
 - [x] **v0:** LinkedIn **`shadow_mode`** (MCP / REST / CLI): fill through pre-submit, never submit; runner statuses + tracker **Shadow** / submission_status labels.
-- [ ] Rollups: log **shadow intent vs human** outcome and alignment metrics (not bundled yet).
-- [ ] Metrics: alignment rate, false positive/negative estimates, DOM failure rate.
-- [ ] Tune fit/ATS thresholds from shadow data.
-- [ ] UI toggle: shadow vs live supervised.
+- [x] **Rollups (v0):** `compute_shadow_insights` + Streamlit insights metrics; heuristic suggestion when many shadow-would-apply vs few Applied.
+- [x] **UI:** Streamlit **ATS / REST API** tab — batch apply expander with `dry_run` + **`shadow_mode`** checkboxes.
+- [ ] Metrics: formal alignment rate, FP/FN estimates, DOM failure rate (deeper telemetry).
+- [ ] Tune fit/ATS thresholds from shadow data (closed loop).
+- [ ] Single Streamlit **Job Finder** toggle “next run: shadow” (without opening API tab) — optional.
 
 ---
 
