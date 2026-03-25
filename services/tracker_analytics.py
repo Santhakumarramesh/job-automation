@@ -45,6 +45,9 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
     Build count summaries: pipeline status, submission outcome, recruiter_response,
     and cross-tabs for response rates by tracker ``status``.
     """
+    from services.application_insights import compute_shadow_insights
+
+    shadow_metrics_v0 = compute_shadow_insights(df)
     if df is None or len(df) == 0:
         return {
             "row_count": 0,
@@ -59,6 +62,7 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
             "by_applied_iso_week": {},
             "rows_with_parseable_applied_at": 0,
             "by_job_state": {},
+            "shadow_metrics_v0": shadow_metrics_v0,
         }
 
     st = _norm_col(df, "status")
@@ -105,4 +109,5 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "by_applied_iso_week": by_week,
         "rows_with_parseable_applied_at": n_applied_ts,
         "by_job_state": by_js,
+        "shadow_metrics_v0": shadow_metrics_v0,
     }

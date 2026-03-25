@@ -81,7 +81,7 @@
 - [x] **v0:** LinkedIn **`shadow_mode`** (MCP / REST / CLI): fill through pre-submit, never submit; runner statuses + tracker **Shadow** / submission_status labels.
 - [x] **Rollups (v0):** `compute_shadow_insights` + Streamlit insights metrics; heuristic suggestion when many shadow-would-apply vs few Applied.
 - [x] **UI:** Streamlit **ATS / REST API** tab — batch apply expander with `dry_run` + **`shadow_mode`** checkboxes.
-- [ ] Metrics: formal alignment rate, FP/FN estimates, DOM failure rate (deeper telemetry).
+- [x] **Metrics (v0):** `compute_shadow_insights` + admin **`shadow_metrics_v0`** — `shadow_positive_rate` (would-apply / decided shadow rows), `shadow_to_applied_ratio`, `runner_issue_proxy_rows` / `_rate` (keyword heuristic on submission_status / status / `qa_audit`); `fp_fn_definitions_v0` documents limits (no employer ground truth). Deeper labeled FP/FN / DOM instrumentation remains roadmap.
 - [ ] Tune fit/ATS thresholds from shadow data (closed loop).
 - [x] Single Streamlit **Job Finder** toggle for **shadow_mode** on the next **LinkedIn batch apply** (syncs session `api_baj_shadow` with the ATS / REST API tab when LinkedIn rows are selected).
 

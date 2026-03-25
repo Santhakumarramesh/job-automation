@@ -11,7 +11,7 @@ GET /api/admin/tracker-analytics/summary?max_rows=5000
 GET /api/admin/tracker-analytics/summary?user_id=demo-user&workspace_id=my-ws
 ```
 
-Response includes rollups such as **`by_job_state`**, **`by_status`**, **`by_applied_iso_week`**, cross-tabs on recruiter response, and counts of rows with parseable `applied_at`. This matches `services/tracker_analytics.py` and is the lowest-friction rollup for a quick dashboard.
+Response includes rollups such as **`by_job_state`**, **`by_status`**, **`by_applied_iso_week`**, cross-tabs on recruiter response, counts of rows with parseable `applied_at`, and **`shadow_metrics_v0`** (Phase 2: `shadow_positive_rate`, `shadow_to_applied_ratio`, `runner_issue_proxy_*`, `fp_fn_definitions_v0`). This matches `services/tracker_analytics.py` / `compute_shadow_insights` and is the lowest-friction rollup for a quick dashboard.
 
 ## Postgres: `job_state` column
 

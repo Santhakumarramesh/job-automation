@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import Counter, deque, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
@@ -237,6 +238,45 @@ def _crosstab_top_pairs(
     ]
 
 
+_RUNNER_ISSUE_RE = re.compile(
+    r"fail|error|checkpoint|challenge|timeout|blocked|unmapped|verification|login_challenge",
+    re.I,
+)
+
+
+def _shadow_runner_issue_mask(df) -> Any:
+    """Rows whose submission/status/qa_audit text suggests DOM or runner friction (v0 proxy)."""
+    import pandas as pd
+
+    if df is None or getattr(df, "empty", True):
+        return pd.Series(dtype=bool)
+    m = pd.Series(False, index=df.index)
+    if "submission_status" in df.columns:
+        m = m | (
+            df["submission_status"]
+            .fillna("")
+            .astype(str)
+            .str.contains(_RUNNER_ISSUE_RE, regex=True, na=False)
+        )
+    if "status" in df.columns:
+        st = df["status"].fillna("").astype(str).str.strip().str.lower()
+        m = m | st.isin(["failed", "failure", "skipped", "error"])
+        m = m | (
+            df["status"]
+            .fillna("")
+            .astype(str)
+            .str.contains(_RUNNER_ISSUE_RE, regex=True, na=False)
+        )
+    if "qa_audit" in df.columns:
+        m = m | (
+            df["qa_audit"]
+            .fillna("")
+            .astype(str)
+            .str.contains(_RUNNER_ISSUE_RE, regex=True, na=False)
+        )
+    return m
+
+
 def compute_shadow_insights(df) -> Dict[str, Any]:
     """
     Phase 2 — aggregate shadow-mode tracker rows (``submission_status`` / ``status``).
@@ -247,8 +287,26 @@ def compute_shadow_insights(df) -> Dict[str, Any]:
         "by_shadow_submission": {},
         "shadow_would_apply_rows": 0,
         "shadow_would_not_apply_rows": 0,
+        "shadow_decided_total": 0,
+        "shadow_positive_rate": 0.0,
+        "shadow_to_applied_ratio": 0.0,
         "applied_submission_rows": 0,
         "tracker_status_shadow_rows": 0,
+        "runner_issue_proxy_rows": 0,
+        "runner_issue_proxy_rate": 0.0,
+        "fp_fn_definitions_v0": {
+            "note": (
+                "Employer ground truth is not in the tracker; FP/FN are not directly measurable. "
+                "Use cohort labels offline for formal estimates."
+            ),
+            "fn_proxy_hint": (
+                "Many **Shadow – Would Apply** rows vs few **Applied** submissions in the same cohort "
+                "suggests blockers before a live pilot (heuristic)."
+            ),
+            "fp_proxy_hint": (
+                "Policy auto lane applies that stall or revert in pipeline need manual labeling to count as false positives."
+            ),
+        },
     }
     if df is None or getattr(df, "empty", True):
         return {**empty, "note": "No rows in scope."}
@@ -277,16 +335,45 @@ def compute_shadow_insights(df) -> Dict[str, Any]:
     if not shadow_df.empty and "submission_status" in shadow_df.columns:
         by_sub = _top_counts(shadow_df, "submission_status", 12)
 
+    decided = int(would_apply + would_not)
+    pos_rate = round(float(would_apply) / float(max(1, decided)), 4) if decided else 0.0
+    to_applied = round(float(would_apply) / float(max(1, applied_n)), 4) if (applied_n or would_apply) else 0.0
+
+    issue_m = _shadow_runner_issue_mask(df)
+    issue_n = int(issue_m.sum()) if hasattr(issue_m, "sum") else 0
+    nrows = int(len(df))
+    issue_rate = round(float(issue_n) / float(max(1, nrows)), 4) if nrows else 0.0
+
     return {
         "shadow_rows": int(is_shadow.sum()),
         "by_shadow_submission": by_sub,
         "shadow_would_apply_rows": would_apply,
         "shadow_would_not_apply_rows": would_not,
+        "shadow_decided_total": decided,
+        "shadow_positive_rate": pos_rate,
+        "shadow_to_applied_ratio": to_applied,
         "applied_submission_rows": applied_n,
         "tracker_status_shadow_rows": st_shadow,
+        "runner_issue_proxy_rows": issue_n,
+        "runner_issue_proxy_rate": issue_rate,
+        "fp_fn_definitions_v0": {
+            "note": (
+                "Employer ground truth is not in the tracker; FP/FN are not directly measurable. "
+                "Use cohort labels offline for formal estimates."
+            ),
+            "fn_proxy_hint": (
+                "Many **Shadow – Would Apply** rows vs few **Applied** submissions in the same cohort "
+                "suggests blockers before a live pilot (heuristic)."
+            ),
+            "fp_proxy_hint": (
+                "Policy auto lane applies that stall or revert in pipeline need manual labeling to count as false positives."
+            ),
+        },
         "note": (
             "Compare **shadow_would_apply_rows** with **applied_submission_rows** over the same job cohort "
-            "when evaluating a live pilot (v0: manual analysis)."
+            "when evaluating a live pilot (v0: manual analysis). "
+            "**shadow_positive_rate** = would_apply / (would_apply + would_not). "
+            "**runner_issue_proxy_*** flags rows whose status/submission/qa_audit text matches common failure tokens (DOM/login heuristic)."
         ),
     }
 

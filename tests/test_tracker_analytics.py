@@ -14,6 +14,8 @@ def test_empty_summary():
     assert out["by_applied_iso_week"] == {}
     assert out["rows_with_parseable_applied_at"] == 0
     assert out["by_job_state"] == {}
+    assert "shadow_metrics_v0" in out
+    assert out["shadow_metrics_v0"].get("shadow_rows") == 0
 
 
 def test_summary_counts_and_applied_breakdown():
@@ -59,6 +61,8 @@ def test_summary_counts_and_applied_breakdown():
     assert "Applied" in out["status_by_recruiter_response"]
     assert out["by_job_state"].get("manual_assist") == 2
     assert out["by_job_state"].get("(empty)") == 1
+    assert out["shadow_metrics_v0"]["shadow_would_apply_rows"] == 1
+    assert out["shadow_metrics_v0"]["applied_submission_rows"] == 2
 
 
 def test_by_applied_iso_week_buckets():

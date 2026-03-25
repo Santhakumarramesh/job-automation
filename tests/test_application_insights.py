@@ -66,8 +66,26 @@ def test_compute_shadow_insights_counts():
     assert sh["shadow_rows"] == 2
     assert sh["shadow_would_apply_rows"] == 1
     assert sh["shadow_would_not_apply_rows"] == 1
+    assert sh["shadow_decided_total"] == 2
+    assert sh["shadow_positive_rate"] == 0.5
+    assert sh["shadow_to_applied_ratio"] == 1.0
     assert sh["applied_submission_rows"] == 1
     assert sh["tracker_status_shadow_rows"] == 2
+    assert sh["runner_issue_proxy_rows"] == 0
+    assert "fp_fn_definitions_v0" in sh
+
+
+def test_compute_shadow_insights_runner_issue_proxy():
+    df = pd.DataFrame(
+        [
+            {"submission_status": "Failed – checkpoint", "status": "Applied", "qa_audit": "{}"},
+            {"submission_status": "Applied", "status": "Applied", "qa_audit": "timeout on page"},
+            {"submission_status": "Shadow – Would Apply", "status": "Shadow", "qa_audit": ""},
+        ]
+    )
+    sh = compute_shadow_insights(df)
+    assert sh["runner_issue_proxy_rows"] == 2
+    assert sh["runner_issue_proxy_rate"] > 0
 
 
 def test_compute_tracker_crosstabs_pairs():
