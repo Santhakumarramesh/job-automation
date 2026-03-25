@@ -7,6 +7,9 @@ Enable with ``APPLY_RUNNER_METRICS_REDIS=1``. Uses the same Redis URL as Celery 
 Events (fixed set — do not pass arbitrary strings from user input):
   - ``linkedin_login_checkpoint_pause`` — interactive script paused for human verification
   - ``linkedin_login_challenge_abort`` — headless flow stopped at LinkedIn challenge URL
+  - ``linkedin_live_submit_attempt`` — reached live submit (after autonomy gate)
+  - ``linkedin_live_submit_success`` — submit click path returned applied
+  - ``linkedin_live_submit_blocked_autonomy`` — blocked by ``autonomy_submit_gate`` (kill switch / pilot-only)
 """
 
 from __future__ import annotations
@@ -21,6 +24,9 @@ _ALLOWED_EVENTS = frozenset(
     {
         "linkedin_login_checkpoint_pause",
         "linkedin_login_challenge_abort",
+        "linkedin_live_submit_attempt",
+        "linkedin_live_submit_success",
+        "linkedin_live_submit_blocked_autonomy",
     }
 )
 

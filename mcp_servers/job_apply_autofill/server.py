@@ -90,7 +90,7 @@ def apply_to_jobs(
 ) -> dict:
     """
     Apply to jobs from JSON. By default: Easy Apply only, no external ATS.
-    jobs_json: JSON string, list of {title, company, url, easy_apply?, easy_apply_confirmed?, apply_mode?, fit_decision?, ats_score?, unsupported_requirements?}.
+    jobs_json: JSON string, list of job objects (url, title, company, …). Optional ``pilot_submit_allowed: true`` for Phase 3 pilot-only live submit when ``AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1``.
     dry_run: if True, fill forms but do not submit. Recommended for first run.
     shadow_mode: Phase 2 — fill through pre-submit, never submit; statuses ``shadow_would_apply`` /
     ``shadow_would_not_apply`` (tracker + run JSON). Overrides dry-run labeling when both True.

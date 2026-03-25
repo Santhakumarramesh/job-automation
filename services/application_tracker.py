@@ -273,6 +273,8 @@ def _submission_status_for_run_result(run_result) -> str:
             if "fit_decision" in el:
                 return "Skipped – Low Fit"
             return "Skipped – Policy"
+        if el.startswith("autonomy:") or "pilot_submit_only" in el:
+            return "Skipped – Autonomy Gate"
         return "Skipped – Low Fit"
     return st if st else "Unknown"
 

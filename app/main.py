@@ -439,6 +439,9 @@ class ApplyToJobsRequest(BaseModel):
     """
     Batch apply (MCP ``apply_to_jobs`` / ``dry_run_apply_to_jobs`` parity).
     Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1`` on the API. Max 50 jobs per request.
+
+    Phase 3: optional per-job ``pilot_submit_allowed: true`` when
+    ``AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`` on the worker/API host.
     """
 
     jobs: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)

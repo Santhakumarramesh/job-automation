@@ -28,6 +28,12 @@ def test_submission_skipped_no_url_and_external():
     ) == ("Skipped – External ATS")
 
 
+def test_submission_skipped_autonomy_gate():
+    assert _submission_status_for_run_result(
+        _FakeRun("skipped", "autonomy: pilot_submit_only")
+    ) == ("Skipped – Autonomy Gate")
+
+
 def test_submission_skipped_policy_variants():
     assert _submission_status_for_run_result(
         _FakeRun("skipped", "policy_blocked: fit_decision=reject")

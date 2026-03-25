@@ -1438,6 +1438,7 @@ def run():
             st.caption(
                 "POST /api/ats/apply-to-jobs — runs on the **API server** (needs `ATS_ALLOW_LINKEDIN_BROWSER=1`, "
                 "Playwright, LinkedIn credentials). Use **shadow_mode** for Phase 2 (fill, no submit). "
+                "Phase 3: add `pilot_submit_allowed: true` on jobs when `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`. "
                 "Max 50 jobs per request."
             )
             baj_jobs = st.text_area(

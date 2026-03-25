@@ -87,7 +87,9 @@
 
 ## Phase 3 — Narrow production autonomy (6–8 weeks)
 
-- [ ] Pilot cohort; enable real auto-submit only for filtered LinkedIn Easy Apply + telemetry rollback.
+- [x] **v0 gates:** `autonomy_submit_gate` — `AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED`, `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY` + job `pilot_submit_allowed`; Redis apply-runner counters for attempt/success/blocked.
+- [ ] Pilot cohort playbook (named users/workspaces) beyond job-level JSON flags.
+- [ ] Enable real auto-submit only for filtered LinkedIn Easy Apply + automated telemetry rollback rules.
 - [ ] Auto-downgrade patterns that spike failures.
 - [ ] Public readiness subsection (evidence, scope, limits) in docs + release notes.
 

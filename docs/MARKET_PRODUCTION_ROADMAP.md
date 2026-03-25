@@ -101,6 +101,8 @@ At the end of Phase 2, the system has **evidence** for where autonomy is safe.
 
 **Key steps:**
 
+- **Operator gates (v0):** env `AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED` / `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY` + job `pilot_submit_allowed`; Redis `linkedin_live_submit_*` counters. Details: [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md) (Phase 3).
+
 - Pilot enablement:
   - Turn on real `safe_auto_apply` auto‑submit for:
     - A small number of users.

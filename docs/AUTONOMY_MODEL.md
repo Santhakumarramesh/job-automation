@@ -201,3 +201,38 @@ The operator layer must treat `safe_to_submit == false` as a **hard stop** for a
 
 - External ATS (`manual_assist` lane) is unchanged; shadow semantics apply primarily to **LinkedIn Easy Apply** in this iteration.
 - Alignment metrics (“shadow vs human”) and UI toggles are **roadmap** on top of these logs.
+
+---
+
+## Phase 3 — Narrow live submit gates (v0, implemented)
+
+**Goal:** Operators can **stop** or **scope** LinkedIn **live** submit (actual Submit click) without changing dry-run / shadow behavior.
+
+**Environment variables** (see `services/autonomy_submit_gate.py`)
+
+| Variable | Effect |
+|----------|--------|
+| `AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1` | Blocks **all** live LinkedIn submits. Runner returns `skipped` with `error` prefix `autonomy: …`. |
+| `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1` | Live submit **only** if the job dict has `pilot_submit_allowed: true` (or legacy `pilot_submit: true`). Other jobs skip with `autonomy: pilot_submit_only …`. |
+
+If **both** are set, the **kill switch** is evaluated first.
+
+**Default:** neither variable set → **same behavior as before** (live submit when the runner would submit).
+
+**Telemetry (optional Redis)**
+
+With `APPLY_RUNNER_METRICS_REDIS=1`, counters include:
+
+- `linkedin_live_submit_attempt_total`
+- `linkedin_live_submit_success_total`
+- `linkedin_live_submit_blocked_autonomy_total`
+
+**Tracker**
+
+- Blocked jobs log as usual; `submission_status` **Skipped – Autonomy Gate** when `error` starts with `autonomy:`.
+
+**Pilot workflow**
+
+1. Run **shadow** on a cohort; review `tracker.shadow` vs real **Applied**.
+2. Enable **`AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`**; add `pilot_submit_allowed: true` only to vetted jobs in export JSON.
+3. Use **`AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1`** for instant rollback during incidents.

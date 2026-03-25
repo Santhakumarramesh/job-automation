@@ -346,6 +346,38 @@ async def run_linkedin_application(
             # Caller handles confirmation; we proceed to submit
             pass
 
+        try:
+            from services.autonomy_submit_gate import linkedin_live_submit_block_reason
+
+            _gate = linkedin_live_submit_block_reason(job)
+        except Exception:
+            _gate = None
+        if _gate:
+            try:
+                from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+                incr_apply_runner_event("linkedin_live_submit_blocked_autonomy")
+            except Exception:
+                pass
+            return RunResult(
+                status="skipped",
+                company=company,
+                position=position,
+                job_url=url,
+                screenshot_paths=screenshot_paths,
+                qa_audit=qa_audit,
+                unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+                error=_gate,
+            )
+
+        try:
+            from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+            incr_apply_runner_event("linkedin_live_submit_attempt")
+        except Exception:
+            pass
+
         # Submit
         for sel in ["button[aria-label*='Submit']", "button:has-text('Submit application')", "button:has-text('Submit')"]:
             try:
@@ -353,6 +385,12 @@ async def run_linkedin_application(
                 if submit and await submit.is_visible():
                     await submit.click()
                     await page.wait_for_timeout(2000)
+                    try:
+                        from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+                        incr_apply_runner_event("linkedin_live_submit_success")
+                    except Exception:
+                        pass
                     return RunResult(
                         status="applied",
                         company=company,
