@@ -53,9 +53,9 @@
 
 **Goal:** Never lie; never auto-submit borderline truths.
 
-- [ ] **Truth gate:** content only from truth inventory + profile + explicit rules; forbid new tools, years, locations, titles, credentials not in truth base.
-- [ ] **Submission gate:** some truthful fields still `review` for auto (e.g. sponsorship, legal/compliance questions).
-- [ ] Auto-submit only when:
+- [x] **Truth gate:** content only from truth inventory + profile + explicit rules; forbid new tools, years, locations, titles, credentials not in truth base.
+- [x] **Submission gate:** some truthful fields still `review` for auto (e.g. sponsorship, legal/compliance questions).
+- [x] Auto-submit only when:
   - Truth gate passes for **all critical** fields.
   - Submission gate passes — no `review` / `missing` / `blocked` on **critical** questions.
 
