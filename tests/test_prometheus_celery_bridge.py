@@ -69,3 +69,37 @@ def test_refresh_zeroes_on_redis_failure():
     body = generate_latest(reg).decode()
     assert "ccp_celery_tasks_total 0.0" in body
     pcb.reset_celery_bridge_state_for_tests()
+
+
+def test_prometheus_apply_runner_duration_bridge_refresh_sets_gauges():
+    from prometheus_client import CollectorRegistry, generate_latest
+
+    import services.prometheus_celery_bridge as pcb
+
+    pcb.reset_celery_bridge_state_for_tests()
+    reg = CollectorRegistry()
+    fake_apply_fields = {
+        "linkedin_fill_dom_scan_seconds_sum": "12.5",
+        "linkedin_fill_dom_scan_seconds_count": "5",
+        "linkedin_fill_field_fill_seconds_sum": "3.0",
+        "linkedin_fill_field_fill_seconds_count": "1",
+    }
+
+    with patch.dict(os.environ, {"PROMETHEUS_CELERY_REDIS": "1"}, clear=False):
+        assert pcb.register_celery_redis_gauges(reg) is True
+
+        with patch(
+            "services.metrics_redis.read_celery_metrics_hash",
+            return_value={"ok": True, "fields": {}},
+        ):
+            with patch(
+                "services.apply_runner_metrics_redis.read_apply_runner_metrics_summary",
+                return_value={"fields": fake_apply_fields},
+            ):
+                pcb.refresh_celery_redis_gauges()
+
+    body = generate_latest(reg).decode()
+    assert "ccp_apply_runner_linkedin_fill_dom_scan_seconds_sum 12.5" in body
+    assert "ccp_apply_runner_linkedin_fill_dom_scan_seconds_count 5.0" in body
+    assert "ccp_apply_runner_linkedin_fill_field_fill_seconds_sum 3.0" in body
+    pcb.reset_celery_bridge_state_for_tests()
