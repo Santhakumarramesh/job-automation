@@ -56,6 +56,10 @@
 
 ---
 
+## Next: Phase 8
+
+Phase 8 continues this with **SLO targets** and an explicit incident workflow that ties each alert to “what good looks like” and “how to verify we’re back in bounds”.
+
 ## Out of scope (for Phase 7)
 
 - Guaranteeing hands-off browser apply in production (still supervised by design).
