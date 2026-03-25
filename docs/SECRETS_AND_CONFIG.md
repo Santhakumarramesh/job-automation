@@ -44,6 +44,17 @@ These env vars apply mainly to **Celery worker** pipelines (resume tailoring + c
 
 If `CCP_FAST_PIPELINE` is enabled, the pipeline still produces `tailored_resume_text` and `cover_letter_text`, but may omit project/custom additions and runs fewer LLM calls.
 
+## Browser automation performance tuning (Phase 5)
+
+These env vars apply mainly to the Playwright runner (`agents/application_runner.py`) sleeps/waits.
+
+| Variable | Meaning |
+|----------|---------|
+| `CCP_FAST_BROWSER_PIPELINE=1` | Speed mode for browser waits (reduces `page.wait_for_timeout(...)` delays). |
+| `CCP_BROWSER_WAIT_MULTIPLIER` | Multiplier applied to runner waits in fast mode (default `0.25`). |
+
+If you see increased “DOM unmapped” rates or flakiness, raise `CCP_BROWSER_WAIT_MULTIPLIER` (e.g. `0.5`) instead of disabling the mode.
+
 ## AWS Secrets Manager
 
 1. Create a secret (e.g. `career-co-pilot/prod`) whose value is **JSON**:

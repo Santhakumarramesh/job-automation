@@ -21,6 +21,32 @@ except ImportError:
     Page = None  # type: ignore
 
 
+def _browser_wait_multiplier() -> float:
+    """
+    Speed mode knobs for browser automation waits (Phase 5).
+
+    Default multiplier is 1.0 to preserve existing behavior.
+    When `CCP_FAST_BROWSER_PIPELINE=1`, use `CCP_BROWSER_WAIT_MULTIPLIER` (default 0.25).
+    """
+    fast = os.getenv("CCP_FAST_BROWSER_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    if not fast:
+        return 1.0
+    try:
+        return float(os.getenv("CCP_BROWSER_WAIT_MULTIPLIER", "0.25"))
+    except (TypeError, ValueError):
+        return 0.25
+
+
+def _scaled_wait_ms(min_ms: int, max_ms: int) -> int:
+    m = _browser_wait_multiplier()
+    lo = max(0, int(min_ms * m))
+    hi = max(1, int(max_ms * m))
+    if lo >= hi:
+        # Ensure a valid range; keep at least a small delay to reduce flakiness.
+        lo = max(0, hi // 2)
+    return random.randint(lo, hi)
+
+
 @dataclass
 class RunConfig:
     """Configuration for an application run."""
@@ -242,7 +268,7 @@ async def run_linkedin_application(
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(random.randint(2000, 4000))
+        await page.wait_for_timeout(_scaled_wait_ms(2000, 4000))
 
         # Click Easy Apply (same selector order as MCP confirm_easy_apply)
         from services.linkedin_easy_apply import LINKEDIN_EASY_APPLY_BUTTON_SELECTORS
@@ -252,7 +278,7 @@ async def run_linkedin_application(
                 btn = await page.query_selector(sel)
                 if btn and await btn.is_visible():
                     await btn.click()
-                    await page.wait_for_timeout(3000)
+                    await page.wait_for_timeout(_scaled_wait_ms(3000, 3000))
                     break
             except Exception:
                 continue
@@ -267,7 +293,7 @@ async def run_linkedin_application(
                 up = await page.query_selector("input[type='file']")
                 if up and await up.is_visible():
                     await up.set_input_files(resume_path)
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(_scaled_wait_ms(1500, 1500))
                     qa_audit["resume_uploaded"] = os.path.basename(resume_path)
             except Exception:
                 unmapped.append("resume_upload")
@@ -382,7 +408,7 @@ async def run_linkedin_application(
                 submit = await page.query_selector(sel)
                 if submit and await submit.is_visible():
                     await submit.click()
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(_scaled_wait_ms(2000, 2000))
                     try:
                         from services.apply_runner_metrics_redis import incr_apply_runner_event
 
@@ -482,7 +508,7 @@ async def fill_external_ats_form(
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(random.randint(2000, 4000))
+        await page.wait_for_timeout(_scaled_wait_ms(2000, 4000))
 
         # Common selectors for external ATS (Greenhouse/Lever/Workday patterns)
         profile = config.profile or {}
@@ -506,7 +532,7 @@ async def fill_external_ats_form(
                 if inp and await inp.is_visible():
                     await inp.fill(str(val))
                     qa_audit[sel[:30]] = str(val)[:50]
-                    await page.wait_for_timeout(random.randint(200, 600))
+                    await page.wait_for_timeout(_scaled_wait_ms(200, 600))
             except Exception:
                 continue
 
@@ -537,7 +563,7 @@ async def fill_external_ats_form(
                 up = await page.query_selector("input[type='file']")
                 if up and await up.is_visible():
                     await up.set_input_files(resume_path)
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(_scaled_wait_ms(1500, 1500))
                     qa_audit["resume_uploaded"] = os.path.basename(resume_path)
             except Exception:
                 unmapped.append("resume_upload")
