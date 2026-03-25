@@ -12,7 +12,7 @@
 |-----------|-------|------|
 | **Supervised / hosted platform** | **~7.5–8 / 10** | FastAPI, Celery, Redis, Postgres tracker path, Docker, auth, migrations, metrics hooks |
 | **Autonomous apply (market claim)** | **~4.5 / 10** | Easy Apply path exists; checkpoints, DOM drift, and policy evidence limit “hands-off” claims |
-| **Policy in product surface** | **~5 / 10** | Decision payload exists (MCP + REST); **not** yet first-class in DB + Streamlit UX |
+| **Policy in product surface** | **~7 / 10** | Decision payload (MCP + REST); tracker **application_decision** JSON; Streamlit Job Finder + tracker snapshots + API tab |
 
 ---
 
@@ -32,9 +32,9 @@
 
 | Gap | Detail |
 |-----|--------|
-| **Persistence** | `job_state` / decision JSON **not** stored on tracker rows by default; replay and audits rely on exports/logs. |
+| **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; optional indexed `job_state` column still open. |
 | **DB enums** | No Alembic migration adding dedicated `job_state` / `answer_state` columns; tracker uses strings (`apply_mode`, `policy_reason`, etc.). |
-| **Streamlit supervision UX** | No prominent **job_state** + **answer_state** grid, “approve submit” gate, or shadow-mode toggle wired to `build_application_decision`. |
+| **Streamlit supervision UX** | **Partial:** Job Finder “Supervision — application decision” + tracker snapshot expander + REST tab POST; **open:** explicit “I approve submit” audit + shadow toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
 | **Shadow mode** | Not implemented as a first-class run mode (log “would have applied” vs human). |
 | **CI depth** | Ruff/mypy not required in CI yet; coverage targets not enforced. |
@@ -49,12 +49,12 @@
 
 - [x] Structured **job_state** / **apply_mode_legacy** / **safe_to_submit** in service + MCP + REST.
 - [x] Per canonical screening field: **answer_state**, **truth_safe**, **submit_safe** (heuristic from answerer `reason_codes`).
-- [ ] **Persist** last decision snapshot on tracker write paths (apply export, API optional `application_id`).
+- [x] **Persist** last decision snapshot on tracker write paths (runner + `log_application` graph state).
 - [ ] **Optional:** SQLAlchemy/Alembic columns or JSONB for `application_decision` + indexed `job_state`.
 
 ### UI supervision
 
-- [ ] Streamlit: show **job_state** and **critical_unsatisfied** from `build_application_decision` (or API).
+- [x] Streamlit: show **job_state**, **safe_to_submit**, **critical_unsatisfied**, per-field table from `build_application_decision` (Job Finder preview); tracker column snapshot expander; API tab POST.
 - [ ] **manual_assist:** table of fields with safe/review/missing + autofill preview.
 - [ ] **safe_auto_apply:** show preconditions checklist + link to dry-run / screenshots (when available).
 - [ ] Explicit **“I approve submit”** logging (audit trail) before live submit in UI flows.
@@ -107,7 +107,7 @@
 | 4 | `.github/workflows/ci.yml` | **Done** (pytest + profile + startup; extend later) |
 | 5 | Vision docs committed | **Done** — `SYSTEM_VISION`, `PRODUCT_SCOPE`, `AUTONOMY_MODEL`, `MARKET_PRODUCTION_ROADMAP`, plus audit checklist, external ATS, decision contract |
 
-**Actual immediate priorities:** tracker **persistence** for decision JSON, Streamlit **policy panel**, then **ruff in CI**.
+**Actual immediate priorities:** **ruff in CI**; optional indexed `job_state` on tracker; explicit submit-approval audit log; Phase 2 shadow mode.
 
 ---
 

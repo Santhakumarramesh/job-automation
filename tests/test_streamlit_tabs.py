@@ -141,6 +141,40 @@ def _check_load_applications() -> None:
     assert hasattr(df, "columns"), "load_applications should return DataFrame"
 
 
+def _check_streamlit_decision_helpers() -> None:
+    import json
+
+    import pandas as pd
+
+    from ui.streamlit_app import (
+        _job_dict_for_application_decision,
+        _parse_application_decision_cell,
+    )
+
+    assert _parse_application_decision_cell("") == {}
+    assert _parse_application_decision_cell('{"job_state":"skip"}') == {"job_state": "skip"}
+    assert _parse_application_decision_cell(pd.NA) == {}
+
+    jd = _job_dict_for_application_decision(
+        {
+            "url": "https://linkedin.com/jobs/1",
+            "company": "Co",
+            "title": "Eng",
+            "fit_decision": "apply",
+            "ats_score": 90,
+            "unsupported_requirements": [],
+        }
+    )
+    assert jd["url"].endswith("/1")
+    assert jd["company"] == "Co"
+    assert jd["unsupported_requirements"] == []
+
+    jd2 = _job_dict_for_application_decision(
+        {"unsupported_requirements": json.dumps(["x"])}
+    )
+    assert jd2["unsupported_requirements"] == ["x"]
+
+
 def _check_enhanced_ats_checker_init() -> None:
     from enhanced_ats_checker import EnhancedATSChecker
 
@@ -190,6 +224,11 @@ def test_streamlit_career_api_helpers() -> None:
 def test_streamlit_load_applications() -> None:
     _ensure_tab_test_env()
     _check_load_applications()
+
+
+def test_streamlit_application_decision_helpers() -> None:
+    _ensure_tab_test_env()
+    _check_streamlit_decision_helpers()
 
 
 def test_streamlit_enhanced_ats_checker_init() -> None:

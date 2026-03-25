@@ -37,6 +37,7 @@ from services.follow_up_service import list_follow_ups as list_follow_up_queue
 from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
 from services.profile_service import load_profile
+from services.application_decision import build_application_decision
 from services.policy_service import enrich_job_dict_for_policy_export
 from agents.interview_prep_agent import generate_interview_prep
 
@@ -57,6 +58,51 @@ def _df_row_to_plain_dict(row: pd.Series) -> dict:
         except (TypeError, ValueError):
             out[k] = v
     return out
+
+
+def _parse_application_decision_cell(val) -> dict:
+    """Parse tracker ``application_decision`` JSON cell; empty dict if missing/invalid."""
+    if val is None:
+        return {}
+    try:
+        if pd.isna(val):
+            return {}
+    except (TypeError, ValueError):
+        pass
+    s = str(val).strip()
+    if not s:
+        return {}
+    try:
+        out = json.loads(s)
+        return out if isinstance(out, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _job_dict_for_application_decision(row: dict) -> dict:
+    """Build a job dict for ``build_application_decision`` from a jobs table row."""
+    r = dict(row or {})
+    url = str(r.get("url") or r.get("applyUrl") or "").strip()
+    apply_u = str(r.get("apply_url") or r.get("applyUrl") or "").strip()
+    unsup = r.get("unsupported_requirements") or []
+    if isinstance(unsup, str):
+        try:
+            unsup = json.loads(unsup) if unsup.strip().startswith("[") else []
+        except json.JSONDecodeError:
+            unsup = []
+    if not isinstance(unsup, list):
+        unsup = []
+    return {
+        "url": url,
+        "apply_url": apply_u or url,
+        "title": str(r.get("title") or r.get("position") or r.get("jobTitle") or ""),
+        "company": str(r.get("company") or r.get("companyName") or ""),
+        "description": str(r.get("description") or "")[:12000],
+        "easy_apply_confirmed": bool(r.get("easy_apply_confirmed", False)),
+        "fit_decision": str(r.get("fit_decision", "") or ""),
+        "ats_score": r.get("ats_score", r.get("final_ats_score")),
+        "unsupported_requirements": unsup,
+    }
 
 
 def _streamlit_tracker_user_id() -> str:
@@ -631,6 +677,122 @@ def run():
                     value=False,
                     key="answerer_preview_use_llm",
                 )
+                with st.expander("Supervision — application decision (v0.1)", expanded=False):
+                    st.caption(
+                        "Same contract as MCP **get_application_decision** and REST "
+                        "**POST /api/ats/application-decision**. Uses the LLM checkbox above for parity with Recalculate / export."
+                    )
+                    max_prev = st.number_input(
+                        "Max LinkedIn rows to score (selected)",
+                        min_value=1,
+                        max_value=100,
+                        value=25,
+                        key="jobfinder_decision_max_rows",
+                    )
+                    c_clear, _ = st.columns([1, 3])
+                    with c_clear:
+                        if st.button("Clear decision preview", key="jobfinder_decision_clear"):
+                            st.session_state.pop("jobfinder_decision_cache", None)
+                            st.rerun()
+                    if st.button(
+                        "Compute decision preview for selected LinkedIn rows",
+                        key="jobfinder_decision_compute",
+                    ):
+                        master_txt = ""
+                        try:
+                            if st.session_state.get("base_resume_bytes"):
+                                master_txt = extract_text_from_pdf(st.session_state.base_resume_bytes)
+                        except Exception:
+                            master_txt = ""
+                        prof = load_profile()
+                        lim = int(max_prev)
+                        summaries = []
+                        details: list[tuple[str, dict]] = []
+                        for i, (_, row) in enumerate(linkedin_jobs.iterrows()):
+                            if i >= lim:
+                                break
+                            j = _df_row_to_plain_dict(row)
+                            job = _job_dict_for_application_decision(j)
+                            label = f"{str(job.get('company') or '')[:50]} — {str(job.get('title') or '')[:60]}"
+                            try:
+                                d = build_application_decision(
+                                    job,
+                                    profile=prof,
+                                    master_resume_text=master_txt,
+                                    use_llm_preview=use_llm_preview_export,
+                                )
+                            except Exception as ex:
+                                d = {
+                                    "schema_version": "0.1",
+                                    "job_state": "error",
+                                    "safe_to_submit": False,
+                                    "policy_reason": str(ex)[:200],
+                                    "critical_unsatisfied": [],
+                                    "answers": {},
+                                    "apply_mode_legacy": "",
+                                    "fit_decision": "",
+                                    "reasons": [str(ex)[:200]],
+                                }
+                            summaries.append(
+                                {
+                                    "company": job.get("company", ""),
+                                    "title": (job.get("title") or "")[:80],
+                                    "job_state": d.get("job_state"),
+                                    "safe_to_submit": d.get("safe_to_submit"),
+                                    "apply_mode": d.get("apply_mode_legacy"),
+                                    "policy_reason": (d.get("policy_reason") or "")[:100],
+                                    "critical_fields": len(d.get("critical_unsatisfied") or []),
+                                }
+                            )
+                            details.append((label, d))
+                        st.session_state["jobfinder_decision_cache"] = {
+                            "summaries": summaries,
+                            "details": details,
+                        }
+                    cache = st.session_state.get("jobfinder_decision_cache")
+                    if cache and cache.get("summaries"):
+                        st.dataframe(
+                            pd.DataFrame(cache["summaries"]),
+                            hide_index=True,
+                            use_container_width=True,
+                        )
+                        labels = [t[0] for t in cache.get("details") or []]
+                        if labels:
+                            pick = st.selectbox(
+                                "Per-field screening answers",
+                                options=list(range(len(labels))),
+                                format_func=lambda i: labels[i],
+                                key="jobfinder_decision_pick",
+                            )
+                            _dec = cache["details"][pick][1]
+                            crit = _dec.get("critical_unsatisfied") or []
+                            if crit:
+                                st.warning("Critical / not submit-safe: " + ", ".join(str(x) for x in crit))
+                            ans = _dec.get("answers") or {}
+                            if isinstance(ans, dict) and ans:
+                                rows_ans = []
+                                for k, meta in ans.items():
+                                    if not isinstance(meta, dict):
+                                        continue
+                                    rows_ans.append(
+                                        {
+                                            "field": k,
+                                            "answer_state": meta.get("answer_state"),
+                                            "truth_safe": meta.get("truth_safe"),
+                                            "submit_safe": meta.get("submit_safe"),
+                                            "text": (meta.get("text") or "")[:120],
+                                            "reason_codes": ", ".join(
+                                                str(x) for x in (meta.get("reason_codes") or [])
+                                            ),
+                                        }
+                                    )
+                                st.dataframe(
+                                    pd.DataFrame(rows_ans),
+                                    hide_index=True,
+                                    use_container_width=True,
+                                )
+                            with st.expander("Raw decision JSON"):
+                                st.json(_dec)
                 if st.button(
                     "Recalculate apply_mode + policy_reason (selected LinkedIn rows)",
                     key="sync_policy_answerer_cols",
@@ -854,6 +1016,31 @@ def run():
                     "Audit columns (when present): **ats_provider**, **ats_provider_apply_target**, "
                     "**truth_safe_ats_ceiling**, **selected_address_label**, **package_field_stats** — filled on new logs."
                 )
+                if "application_decision" in display_df.columns:
+                    with st.expander("Policy snapshot (logged application_decision)", expanded=False):
+                        st.caption("Parsed v0.1 decision JSON from tracker rows when present.")
+                        snap_rows = []
+                        for _, r in display_df.iterrows():
+                            d = _parse_application_decision_cell(r.get("application_decision"))
+                            if not d:
+                                continue
+                            snap_rows.append(
+                                {
+                                    "company": r.get("Company", r.get("company", "")),
+                                    "position": r.get("Position", r.get("position", "")),
+                                    "job_state": d.get("job_state"),
+                                    "safe_to_submit": d.get("safe_to_submit"),
+                                    "policy_reason": (d.get("policy_reason") or "")[:100],
+                                }
+                            )
+                        if snap_rows:
+                            st.dataframe(
+                                pd.DataFrame(snap_rows),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                        else:
+                            st.info("No parseable application_decision values in loaded rows.")
                 if "company" in display_df.columns and "Company" not in display_df.columns:
                     display_df = display_df.rename(columns={"company": "Company", "position": "Position", "status": "Status", "job_description": "Job Description"})
                 status_col = "Status" if "Status" in display_df.columns else "status"
@@ -1183,6 +1370,48 @@ def run():
                             "/api/ats/decide-apply-mode",
                             json_body=body,
                             timeout=30.0,
+                        )
+                        _show_api_response(r)
+                    except requests.RequestException as ex:
+                        st.error(f"Connection error: {ex}")
+
+        with st.expander("Application decision v0.1 (job_state, safe_to_submit)", expanded=False):
+            st.caption("POST /api/ats/application-decision — same payload as MCP get_application_decision.")
+            ad_json = st.text_area(
+                "Request JSON",
+                value=json.dumps(
+                    {
+                        "job": {
+                            "url": "https://www.linkedin.com/jobs/view/1/",
+                            "easy_apply_confirmed": True,
+                            "fit_decision": "apply",
+                            "ats_score": 90,
+                            "unsupported_requirements": [],
+                            "title": "MLE",
+                            "company": "ACME",
+                            "description": "Python ML role.",
+                        },
+                        "profile_path": "",
+                        "master_resume_text": "",
+                        "blocked_reason": "",
+                    },
+                    indent=2,
+                ),
+                height=260,
+                key="api_adec_json",
+            )
+            if st.button("POST /api/ats/application-decision", key="api_adec_btn"):
+                try:
+                    body = json.loads(ad_json)
+                except json.JSONDecodeError as je:
+                    st.error(f"Invalid JSON: {je}")
+                else:
+                    try:
+                        r = _call(
+                            "POST",
+                            "/api/ats/application-decision",
+                            json_body=body,
+                            timeout=60.0,
                         )
                         _show_api_response(r)
                     except requests.RequestException as ex:
