@@ -137,7 +137,7 @@ At the end of Phase 3, the system can truthfully claim **narrow, well‑governed
 
 **Shipped (see [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md)):** admin tenant reads, mobile-friendly Streamlit approval UX, JWT role templates, BI export / `timeseries_v0`, indexed `job_state` ingest normalization.
 
-**Still roadmap:** full org-level RBAC beyond workspace string, optional Postgres ENUM for per-field `answer_state`, richer Grafana / SLO panels beyond the v0 sample (`contrib/grafana/`), installable PWA (manifest/service worker) behind your ingress.
+**Still roadmap:** full org-level RBAC beyond workspace string, optional Postgres ENUM for per-field `answer_state`, richer Grafana / SLO/incident panels beyond current v0 samples (`contrib/grafana/`), installable PWA (manifest/service worker) behind your ingress.
 
 **CI:** Run **pytest**, **`ruff check .`**, **scoped `mypy --config-file mypy.ini`**, example profile validation, and startup smoke in Actions (or locally). A full workflow sample lives in **`contrib/github-actions-ci.yml`** (copy to `.github/workflows/` when your PAT has **workflow** scope).
 

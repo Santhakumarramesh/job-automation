@@ -1,6 +1,6 @@
 # Tracker analytics & example queries
 
-Use these patterns for ops dashboards (Metabase, Grafana Postgres, `psql`, or BI exports).
+Use these patterns for ops dashboards (Metabase, Grafana Postgres, `psql`, or BI exports). Grafana starter: [`contrib/grafana/dashboard-tracker-job-state-v0.json`](../contrib/grafana/dashboard-tracker-job-state-v0.json).
 
 ## Admin HTTP API (no SQL)
 

@@ -12,6 +12,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Documentation
 
+- Added tracker Grafana starter: [contrib/grafana/dashboard-tracker-job-state-v0.json](contrib/grafana/dashboard-tracker-job-state-v0.json) for `job_state` counts / applied-rate / weekly trend.
 - Added [docs/RELEASE_NOTES_CADENCE.md](docs/RELEASE_NOTES_CADENCE.md) describing when and how to update release notes alongside [AUTONOMY_MODEL.md](docs/AUTONOMY_MODEL.md) public readiness.
 
 ---
