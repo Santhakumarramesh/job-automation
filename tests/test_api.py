@@ -798,6 +798,8 @@ def test_openapi_schema_grouped_by_tags():
     assert schema["paths"]["/api/admin/apply-runner-metrics"]["get"]["tags"] == ["admin"]
     assert "/api/admin/tracker-analytics/summary" in paths
     assert schema["paths"]["/api/admin/tracker-analytics/summary"]["get"]["tags"] == ["admin"]
+    assert "/api/admin/tracker-analytics/export" in paths
+    assert schema["paths"]["/api/admin/tracker-analytics/export"]["get"]["tags"] == ["admin"]
     assert "/api/admin/applications/export" in paths
     assert "/api/admin/applications/by-user" in paths
 
@@ -1014,6 +1016,38 @@ def test_admin_tracker_analytics_summary_ok(monkeypatch):
     assert body.get("rows_analyzed") == 1
     assert body.get("applied_row_count") == 1
     assert body.get("truncated") is False
+    assert "timeseries_v0" in body
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_tracker_analytics_export_csv_ok(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    import pandas as pd
+
+    from services.application_tracker import TRACKER_COLUMNS
+
+    df = pd.DataFrame(
+        [
+            {
+                **{c: "" for c in TRACKER_COLUMNS},
+                "status": "Applied",
+                "submission_status": "Applied",
+                "user_id": "alice",
+                "company": "Acme",
+            },
+        ]
+    )
+    with patch("services.application_tracker.load_applications", return_value=df):
+        r = client.get(
+            "/api/admin/tracker-analytics/export",
+            params={"kind": "csv"},
+            headers={"X-API-Key": "admkey"},
+        )
+    assert r.status_code == 200
+    assert "text/csv" in (r.headers.get("content-type") or "")
+    text = r.text
+    assert "user_id" in text and "alice" in text and "Acme" in text
 
 
 def test_admin_apply_runner_metrics_ok(monkeypatch):

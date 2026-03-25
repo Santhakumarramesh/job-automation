@@ -9,9 +9,11 @@ Authenticated **admin** (JWT role / `API_KEY_IS_ADMIN`) can call:
 ```http
 GET /api/admin/tracker-analytics/summary?max_rows=5000
 GET /api/admin/tracker-analytics/summary?user_id=demo-user&workspace_id=my-ws
+GET /api/admin/tracker-analytics/export?max_rows=5000&kind=csv
+GET /api/admin/tracker-analytics/export?user_id=demo-user&kind=json
 ```
 
-Response includes rollups such as **`by_job_state`**, **`by_status`**, **`by_applied_iso_week`**, cross-tabs on recruiter response, counts of rows with parseable `applied_at`, and **`shadow_metrics_v0`** (Phase 2: `shadow_positive_rate`, `shadow_to_applied_ratio`, `runner_issue_proxy_*`, **`closed_loop_hints_v0`** / **`policy_reference`**, `fp_fn_definitions_v0`). This matches `services/tracker_analytics.py` / `compute_shadow_insights` and is the lowest-friction rollup for a quick dashboard.
+Response includes rollups such as **`by_job_state`**, **`by_status`**, **`by_applied_iso_week`**, **`timeseries_v0`** (week + month buckets from parseable `applied_at`, UTC), cross-tabs on recruiter response, counts of rows with parseable `applied_at`, and **`shadow_metrics_v0`** (Phase 2: `shadow_positive_rate`, `shadow_to_applied_ratio`, `runner_issue_proxy_*`, **`closed_loop_hints_v0`** / **`policy_reference`**, `fp_fn_definitions_v0`). The **export** route returns a fixed slim column set (no `job_description` / `qa_audit`) for spreadsheets and ETL. This matches `services/tracker_analytics.py` / `compute_shadow_insights` and is the lowest-friction rollup for a quick dashboard.
 
 ## Postgres: `job_state` column
 

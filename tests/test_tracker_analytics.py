@@ -3,7 +3,11 @@
 import pandas as pd
 
 from services.application_tracker import TRACKER_COLUMNS
-from services.tracker_analytics import build_admin_tracker_analytics_summary
+from services.tracker_analytics import (
+    TRACKER_ANALYTICS_BI_COLUMNS,
+    build_admin_tracker_analytics_summary,
+    slim_tracker_rows_for_bi_export,
+)
 
 
 def test_empty_summary():
@@ -16,6 +20,9 @@ def test_empty_summary():
     assert out["by_job_state"] == {}
     assert "shadow_metrics_v0" in out
     assert out["shadow_metrics_v0"].get("shadow_rows") == 0
+    assert "timeseries_v0" in out
+    assert out["timeseries_v0"].get("by_applied_iso_week_utc") == {}
+    assert out["timeseries_v0"].get("by_applied_month_utc") == {}
 
 
 def test_summary_counts_and_applied_breakdown():
@@ -87,6 +94,8 @@ def test_by_applied_iso_week_buckets():
     out = build_admin_tracker_analytics_summary(df)
     assert out["rows_with_parseable_applied_at"] == 2
     assert out["by_applied_iso_week"].get("2024-W01") == 2
+    assert out["timeseries_v0"]["by_applied_iso_week_utc"].get("2024-W01") == 2
+    assert out["timeseries_v0"]["by_applied_month_utc"].get("2024-01") == 2
 
 
 def test_status_by_recruiter_response_cross_tab():
@@ -110,3 +119,13 @@ def test_status_by_recruiter_response_cross_tab():
     iv = out["status_by_recruiter_response"].get("Interviewing", {})
     assert iv.get("positive") == 1
     assert iv.get("negative") == 1
+
+
+def test_slim_bi_export_fixed_schema():
+    df = pd.DataFrame([{"user_id": "u1", "status": "Applied", "company": "Acme"}])
+    rows = slim_tracker_rows_for_bi_export(df)
+    assert len(rows) == 1
+    assert set(rows[0].keys()) == set(TRACKER_ANALYTICS_BI_COLUMNS)
+    assert rows[0]["user_id"] == "u1"
+    assert rows[0]["company"] == "Acme"
+    assert rows[0].get("job_id") == ""

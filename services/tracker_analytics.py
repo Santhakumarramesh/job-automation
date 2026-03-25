@@ -6,9 +6,33 @@ Pure functions over a DataFrame so unit tests do not need DB or CSV.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pandas as pd
+
+# Slim columns for admin BI export (no full job_description / qa_audit blobs).
+TRACKER_ANALYTICS_BI_COLUMNS: List[str] = [
+    "id",
+    "user_id",
+    "workspace_id",
+    "source",
+    "job_id",
+    "company",
+    "position",
+    "status",
+    "submission_status",
+    "recruiter_response",
+    "applied_at",
+    "job_state",
+    "apply_mode",
+    "policy_reason",
+    "fit_decision",
+    "ats_score",
+    "follow_up_at",
+    "follow_up_status",
+    "interview_stage",
+    "offer_outcome",
+]
 
 
 def _by_applied_iso_week(df: pd.DataFrame) -> tuple[Dict[str, int], int]:
@@ -32,6 +56,57 @@ def _by_applied_iso_week(df: pd.DataFrame) -> tuple[Dict[str, int], int]:
         return {}, n_parse
     vc = keys.value_counts().sort_index()
     return {str(k): int(v) for k, v in vc.items()}, n_parse
+
+
+def _by_applied_month_utc(df: pd.DataFrame) -> Dict[str, int]:
+    """Bucket rows by calendar month of ``applied_at`` (UTC). Keys: ``YYYY-MM``."""
+    if df.empty or "applied_at" not in df.columns:
+        return {}
+    ts = pd.to_datetime(df["applied_at"], errors="coerce", utc=True)
+    valid = ts.notna()
+    if not bool(valid.any()):
+        return {}
+    t_ok = ts[valid]
+    try:
+        keys = t_ok.dt.strftime("%Y-%m")
+    except (AttributeError, TypeError, ValueError):
+        return {}
+    vc = keys.value_counts().sort_index()
+    return {str(k): int(v) for k, v in vc.items()}
+
+
+def _timeseries_v0_from_buckets(
+    by_week: Dict[str, int], by_month: Dict[str, int], n_parse: int
+) -> Dict[str, Any]:
+    return {
+        "note": (
+            "Buckets use parseable ``applied_at`` in UTC. Rows without a parseable "
+            "``applied_at`` are omitted from week/month series (see ``rows_with_parseable_applied_at`` on the parent summary)."
+        ),
+        "by_applied_iso_week_utc": dict(by_week),
+        "by_applied_month_utc": dict(by_month),
+        "rows_in_time_buckets": int(n_parse),
+    }
+
+
+def slim_tracker_rows_for_bi_export(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Return list of dicts with fixed keys; stringified cells, no large JSON columns."""
+    if df is None or getattr(df, "empty", True):
+        return []
+    out: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        rec: Dict[str, Any] = {}
+        for c in TRACKER_ANALYTICS_BI_COLUMNS:
+            if c not in df.columns:
+                rec[c] = ""
+                continue
+            v = row.get(c)
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                rec[c] = ""
+            else:
+                rec[c] = str(v).strip()
+        out.append(rec)
+    return out
 
 
 def _norm_col(df: pd.DataFrame, col: str) -> pd.Series:
@@ -63,6 +138,7 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
             "rows_with_parseable_applied_at": 0,
             "by_job_state": {},
             "shadow_metrics_v0": shadow_metrics_v0,
+            "timeseries_v0": _timeseries_v0_from_buckets({}, {}, 0),
         }
 
     st = _norm_col(df, "status")
@@ -90,6 +166,7 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
     applied_by_rr = _counts(_norm_col(sub, "recruiter_response")) if len(sub) else {}
 
     by_week, n_applied_ts = _by_applied_iso_week(df)
+    by_month = _by_applied_month_utc(df)
 
     if "job_state" in df.columns and len(df):
         by_js = _counts(_norm_col(df, "job_state").replace("", "(empty)"))
@@ -110,4 +187,5 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "rows_with_parseable_applied_at": n_applied_ts,
         "by_job_state": by_js,
         "shadow_metrics_v0": shadow_metrics_v0,
+        "timeseries_v0": _timeseries_v0_from_buckets(by_week, by_month, n_applied_ts),
     }

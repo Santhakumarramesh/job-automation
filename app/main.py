@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -1132,7 +1134,8 @@ def admin_tracker_analytics_summary(
     cross-tabs for response rates by status, applied rows by recruiter_response, and
     ``by_applied_iso_week`` (UTC ISO week of ``applied_at``), parseable timestamp count,
     ``by_job_state`` when the indexed ``job_state`` column is present, and
-    ``shadow_metrics_v0`` (Phase 2: shadow_positive_rate, runner_issue_proxy_*, closed_loop_hints_v0, policy_reference, FP/FN definitions).
+    ``shadow_metrics_v0`` (Phase 2: shadow_positive_rate, runner_issue_proxy_*, closed_loop_hints_v0, policy_reference, FP/FN definitions),
+    and ``timeseries_v0`` (week + month buckets from parseable ``applied_at``, UTC).
     """
     from services.application_tracker import load_applications
     from services.tracker_analytics import build_admin_tracker_analytics_summary
@@ -1154,6 +1157,82 @@ def admin_tracker_analytics_summary(
         "truncated": truncated,
         **summary,
     }
+
+
+@api_router.get("/admin/tracker-analytics/export", tags=["admin"])
+def admin_tracker_analytics_export(
+    admin=Depends(require_admin),
+    user_id: Optional[str] = Query(
+        None,
+        max_length=240,
+        description="When set, restrict export to this tracker user_id.",
+    ),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="When non-empty, only rows with this workspace_id.",
+    ),
+    max_rows: int = Query(
+        50_000,
+        ge=1,
+        le=200_000,
+        description="Cap rows exported after load (large multi-tenant trackers).",
+    ),
+    kind: str = Query(
+        "csv",
+        description="`csv` (default) or `json` — slim columns for BI (no job_description / qa_audit).",
+    ),
+):
+    """
+    Phase 4 — BI-oriented export: same filters as ``/admin/tracker-analytics/summary``,
+    fixed column set suitable for spreadsheets and ETL. Still contains identifiers and
+    job text fields (company, position); treat as sensitive.
+    """
+    from services.application_tracker import load_applications
+    from services.tracker_analytics import (
+        TRACKER_ANALYTICS_BI_COLUMNS,
+        slim_tracker_rows_for_bi_export,
+    )
+
+    k = (kind or "csv").strip().lower()
+    if k not in ("csv", "json"):
+        raise HTTPException(status_code=400, detail="kind must be csv or json")
+
+    uid = user_id.strip() if user_id else None
+    wf = _admin_workspace_filter(workspace_id, admin)
+    df = load_applications(for_user_id=uid, workspace_id=wf)
+    total_matching = len(df)
+    truncated = total_matching > max_rows
+    if truncated:
+        df = df.head(max_rows)
+    rows = slim_tracker_rows_for_bi_export(df)
+
+    if k == "json":
+        return {
+            "user_id_filter": uid,
+            "workspace_id_filter": wf,
+            "rows_analyzed": int(len(df)),
+            "total_matching_before_cap": total_matching,
+            "truncated": truncated,
+            "columns": list(TRACKER_ANALYTICS_BI_COLUMNS),
+            "rows": rows,
+        }
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=list(TRACKER_ANALYTICS_BI_COLUMNS),
+        extrasaction="ignore",
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    for rec in rows:
+        writer.writerow(rec)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="tracker_analytics_bi.csv"'},
+    )
 
 
 @api_router.get("/admin/metrics/summary", tags=["admin"])
