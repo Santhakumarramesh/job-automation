@@ -23,6 +23,12 @@ services:
       # Avoid fatal prod startup on first boot unless you set real auth above and flip these:
       APP_ENV: ${APP_ENV:-development}
       STRICT_STARTUP: ${STRICT_STARTUP:-0}
+      # Phase 5 performance tuning (optional speed mode for LLM + browser waits)
+      CCP_FAST_PIPELINE: ${CCP_FAST_PIPELINE:-}
+      CCP_OPENAI_MODEL: ${CCP_OPENAI_MODEL:-}
+      CCP_FAST_BROWSER_PIPELINE: ${CCP_FAST_BROWSER_PIPELINE:-}
+      CCP_BROWSER_WAIT_MULTIPLIER: ${CCP_BROWSER_WAIT_MULTIPLIER:-0.25}
+      CCP_FAST_BROWSER_FIELDS_MAX: ${CCP_FAST_BROWSER_FIELDS_MAX:-25}
     volumes:
       - ccp_data:/data
     depends_on:
@@ -52,6 +58,12 @@ services:
       API_KEY: ${API_KEY:-}
       APP_ENV: ${APP_ENV:-development}
       STRICT_STARTUP: ${STRICT_STARTUP:-0}
+      # Phase 5 performance tuning (optional speed mode for LLM + browser waits)
+      CCP_FAST_PIPELINE: ${CCP_FAST_PIPELINE:-}
+      CCP_OPENAI_MODEL: ${CCP_OPENAI_MODEL:-}
+      CCP_FAST_BROWSER_PIPELINE: ${CCP_FAST_BROWSER_PIPELINE:-}
+      CCP_BROWSER_WAIT_MULTIPLIER: ${CCP_BROWSER_WAIT_MULTIPLIER:-0.25}
+      CCP_FAST_BROWSER_FIELDS_MAX: ${CCP_FAST_BROWSER_FIELDS_MAX:-25}
     volumes:
       - ccp_data:/data
     depends_on:
