@@ -208,6 +208,20 @@
       ],
       "title": "safe_to_submit applied rate by job_state (%)",
       "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 51 },
+      "id": 13,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT DATE_TRUNC('week', CAST(applied_at AS timestamptz)) AS time, COALESCE(NULLIF(job_state, ''), '(empty)') AS metric, COUNT(*)::double precision AS value FROM applications WHERE COALESCE(applied_at, '') <> '' AND LOWER(COALESCE(status, '')) = 'applied' AND COALESCE(application_decision->>'safe_to_submit', 'false') = 'true' GROUP BY 1,2 ORDER BY 1,2;",
+          "refId": "A"
+        }
+      ],
+      "title": "Applied (safe_to_submit=true) by week and job_state",
+      "type": "timeseries"
     }
   ],
   "refresh": "1m",
