@@ -62,6 +62,22 @@ Use the Grafana dashboard we already ship (`contrib/grafana/dashboard-career-co-
   - DOM scan, value resolution, and field fill.
 - Check “operator note” panel for what’s Redis-only vs Prometheus-mirrored.
 
+Optional: run the incident triage helper to compute likely-breached alert(s) from the current Redis counters:
+
+```bash
+# Ensure this points to the same Redis instance your workers use for apply-runner metrics
+export REDIS_METRICS_URL=redis://localhost:6379/0
+
+# Reads apply-runner metrics from Redis and prints SLO triage + likely alert(s)
+python scripts/triage_apply_runner_slo.py
+```
+
+If you also want the script to estimate the 15m timeout threshold using Prometheus, set:
+
+```bash
+export PROMETHEUS_BASE_URL=http://localhost:9090
+```
+
 ### 8.2.3 — Mitigate (choose lane)
 
 Route to the relevant section in `docs/APPLY_RECOVERY_PLAYBOOKS.md`:
