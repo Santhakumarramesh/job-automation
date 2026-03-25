@@ -258,6 +258,24 @@
       ],
       "title": "Celery rolling avg duration (instant ratio)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "id": 9,
+      "panels": [],
+      "title": "LinkedIn apply runner (Redis — not on /metrics)",
+      "type": "row"
+    },
+    {
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 25 },
+      "id": 10,
+      "options": {
+        "content": "**LinkedIn apply runner:** cumulative counters live in Redis hash `ccp:metrics:apply_runner` when `APPLY_RUNNER_METRICS_REDIS=1` (e.g. `linkedin_live_submit_attempt_total`, `linkedin_live_submit_success_total`, `linkedin_live_submit_blocked_autonomy_total`). This repo does **not** export them on `GET /metrics` — use **`GET /api/admin/apply-runner-metrics`** (admin auth) or read Redis. See **docs/OBSERVABILITY.md**.",
+        "mode": "markdown"
+      },
+      "title": "Apply runner — operator note",
+      "type": "text"
     }
   ],
   "refresh": "30s",
