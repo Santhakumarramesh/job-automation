@@ -112,7 +112,7 @@
 ## Phase 5 — Data quality & ops (ongoing)
 
 - [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
-- [x] **mypy (v0 scoped):** `mypy.ini` + CI step on stable API/policy/analytics modules; full-repo strict typing remains optional iterative hardening.
+- [x] **mypy (v0 scoped+):** `mypy.ini` + CI step on stable API/policy/analytics modules (now including policy + tracker + startup/profile services); full-repo strict typing remains optional iterative hardening.
 - [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
 - [x] **Grafana samples (v0):** [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json) for API/Celery metrics + [`contrib/grafana/dashboard-tracker-job-state-v0.json`](../contrib/grafana/dashboard-tracker-job-state-v0.json) for tracker `job_state` outcomes.
 - [x] **Release notes cadence (v0):** [`docs/RELEASE_NOTES_CADENCE.md`](../docs/RELEASE_NOTES_CADENCE.md) + root [`CHANGELOG.md`](../CHANGELOG.md) — when to update for autonomy/public readiness; links to [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md#public-readiness-narrow-autonomy).

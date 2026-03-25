@@ -10,7 +10,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -338,7 +338,12 @@ def log_runner_result_to_tracker(
         return None
 
 
-def log_application_from_result(run_result, resume_path: str = "", cover_path: str = "", job_metadata: dict = None):
+def log_application_from_result(
+    run_result: Any,
+    resume_path: str = "",
+    cover_path: str = "",
+    job_metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """
     Log from ApplicationRunner RunResult. Used by scripts/apply_linkedin_jobs.py.
     job_metadata: optional dict with fit_decision, ats_score, apply_mode, easy_apply_confirmed, unsupported_requirements.
