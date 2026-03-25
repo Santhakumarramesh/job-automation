@@ -41,7 +41,7 @@
 - [x] **`truth_safe` / `submit_safe`** per field (heuristic from answerer `reason_codes`).
 - [x] Single payload: `job_state`, `answers`, `safe_to_submit`, `reasons`, `critical_unsatisfied`.
 - [x] REST ``POST /api/ats/application-decision`` (MCP parity).
-- [ ] Persist `job_state` / decision snapshot on tracker rows.
+- [x] Persist `job_state` / decision snapshot on tracker rows.
 
 **Map to code today:** `enrich_job_dict_for_policy_export` + canonical answerer preview feed `build_application_decision`.
 
