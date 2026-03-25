@@ -24,7 +24,14 @@ Env
   attempts (``linkedin_live_submit_attempt_total``), block new live submits if
   ``(attempt - success) / attempt`` is **≥** this threshold. Requires a Redis URL
   (``REDIS_METRICS_URL`` / ``REDIS_BROKER``). Evaluated after the kill switch and before
-  pilot-only rules.
+  pattern rollback and pilot-only rules.
+
+- ``AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE`` — optional float in ``(0, 1]``.
+  When set, blocks live submit when Redis shows high **login / checkpoint / challenge-abort**
+  friction relative to ``nonsubmit + live_submit_attempt`` (see
+  ``read_linkedin_nonsubmit_pattern_totals``). Requires at least
+  ``AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS`` (default ``8``) on that denominator.
+  Evaluated after submit-failure rollback and before pilot-only rules.
 
 Use together: e.g. pilot-only in staging, kill switch in incident response.
 """
@@ -89,6 +96,43 @@ def _rollback_failure_rate_block_reason() -> Optional[str]:
     return None
 
 
+def _rollback_nonsubmit_pattern_block_reason() -> Optional[str]:
+    raw = os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", "").strip()
+    if not raw:
+        return None
+    try:
+        threshold = float(raw)
+    except ValueError:
+        return None
+    if not (0.0 < threshold <= 1.0):
+        return None
+    try:
+        min_events = int(os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", "8") or "8")
+    except ValueError:
+        min_events = 8
+    if min_events < 1:
+        min_events = 1
+    try:
+        from services.apply_runner_metrics_redis import read_linkedin_nonsubmit_pattern_totals
+    except Exception:
+        return None
+    pair = read_linkedin_nonsubmit_pattern_totals()
+    if pair is None:
+        return None
+    nonsubmit, denom = pair
+    if denom < min_events:
+        return None
+    rate = float(nonsubmit) / float(denom)
+    if rate + 1e-12 >= threshold:
+        return (
+            "autonomy: pattern rollback — non-submit friction "
+            f"(checkpoint/challenge) rate {rate:.3f} >= {threshold:g} "
+            f"over denom={denom} (nonsubmit={nonsubmit}; "
+            "AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE); fix login/DOM or adjust env / Redis counters"
+        )
+    return None
+
+
 def _job_in_pilot_allowlists(job: Dict[str, Any]) -> bool:
     """True if user_id or workspace_id matches non-empty env allowlists."""
     users = _csv_id_set("AUTONOMY_LINKEDIN_PILOT_USER_IDS")
@@ -117,6 +161,9 @@ def linkedin_live_submit_block_reason(job: Optional[Dict[str, Any]] = None) -> O
     _rb = _rollback_failure_rate_block_reason()
     if _rb:
         return _rb
+    _np = _rollback_nonsubmit_pattern_block_reason()
+    if _np:
+        return _np
     if _truthy_env("AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY"):
         j = dict(job or {})
         if _job_pilot_flag(j):

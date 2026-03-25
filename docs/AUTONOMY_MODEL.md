@@ -218,8 +218,10 @@ The operator layer must treat `safe_to_submit == false` as a **hard stop** for a
 | `AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS` | Optional comma-separated workspace/org IDs; same semantics as user allowlist. |
 | `AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE` | Optional float in `(0, 1]`. When set, after at least `AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS` live-submit **attempts** in Redis, blocks new submits if `(attempt − success) / attempt` **≥** this value. Requires Redis (`REDIS_METRICS_URL` / `REDIS_BROKER`). |
 | `AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS` | Minimum `linkedin_live_submit_attempt_total` before rollback can trigger (default `10`). |
+| `AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE` | Optional float in `(0, 1]`. **Pattern rollback (v0):** blocks live submit when `(checkpoint_pause_total + challenge_abort_total) / (that sum + linkedin_live_submit_attempt_total)` **≥** this value, after at least `AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS` on that denominator. Catches sustained login/checkpoint friction before submit. Requires Redis. |
+| `AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS` | Minimum denominator (`nonsubmit + live_submit_attempt`) before pattern rollback can trigger (default `8`). |
 
-**Evaluation order (live submit):** `LIVE_SUBMIT_DISABLED` → **telemetry rollback** (if configured) → `PILOT_SUBMIT_ONLY` (if on).
+**Evaluation order (live submit):** `LIVE_SUBMIT_DISABLED` → **submit-failure telemetry rollback** (if configured) → **non-submit pattern rollback** (if configured) → `PILOT_SUBMIT_ONLY` (if on).
 
 **Default:** none of the blocking env vars set → **same behavior as before** (live submit when the runner would submit).
 
@@ -243,6 +245,7 @@ With `APPLY_RUNNER_METRICS_REDIS=1`, counters include:
 2. Enable **`AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`**; either add `pilot_submit_allowed: true` to vetted jobs in export JSON, **or** set **`AUTONOMY_LINKEDIN_PILOT_USER_IDS`** / **`AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS`** so all jobs for known pilot users/workspaces can live-submit without per-job flags.
 3. Use **`AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1`** for instant rollback during incidents.
 4. Optionally set **`AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE`** so sustained submit failures (from Redis counters) automatically block further live submits until you adjust thresholds or reset counters.
+5. Optionally set **`AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE`** so high **checkpoint / challenge-abort** rates (vs. submit attempts in Redis) auto-block live submit — useful when the runner never reaches submit because of login or DOM friction.
 
 ---
 

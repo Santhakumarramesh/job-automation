@@ -13,6 +13,8 @@ def _clear_autonomy_env(monkeypatch):
     monkeypatch.delenv("AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS", raising=False)
     monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", raising=False)
     monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", raising=False)
+    monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", raising=False)
+    monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", raising=False)
 
 
 def test_no_block_by_default():
@@ -93,6 +95,56 @@ def test_telemetry_rollback_skips_below_min_attempts(monkeypatch):
         _totals,
     )
     assert linkedin_live_submit_block_reason({}) is None
+
+
+def test_pattern_rollback_blocks_when_nonsubmit_rate_high(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", "0.5")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", "4")
+
+    def _pair():
+        return (5, 8)
+
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_nonsubmit_pattern_totals",
+        _pair,
+    )
+    r = linkedin_live_submit_block_reason({})
+    assert r is not None
+    assert "pattern rollback" in r
+
+
+def test_pattern_rollback_skips_below_min_events(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", "0.01")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", "100")
+
+    def _pair():
+        return (99, 99)
+
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_nonsubmit_pattern_totals",
+        _pair,
+    )
+    assert linkedin_live_submit_block_reason({}) is None
+
+
+def test_submit_failure_rollback_wins_over_pattern_rollback(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", "0.5")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", "2")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", "0.5")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", "2")
+
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_live_submit_totals",
+        lambda: (10, 4),
+    )
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_nonsubmit_pattern_totals",
+        lambda: (10, 10),
+    )
+    r = linkedin_live_submit_block_reason({})
+    assert r is not None
+    assert "telemetry rollback" in r
+    assert "pattern rollback" not in r
 
 
 def test_kill_switch_wins_over_telemetry_rollback(monkeypatch):

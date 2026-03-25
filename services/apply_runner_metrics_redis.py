@@ -12,6 +12,9 @@ Events (fixed set — do not pass arbitrary strings from user input):
   - ``linkedin_live_submit_blocked_autonomy`` — blocked by ``autonomy_submit_gate`` (kill switch / pilot-only / telemetry rollback)
 
 ``read_linkedin_live_submit_totals()`` returns ``(attempt_total, success_total)`` from the hash for telemetry rollback (no ``APPLY_RUNNER_METRICS_REDIS`` gate on read).
+
+``read_linkedin_nonsubmit_pattern_totals()`` returns ``(nonsubmit_total, denom_total)`` for pattern rollback:
+``nonsubmit = checkpoint_pause + challenge_abort``, ``denom = nonsubmit + live_submit_attempt_total`` (live-submit attempts proxy for flows that reached the autonomy gate).
 """
 
 from __future__ import annotations
@@ -70,6 +73,15 @@ def incr_apply_runner_event(event: str) -> None:
 
 _ATTEMPT_FIELD = "linkedin_live_submit_attempt_total"
 _SUCCESS_FIELD = "linkedin_live_submit_success_total"
+_CHECKPOINT_FIELD = "linkedin_login_checkpoint_pause_total"
+_CHALLENGE_ABORT_FIELD = "linkedin_login_challenge_abort_total"
+
+
+def _int_field(h: Dict[str, str], key: str) -> int:
+    try:
+        return int(float(h.get(key) or "0"))
+    except (TypeError, ValueError):
+        return 0
 
 
 def read_linkedin_live_submit_totals() -> Optional[Tuple[int, int]]:
@@ -91,6 +103,29 @@ def read_linkedin_live_submit_totals() -> Optional[Tuple[int, int]]:
         if success > attempt:
             success = attempt
         return (attempt, success)
+    except Exception:
+        return None
+
+
+def read_linkedin_nonsubmit_pattern_totals() -> Optional[Tuple[int, int]]:
+    """
+    Return ``(nonsubmit_total, denom_total)`` for pattern-level rollback, or ``None`` if Redis is unavailable.
+
+    ``nonsubmit`` counts login checkpoint pauses and challenge aborts (incremented from browser automation).
+    ``denom = nonsubmit + linkedin_live_submit_attempt_total`` so friction is measured against flows
+    that either hit those events or progressed to a live submit attempt.
+    """
+    try:
+        r = _client()
+        if r is None:
+            return None
+        h = r.hgetall(_KEY_HASH) or {}
+        cp = max(0, _int_field(h, _CHECKPOINT_FIELD))
+        ab = max(0, _int_field(h, _CHALLENGE_ABORT_FIELD))
+        att = max(0, _int_field(h, _ATTEMPT_FIELD))
+        nonsubmit = cp + ab
+        denom = nonsubmit + att
+        return (nonsubmit, denom)
     except Exception:
         return None
 

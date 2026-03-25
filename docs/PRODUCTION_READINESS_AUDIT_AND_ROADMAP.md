@@ -92,7 +92,7 @@
 - [x] **v0 gates:** `autonomy_submit_gate` — `AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED`, `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY` + job `pilot_submit_allowed`; Redis apply-runner counters for attempt/success/blocked.
 - [x] Pilot cohort playbook (named users/workspaces): `AUTONOMY_LINKEDIN_PILOT_USER_IDS` / `AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS` (see [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md)).
 - [x] **Telemetry rollback (v0):** `AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE` + `AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS` — auto-block live submit when Redis failure rate exceeds threshold (after min attempts).
-- [ ] Broader auto-downgrade (pattern-level / non-submit failures) — roadmap.
+- [x] **Broader auto-downgrade (v0):** `AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE` + `AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS` in `autonomy_submit_gate` — Redis ratio of `(checkpoint_pause + challenge_abort) / (nonsubmit + live_submit_attempt)`; evaluated after submit-failure rollback; see [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md).
 - [x] Public readiness checklist: [AUTONOMY_MODEL.md — Public readiness](AUTONOMY_MODEL.md#public-readiness-narrow-autonomy) (release notes still manual).
 
 ---
