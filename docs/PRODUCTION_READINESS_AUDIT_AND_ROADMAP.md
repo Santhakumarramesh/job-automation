@@ -24,7 +24,7 @@
 - **Tracking:** Application tracker (CSV / SQLite / Postgres) with rich columns; admin/insights APIs.
 - **Policy v0.1:** `services/application_decision.build_application_decision`, MCP `get_application_decision`, `POST /api/ats/application-decision` — structured `job_state`, per-field `answer_state`, `truth_safe`, `submit_safe`, `safe_to_submit` ([MCP_APPLICATION_DECISION_CONTRACT.md](MCP_APPLICATION_DECISION_CONTRACT.md)).
 - **Docs & positioning:** README production scope; CI badge; vision/scope/autonomy/roadmap/external ATS strategy docs.
-- **CI:** pytest, example profile validation, `check_startup.py app`; **Ruff** configured in `pyproject.toml` (run `ruff check .`). Add the Ruff step to `.github/workflows/ci.yml` when your PAT can update workflows (**workflow** scope).
+- **CI:** pytest, example profile validation, `check_startup.py app`; **Ruff** + **scoped mypy** (`mypy.ini`) — run locally or via [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) copied to `.github/workflows/ci.yml` when your PAT can update workflows (**workflow** scope).
 
 ---
 
@@ -33,11 +33,11 @@
 | Gap | Detail |
 |-----|--------|
 | **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; **indexed `job_state` column** populated on new writes (Postgres: `tracker_0008`; SQLite: `tracker_db` migrate). |
-| **DB enums** | **Indexed `job_state` (v0):** VARCHAR + **contract normalization** at ingest (`normalize_job_state_for_tracker`); unknown values stored as empty in the index column. Native Postgres **ENUM** for `job_state` / per-field `answer_state` remains optional future work. |
+| **DB enums** | **Indexed `job_state` (v0):** VARCHAR + **contract normalization** at ingest (`normalize_job_state_for_tracker`); Postgres optional **ENUM** for `job_state` (`tracker_0010`). Per-field `answer_state` native ENUM remains optional future work. |
 | **Streamlit supervision UX** | **Done (v0):** decision preview + tracker snapshot + REST tab; batch-apply **operator_submit_approved** path + **shadow_mode** toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
 | **Shadow mode** | **v0 done** (MCP/API/CLI + tracker labels); Job Finder toggle syncs **shadow_mode** to the batch-apply API tab. |
-| **CI depth** | Ruff/mypy not required in CI yet; coverage targets not enforced. |
+| **CI depth** | **Scoped mypy** + Ruff in [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) (copy to `.github/workflows/` when PAT allows); coverage targets not enforced. |
 
 ---
 
@@ -69,7 +69,7 @@
 
 - [x] **CI:** pytest + startup smoke on `main`/PRs.
 - [x] **Ruff:** `[tool.ruff]` in `pyproject.toml` (subset: `E4`, `E7`, `E9`, `F`; per-file `E402` for `run_streamlit.py` / `scripts/regenerate_resume_pdf.py`). Add a CI step after `pip install`: `ruff check .` (requires `ruff` from `.[dev]`). **Note:** committing `.github/workflows/*.yml` may require a GitHub PAT with the **workflow** scope; keep the snippet local until then.
-- [ ] **mypy** (optional) when the tree is ready.
+- [x] **mypy (v0 scoped):** `mypy.ini` + CI step `mypy --config-file mypy.ini` on stable API/policy/analytics modules (`app/auth.py`, `app/main.py`, `services/application_decision.py`, `services/application_insights.py`, `services/autonomy_submit_gate.py`, `services/role_templates.py`, `services/tracker_analytics.py`, `services/workspace_write_guard.py`). Broader repo typing remains iterative.
 - [x] Example **dashboard queries** — [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md) (admin summary API + SQL for `job_state` / JSONB).
 
 **Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.
@@ -112,7 +112,7 @@
 ## Phase 5 — Data quality & ops (ongoing)
 
 - [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
-- [ ] **mypy** (optional) when the tree is ready — same spirit as Phase 1 checkbox; not blocking releases.
+- [x] **mypy (v0 scoped):** `mypy.ini` + CI step on stable API/policy/analytics modules; full-repo strict typing remains optional iterative hardening.
 - [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
 
 ---
@@ -121,13 +121,13 @@
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Enums / DB columns for `job_state` | **Done (v0):** VARCHAR index + ingest normalization; optional Postgres ENUM still open |
+| 1 | Enums / DB columns for `job_state` | **Done:** VARCHAR index + ingest normalization + optional Postgres ENUM migration |
 | 2 | MCP decision structured states | **Done** — `get_application_decision` + `build_application_decision` |
 | 3 | README “Current production scope” + doc links | **Done** |
-| 4 | `.github/workflows/ci.yml` | **Done** (pytest + profile + startup; extend later) |
+| 4 | GitHub Actions CI | **Sample in repo:** [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) — copy to `.github/workflows/ci.yml` when PAT has **workflow** scope (ruff, scoped mypy, pytest, profile, startup) |
 | 5 | Vision docs committed | **Done** — `SYSTEM_VISION`, `PRODUCT_SCOPE`, `AUTONOMY_MODEL`, `MARKET_PRODUCTION_ROADMAP`, plus audit checklist, external ATS, decision contract |
 
-**Actual immediate priorities:** **ruff in CI**; optional indexed `job_state` on tracker; explicit submit-approval audit log; Phase 2 shadow mode.
+**Actual immediate priorities:** expand mypy coverage beyond v0 scope; optional bundled Grafana dashboard JSON; release-note cadence for autonomy/public-readiness updates.
 
 ---
 

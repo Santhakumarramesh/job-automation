@@ -29,6 +29,9 @@ jobs:
       - name: Ruff check
         run: ruff check .
 
+      - name: Mypy (scoped)
+        run: mypy --config-file mypy.ini
+
       - name: Pytest
         run: python -m pytest tests/ -q --tb=short
 

@@ -143,9 +143,9 @@ def compute_answerer_review_insights(records: Sequence[Dict[str, Any]]) -> Dict[
     """
     rows_with_block = 0
     rows_with_any_ar = 0
-    field_manual = Counter()
-    reason_codes = Counter()
-    classified = Counter()
+    field_manual: Counter[str] = Counter()
+    reason_codes: Counter[str] = Counter()
+    classified: Counter[str] = Counter()
 
     for row in records:
         raw = row.get("qa_audit")

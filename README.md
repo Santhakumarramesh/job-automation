@@ -36,7 +36,7 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
 - **Career Copilot MCP**: LinkedIn Easy Apply (policy-gated auto lane when enabled) and **assisted autofill** for Workday/Greenhouse/Lever — external ATS stay **manual_assist** (you submit). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md) and [docs/EXTERNAL_ATS_MANUAL_ASSIST.md](docs/EXTERNAL_ATS_MANUAL_ASSIST.md).
-- **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md). **CI:** `.github/workflows/ci.yml` (pytest, example profile, startup check).
+- **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md). **CI:** sample workflow in [`contrib/github-actions-ci.yml`](contrib/github-actions-ci.yml) — copy to `.github/workflows/ci.yml` when your token can update workflows (**workflow** scope); runs ruff, scoped mypy, pytest, example profile, startup check.
 
 ### Automation Rules (explicit)
 
