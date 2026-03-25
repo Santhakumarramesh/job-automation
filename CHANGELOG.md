@@ -8,6 +8,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Changed
 
+- Added `tests/conftest.py` autouse fixture to isolate tracker DB/CSV per test (`tmp_path`), preventing row-count bleed between tests.
 - Expanded scoped `mypy.ini` coverage to HTTP/metrics middleware: `services/prometheus_setup.py`, `services/apply_runner_metrics_redis.py`, `services/rate_limit.py`, `services/api_cors.py`.
 - Expanded scoped `mypy.ini` coverage to policy/tracker/startup/profile services: `services/policy_service.py`, `services/tracker_db.py`, `services/application_tracker.py`, `services/startup_checks.py`, `services/profile_service.py`.
 - Expanded scoped `mypy.ini` coverage to queue/context surfaces: `app/tasks.py`, `services/tracker_context.py`.
