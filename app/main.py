@@ -1133,7 +1133,7 @@ def admin_tracker_analytics_summary(
     cross-tabs for response rates by status, applied rows by recruiter_response, and
     ``by_applied_iso_week`` (UTC ISO week of ``applied_at``), parseable timestamp count,
     ``by_job_state`` when the indexed ``job_state`` column is present, and
-    ``shadow_metrics_v0`` (Phase 2: shadow_positive_rate, runner_issue_proxy_*, FP/FN definitions).
+    ``shadow_metrics_v0`` (Phase 2: shadow_positive_rate, runner_issue_proxy_*, closed_loop_hints_v0, policy_reference, FP/FN definitions).
     """
     from services.application_tracker import load_applications
     from services.tracker_analytics import build_admin_tracker_analytics_summary

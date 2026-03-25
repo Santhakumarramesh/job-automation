@@ -277,11 +277,63 @@ def _shadow_runner_issue_mask(df) -> Any:
     return m
 
 
+def _policy_ats_floor_safe() -> int:
+    try:
+        from services.policy_service import FIT_THRESHOLD_AUTO_APPLY
+
+        return int(FIT_THRESHOLD_AUTO_APPLY)
+    except Exception:
+        return 85
+
+
+def _shadow_closed_loop_hints_v0(
+    *,
+    pos_rate: float,
+    to_applied: float,
+    issue_rate: float,
+    decided: int,
+    would_apply: int,
+    applied_n: int,
+) -> tuple[list[str], int]:
+    """
+    Advisory hints from shadow + runner-proxy metrics (v0).
+
+    Does **not** change policy code or env — operators review and adjust fit/ATS gates manually.
+    """
+    from services.policy_service import FIT_THRESHOLD_AUTO_APPLY
+
+    floor = int(FIT_THRESHOLD_AUTO_APPLY)
+    hints: list[str] = []
+    if decided >= 5 and issue_rate >= 0.2 and pos_rate >= 0.55:
+        hints.append(
+            f"v0 closed-loop: Strong shadow **would-apply** share ({pos_rate:.0%} of decided shadow rows) but "
+            f"runner/DOM-proxy friction is elevated ({issue_rate:.0%} of tracker rows). "
+            f"Stabilize Playwright/login before **lowering** the ATS auto floor ({floor}); friction may dominate scores."
+        )
+    if decided >= 8 and pos_rate <= 0.4:
+        hints.append(
+            f"v0 closed-loop: Shadow **would-not-apply** dominates ({1.0 - pos_rate:.0%}) — review fit gate labels or "
+            f"whether ATS floor {floor} is too strict for this cohort (possible false negatives)."
+        )
+    if would_apply >= 5 and applied_n >= 1 and to_applied >= 2.5:
+        hints.append(
+            "v0 closed-loop: **Shadow – Would Apply** count materially exceeds **Applied** submissions in scope — "
+            "extend shadow pilot or audit blockers before scaling **live** submit; keep ATS/fit gates conservative until aligned."
+        )
+    if decided >= 6 and issue_rate >= 0.35:
+        hints.append(
+            f"v0 closed-loop: High runner/DOM-proxy rate ({issue_rate:.0%}) — prioritize checkpoint handling, selectors, "
+            "and rate limits; tuning ATS alone rarely fixes this."
+        )
+    return hints, floor
+
+
 def compute_shadow_insights(df) -> Dict[str, Any]:
     """
     Phase 2 — aggregate shadow-mode tracker rows (``submission_status`` / ``status``).
     Use with real **Applied** counts to reason about pilot readiness (manual cohort compare for v0).
     """
+    floor_ref = _policy_ats_floor_safe()
     empty = {
         "shadow_rows": 0,
         "by_shadow_submission": {},
@@ -307,6 +359,8 @@ def compute_shadow_insights(df) -> Dict[str, Any]:
                 "Policy auto lane applies that stall or revert in pipeline need manual labeling to count as false positives."
             ),
         },
+        "closed_loop_hints_v0": [],
+        "policy_reference": {"FIT_THRESHOLD_AUTO_APPLY": floor_ref},
     }
     if df is None or getattr(df, "empty", True):
         return {**empty, "note": "No rows in scope."}
@@ -344,6 +398,15 @@ def compute_shadow_insights(df) -> Dict[str, Any]:
     nrows = int(len(df))
     issue_rate = round(float(issue_n) / float(max(1, nrows)), 4) if nrows else 0.0
 
+    hints, floor = _shadow_closed_loop_hints_v0(
+        pos_rate=pos_rate,
+        to_applied=to_applied,
+        issue_rate=issue_rate,
+        decided=decided,
+        would_apply=would_apply,
+        applied_n=applied_n,
+    )
+
     return {
         "shadow_rows": int(is_shadow.sum()),
         "by_shadow_submission": by_sub,
@@ -369,11 +432,14 @@ def compute_shadow_insights(df) -> Dict[str, Any]:
                 "Policy auto lane applies that stall or revert in pipeline need manual labeling to count as false positives."
             ),
         },
+        "closed_loop_hints_v0": hints,
+        "policy_reference": {"FIT_THRESHOLD_AUTO_APPLY": floor},
         "note": (
             "Compare **shadow_would_apply_rows** with **applied_submission_rows** over the same job cohort "
             "when evaluating a live pilot (v0: manual analysis). "
             "**shadow_positive_rate** = would_apply / (would_apply + would_not). "
-            "**runner_issue_proxy_*** flags rows whose status/submission/qa_audit text matches common failure tokens (DOM/login heuristic)."
+            "**runner_issue_proxy_*** flags rows whose status/submission/qa_audit text matches common failure tokens (DOM/login heuristic). "
+            "**closed_loop_hints_v0** — advisory fit/ATS/DOM suggestions from this cohort (operators change code/env manually)."
         ),
     }
 
@@ -504,6 +570,9 @@ def compute_tracker_insights(
             "Several **Shadow – Would Apply** rows but few **Applied** submissions — review blockers before a live pilot, "
             "or run shadow and live on the same export cohort to compare.",
         )
+    for h in reversed(shadow_stats.get("closed_loop_hints_v0") or []):
+        if h and h not in sug:
+            sug.insert(0, h)
 
     return {
         "total": int(len(df)),

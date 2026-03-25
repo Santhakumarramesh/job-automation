@@ -82,7 +82,7 @@
 - [x] **Rollups (v0):** `compute_shadow_insights` + Streamlit insights metrics; heuristic suggestion when many shadow-would-apply vs few Applied.
 - [x] **UI:** Streamlit **ATS / REST API** tab — batch apply expander with `dry_run` + **`shadow_mode`** checkboxes.
 - [x] **Metrics (v0):** `compute_shadow_insights` + admin **`shadow_metrics_v0`** — `shadow_positive_rate` (would-apply / decided shadow rows), `shadow_to_applied_ratio`, `runner_issue_proxy_rows` / `_rate` (keyword heuristic on submission_status / status / `qa_audit`); `fp_fn_definitions_v0` documents limits (no employer ground truth). Deeper labeled FP/FN / DOM instrumentation remains roadmap.
-- [ ] Tune fit/ATS thresholds from shadow data (closed loop).
+- [x] **Tune fit/ATS (v0 advisory):** `closed_loop_hints_v0` + `policy_reference.FIT_THRESHOLD_AUTO_APPLY` in `compute_shadow_insights` / admin `shadow_metrics_v0` and surfaced in `compute_tracker_insights` **suggestions** — operators adjust gates manually; no auto mutation of policy.
 - [x] Single Streamlit **Job Finder** toggle for **shadow_mode** on the next **LinkedIn batch apply** (syncs session `api_baj_shadow` with the ATS / REST API tab when LinkedIn rows are selected).
 
 ---

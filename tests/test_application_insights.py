@@ -73,6 +73,8 @@ def test_compute_shadow_insights_counts():
     assert sh["tracker_status_shadow_rows"] == 2
     assert sh["runner_issue_proxy_rows"] == 0
     assert "fp_fn_definitions_v0" in sh
+    assert sh["policy_reference"].get("FIT_THRESHOLD_AUTO_APPLY") == 85
+    assert sh["closed_loop_hints_v0"] == []
 
 
 def test_compute_shadow_insights_runner_issue_proxy():
@@ -86,6 +88,48 @@ def test_compute_shadow_insights_runner_issue_proxy():
     sh = compute_shadow_insights(df)
     assert sh["runner_issue_proxy_rows"] == 2
     assert sh["runner_issue_proxy_rate"] > 0
+
+
+def test_closed_loop_hints_friction_and_positive_shadow():
+    rows = []
+    for _ in range(6):
+        rows.append({"submission_status": "Shadow – Would Apply", "status": "Shadow", "qa_audit": ""})
+    for _ in range(4):
+        rows.append({"submission_status": "Shadow – Would Not Apply", "status": "Shadow", "qa_audit": ""})
+    for _ in range(3):
+        rows.append({"submission_status": "Failed – checkpoint", "status": "Applied", "qa_audit": "{}"})
+    df = pd.DataFrame(rows)
+    sh = compute_shadow_insights(df)
+    assert sh["shadow_decided_total"] == 10
+    assert sh["shadow_positive_rate"] >= 0.55
+    assert sh["runner_issue_proxy_rate"] >= 0.2
+    hints = sh.get("closed_loop_hints_v0") or []
+    assert any("friction" in h.lower() or "playwright" in h.lower() for h in hints)
+
+
+def test_closed_loop_hints_low_shadow_positive():
+    rows = []
+    for _ in range(8):
+        rows.append({"submission_status": "Shadow – Would Not Apply", "status": "Shadow"})
+    for _ in range(2):
+        rows.append({"submission_status": "Shadow – Would Apply", "status": "Shadow"})
+    df = pd.DataFrame(rows)
+    sh = compute_shadow_insights(df)
+    assert sh["shadow_positive_rate"] <= 0.4
+    hints = sh.get("closed_loop_hints_v0") or []
+    assert any("would-not-apply" in h.lower() or "strict" in h.lower() for h in hints)
+
+
+def test_closed_loop_hints_shadow_exceeds_applied():
+    rows = []
+    for _ in range(5):
+        rows.append({"submission_status": "Shadow – Would Apply", "status": "Shadow"})
+    rows.append({"submission_status": "Applied", "status": "Applied"})
+    df = pd.DataFrame(rows)
+    sh = compute_shadow_insights(df)
+    assert sh["shadow_to_applied_ratio"] >= 2.5
+    hints = sh.get("closed_loop_hints_v0") or []
+    assert any("materially exceeds" in h.lower() or "blockers" in h.lower() for h in hints)
 
 
 def test_compute_tracker_crosstabs_pairs():
