@@ -52,6 +52,7 @@ These env vars apply mainly to the Playwright runner (`agents/application_runner
 |----------|---------|
 | `CCP_FAST_BROWSER_PIPELINE=1` | Speed mode for browser waits (reduces `page.wait_for_timeout(...)` delays). |
 | `CCP_BROWSER_WAIT_MULTIPLIER` | Multiplier applied to runner waits in fast mode (default `0.25`). |
+| `CCP_FAST_BROWSER_FIELDS_MAX` | In fast mode, maximum number of Easy Apply fields to fill before stopping modal scanning (default `25`). |
 
 If you see increased “DOM unmapped” rates or flakiness, raise `CCP_BROWSER_WAIT_MULTIPLIER` (e.g. `0.5`) instead of disabling the mode.
 

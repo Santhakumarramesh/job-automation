@@ -11,6 +11,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Set `asyncio_default_fixture_loop_scope = "function"` in `pyproject.toml` to remove pytest-asyncio default-scope deprecation noise and keep test behavior explicit.
 - Added `CCP_FAST_PIPELINE=1` speed mode and `CCP_OPENAI_MODEL` model override for the Celery worker LLM pipeline (resume tailoring + cover letter; optionally skips humanization and project generation).
 - Added `CCP_FAST_BROWSER_PIPELINE=1` + `CCP_BROWSER_WAIT_MULTIPLIER` to reduce Playwright runner wait delays (`agents/application_runner.py`) when you want faster fills.
+- In fast browser mode, scoped Easy Apply DOM scans to the modal dialog and added a field-fill cap (`CCP_FAST_BROWSER_FIELDS_MAX`) to reduce per-application latency.
 - Expanded scoped `mypy.ini` coverage to infra utility services: `services/observability.py`, `services/secrets_loader.py`, `services/task_state_store.py`, `services/idempotency_keys.py`, `services/idempotency_db.py`.
 - Added `tests/conftest.py` autouse fixture to isolate tracker DB/CSV per test (`tmp_path`), preventing row-count bleed between tests.
 - Expanded scoped `mypy.ini` coverage to HTTP/metrics middleware: `services/prometheus_setup.py`, `services/apply_runner_metrics_redis.py`, `services/rate_limit.py`, `services/api_cors.py`.

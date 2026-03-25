@@ -18,7 +18,7 @@ from typing import Optional
 try:
     from playwright.async_api import Page
 except ImportError:
-    Page = None  # type: ignore
+    Page = None
 
 
 def _browser_wait_multiplier() -> float:
@@ -201,36 +201,81 @@ async def fill_linkedin_easy_apply_modal(
     Fill LinkedIn Easy Apply modal fields. Returns (qa_audit, unmapped_fields, answerer_review).
     Detects inputs, maps to profile/answerer, fills. Does not submit.
     """
-    qa_audit = {}
-    unmapped = []
+    qa_audit: dict[str, str] = {}
+    unmapped: list[str] = []
     answerer_review: dict = {}
 
     if not Page:
         return qa_audit, unmapped, answerer_review
+
+    # Speed mode: limit DOM scanning + skip some expensive label lookups.
+    fast_browser = os.getenv("CCP_FAST_BROWSER_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    max_fields = None
+    if fast_browser:
+        try:
+            v = int(os.getenv("CCP_FAST_BROWSER_FIELDS_MAX", "25"))
+            if v > 0:
+                max_fields = v
+        except (TypeError, ValueError):
+            max_fields = 25
+
+    # Prefer scoping queries to the Easy Apply modal dialog container.
+    container_selectors = [
+        "div[role='dialog']",
+        "section[role='dialog']",
+        "div.artdeco-modal__content",
+    ]
+    scoped_root: Optional[str] = None
+    for cs in container_selectors:
+        try:
+            node = await page.query_selector(cs)
+            if node and await node.is_visible():
+                scoped_root = cs
+                break
+        except Exception:
+            continue
 
     # Common input types in LinkedIn Easy Apply
     selectors = [
         "input[type='text']", "input[type='email']", "input[type='tel']",
         "textarea", "input:not([type])",
     ]
+    filled_count = 0
     for sel in selectors:
         try:
-            els = await page.query_selector_all(sel)
+            scoped_sel = f"{scoped_root} {sel}" if scoped_root else sel
+            els = await page.query_selector_all(scoped_sel)
             for el in els:
                 try:
                     if not await el.is_visible():
                         continue
                     name = await el.get_attribute("name") or ""
-                    label_el = await page.query_selector(f"label[for='{await el.get_attribute('id') or ''}']")
-                    label = await label_el.inner_text() if label_el else ""
                     placeholder = await el.get_attribute("placeholder") or ""
-                    val, rev = _get_value_and_meta_for_field(label + " " + placeholder, name, config, job)
+
+                    if fast_browser:
+                        # In speed mode, avoid the extra DOM lookup for label text.
+                        label = ""
+                        mapping_hint = (name + " " + placeholder).strip()
+                    else:
+                        label = ""
+                        try:
+                            el_id = await el.get_attribute("id") or ""
+                            label_el = await page.query_selector(f"label[for='{el_id}']")
+                            label = await label_el.inner_text() if label_el else ""
+                        except Exception:
+                            label = ""
+                        mapping_hint = (label + " " + placeholder).strip()
+
+                    val, rev = _get_value_and_meta_for_field(mapping_hint, name, config, job)
                     if val:
                         await el.fill(val)
                         fk = label or name or placeholder or "field"
                         qa_audit[fk] = val[:100]
                         if rev:
                             answerer_review[fk] = rev
+                        filled_count += 1
+                        if max_fields is not None and filled_count >= max_fields:
+                            return qa_audit, unmapped, answerer_review
                     else:
                         unmapped.append(label or name or placeholder or "unknown")
                 except Exception:
@@ -262,8 +307,8 @@ async def run_linkedin_application(
         return RunResult(status="failed", company=company, position=position, job_url=url, error="Playwright not installed")
 
     screenshot_paths = []
-    qa_audit = {}
-    unmapped = []
+    qa_audit: dict[str, str] = {}
+    unmapped: list[str] = []
     answerer_review: dict = {}
 
     try:
@@ -502,8 +547,8 @@ async def fill_external_ats_form(
         return RunResult(status="failed", company=company, position=position, job_url=url, error="Playwright not installed")
 
     screenshot_paths = []
-    qa_audit = {}
-    unmapped = []
+    qa_audit: dict[str, str] = {}
+    unmapped: list[str] = []
     answerer_review: dict = {}
 
     try:
