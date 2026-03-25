@@ -36,3 +36,4 @@
 
 - [DEPLOY.md](DEPLOY.md) — Docker usage, prod vs demo env  
 - [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)  
+- [PHASE_7_PLAN.md](PHASE_7_PLAN.md) — Quality gates + performance telemetry

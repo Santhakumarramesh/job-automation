@@ -20,6 +20,23 @@ APPLICATION_FILE = _PROJECT_ROOT / "job_applications.csv"
 
 USE_DB = os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
 
+
+def _tracker_use_db_from_env() -> bool:
+    """Read tracker persistence mode from env at call time.
+
+    Tests and local scripts sometimes flip `TRACKER_USE_DB` after module import.
+    Re-syncing here keeps behavior consistent and avoids stale `USE_DB` globals.
+    """
+
+    return os.getenv("TRACKER_USE_DB", "").lower() in ("1", "true", "yes")
+
+
+def _sync_tracker_mode_from_env() -> None:
+    """Update module-level `USE_DB` to match the current env value."""
+
+    global USE_DB
+    USE_DB = _tracker_use_db_from_env()
+
 # Rich schema columns (Phase 6+)
 TRACKER_COLUMNS = [
     "id",
@@ -166,6 +183,7 @@ def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def initialize_tracker():
     """Creates the CSV file or DB schema."""
+    _sync_tracker_mode_from_env()
     if USE_DB:
         try:
             from services.tracker_db import initialize_tracker_db
@@ -179,6 +197,7 @@ def initialize_tracker():
 
 def log_application(state: dict):
     """Logs a processed job application. Accepts graph state."""
+    _sync_tracker_mode_from_env()
     initialize_tracker()
     from services.tracker_context import build_tracker_row_extras
     from services.application_decision import extract_job_state_from_decision_json

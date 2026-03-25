@@ -126,6 +126,51 @@ def test_apply_runner_incr_calls_redis():
     mock_pipe.execute.assert_called_once()
 
 
+def test_apply_runner_duration_incr_noop_when_disabled():
+    from services.apply_runner_metrics_redis import incr_apply_runner_duration
+
+    with patch.dict(os.environ, {"APPLY_RUNNER_METRICS_REDIS": "0"}, clear=False):
+        incr_apply_runner_duration("linkedin_fill_total", 1.0)
+
+
+def test_apply_runner_duration_incr_ignores_unknown_stage():
+    from services import apply_runner_metrics_redis as ar
+
+    mock_r = MagicMock()
+    mock_pipe = MagicMock()
+    mock_r.pipeline.return_value = mock_pipe
+
+    with patch.dict(
+        os.environ,
+        {"APPLY_RUNNER_METRICS_REDIS": "1", "REDIS_BROKER": "redis://localhost:6379/0"},
+        clear=False,
+    ):
+        with patch.object(ar, "_client", return_value=mock_r):
+            ar.incr_apply_runner_duration("not_a_real_stage", 1.23)
+
+    mock_r.pipeline.assert_not_called()
+
+
+def test_apply_runner_duration_incr_calls_redis():
+    from services import apply_runner_metrics_redis as ar
+
+    mock_r = MagicMock()
+    mock_pipe = MagicMock()
+    mock_r.pipeline.return_value = mock_pipe
+
+    with patch.dict(
+        os.environ,
+        {"APPLY_RUNNER_METRICS_REDIS": "1", "REDIS_BROKER": "redis://localhost:6379/0"},
+        clear=False,
+    ):
+        with patch.object(ar, "_client", return_value=mock_r):
+            ar.incr_apply_runner_duration("linkedin_fill_dom_scan", 2.5)
+
+    mock_pipe.hincrbyfloat.assert_called()
+    mock_pipe.hincrby.assert_called()
+    mock_pipe.execute.assert_called_once()
+
+
 def test_celery_summary_merges_apply_runner_fields():
     from services import metrics_redis as mr
 

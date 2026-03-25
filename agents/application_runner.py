@@ -10,6 +10,7 @@ import json
 import os
 import random
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -196,7 +197,7 @@ async def fill_linkedin_easy_apply_modal(
     page: "Page",
     job: dict,
     config: RunConfig,
-) -> tuple[dict, list, dict]:
+) -> tuple[dict, list, dict, dict[str, float]]:
     """
     Fill LinkedIn Easy Apply modal fields. Returns (qa_audit, unmapped_fields, answerer_review).
     Detects inputs, maps to profile/answerer, fills. Does not submit.
@@ -204,9 +205,12 @@ async def fill_linkedin_easy_apply_modal(
     qa_audit: dict[str, str] = {}
     unmapped: list[str] = []
     answerer_review: dict = {}
+    modal_total_start = time.perf_counter()
+    value_resolution_seconds = 0.0
+    field_fill_seconds = 0.0
 
     if not Page:
-        return qa_audit, unmapped, answerer_review
+        return qa_audit, unmapped, answerer_review, {}
 
     # Speed mode: limit DOM scanning + skip some expensive label lookups.
     fast_browser = os.getenv("CCP_FAST_BROWSER_PIPELINE", "").strip().lower() in ("1", "true", "yes")
@@ -266,16 +270,30 @@ async def fill_linkedin_easy_apply_modal(
                             label = ""
                         mapping_hint = (label + " " + placeholder).strip()
 
+                    v0 = time.perf_counter()
                     val, rev = _get_value_and_meta_for_field(mapping_hint, name, config, job)
+                    value_resolution_seconds += time.perf_counter() - v0
                     if val:
+                        f0 = time.perf_counter()
                         await el.fill(val)
+                        field_fill_seconds += time.perf_counter() - f0
                         fk = label or name or placeholder or "field"
                         qa_audit[fk] = val[:100]
                         if rev:
                             answerer_review[fk] = rev
                         filled_count += 1
                         if max_fields is not None and filled_count >= max_fields:
-                            return qa_audit, unmapped, answerer_review
+                            modal_total_seconds = time.perf_counter() - modal_total_start
+                            dom_scan_seconds = max(
+                                0.0,
+                                modal_total_seconds - value_resolution_seconds - field_fill_seconds,
+                            )
+                            timings = {
+                                "linkedin_fill_dom_scan": dom_scan_seconds,
+                                "linkedin_fill_value_resolution": value_resolution_seconds,
+                                "linkedin_fill_field_fill": field_fill_seconds,
+                            }
+                            return qa_audit, unmapped, answerer_review, timings
                     else:
                         unmapped.append(label or name or placeholder or "unknown")
                 except Exception:
@@ -283,7 +301,14 @@ async def fill_linkedin_easy_apply_modal(
         except Exception:
             continue
 
-    return qa_audit, unmapped, answerer_review
+    modal_total_seconds = time.perf_counter() - modal_total_start
+    dom_scan_seconds = max(0.0, modal_total_seconds - value_resolution_seconds - field_fill_seconds)
+    timings = {
+        "linkedin_fill_dom_scan": dom_scan_seconds,
+        "linkedin_fill_value_resolution": value_resolution_seconds,
+        "linkedin_fill_field_fill": field_fill_seconds,
+    }
+    return qa_audit, unmapped, answerer_review, timings
 
 
 async def run_linkedin_application(
@@ -311,13 +336,33 @@ async def run_linkedin_application(
     unmapped: list[str] = []
     answerer_review: dict = {}
 
+    # Phase 7.3 performance telemetry: record where time goes in the Easy Apply fill path.
+    t_total_start: Optional[float] = None
+    linkedin_fill_goto_seconds: Optional[float] = None
+    linkedin_fill_post_goto_wait_seconds: Optional[float] = None
+    linkedin_fill_easy_apply_click_seconds: Optional[float] = None
+    linkedin_fill_dom_scan_seconds: Optional[float] = None
+    linkedin_fill_value_resolution_seconds: Optional[float] = None
+    linkedin_fill_field_fill_seconds: Optional[float] = None
+    linkedin_fill_resume_upload_seconds: Optional[float] = None
+    linkedin_fill_screenshot_seconds: Optional[float] = None
+    linkedin_live_submit_click_seconds: Optional[float] = None
+
     try:
+        t_total_start = time.perf_counter()
+
+        t0 = time.perf_counter()
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        linkedin_fill_goto_seconds = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         await page.wait_for_timeout(_scaled_wait_ms(2000, 4000))
+        linkedin_fill_post_goto_wait_seconds = time.perf_counter() - t0
 
         # Click Easy Apply (same selector order as MCP confirm_easy_apply)
         from services.linkedin_easy_apply import LINKEDIN_EASY_APPLY_BUTTON_SELECTORS
 
+        t_click_start = time.perf_counter()
         for sel in LINKEDIN_EASY_APPLY_BUTTON_SELECTORS:
             try:
                 btn = await page.query_selector(sel)
@@ -327,9 +372,17 @@ async def run_linkedin_application(
                     break
             except Exception:
                 continue
+        linkedin_fill_easy_apply_click_seconds = time.perf_counter() - t_click_start
 
         # Fill text fields via profile + answerer
-        qa_audit, unmapped, answerer_review = await fill_linkedin_easy_apply_modal(page, job, config)
+        qa_audit, unmapped, answerer_review, modal_timings = await fill_linkedin_easy_apply_modal(
+            page,
+            job,
+            config,
+        )
+        linkedin_fill_dom_scan_seconds = (modal_timings or {}).get("linkedin_fill_dom_scan")
+        linkedin_fill_value_resolution_seconds = (modal_timings or {}).get("linkedin_fill_value_resolution")
+        linkedin_fill_field_fill_seconds = (modal_timings or {}).get("linkedin_fill_field_fill")
 
         # Resume upload (use job-specific path when available)
         resume_path = _resolve_resume_path(config, job) or config.resume_path
@@ -337,8 +390,10 @@ async def run_linkedin_application(
             try:
                 up = await page.query_selector("input[type='file']")
                 if up and await up.is_visible():
+                    t0 = time.perf_counter()
                     await up.set_input_files(resume_path)
                     await page.wait_for_timeout(_scaled_wait_ms(1500, 1500))
+                    linkedin_fill_resume_upload_seconds = time.perf_counter() - t0
                     qa_audit["resume_uploaded"] = os.path.basename(resume_path)
             except Exception:
                 unmapped.append("resume_upload")
@@ -348,7 +403,9 @@ async def run_linkedin_application(
             screenshot_dir.mkdir(parents=True, exist_ok=True)
             fname = f"apply_{company.replace(' ', '_')[:30]}_{datetime.now().strftime('%H%M%S')}.png"
             fp = screenshot_dir / fname
+            t0 = time.perf_counter()
             await page.screenshot(path=str(fp))
+            linkedin_fill_screenshot_seconds = time.perf_counter() - t0
             screenshot_paths.append(str(fp))
 
         if config.dry_run and not config.shadow_mode:
@@ -452,8 +509,10 @@ async def run_linkedin_application(
             try:
                 submit = await page.query_selector(sel)
                 if submit and await submit.is_visible():
+                    t0 = time.perf_counter()
                     await submit.click()
                     await page.wait_for_timeout(_scaled_wait_ms(2000, 2000))
+                    linkedin_live_submit_click_seconds = time.perf_counter() - t0
                     try:
                         from services.apply_runner_metrics_redis import incr_apply_runner_event
 
@@ -505,6 +564,61 @@ async def run_linkedin_application(
             screenshot_paths=screenshot_paths,
             answerer_review=answerer_review,
         )
+
+    finally:
+        # Phase 7.3 performance telemetry: persist timings even when we return early.
+        if t_total_start is not None:
+            try:
+                from services.apply_runner_metrics_redis import incr_apply_runner_duration
+
+                incr_apply_runner_duration(
+                    "linkedin_fill_total",
+                    time.perf_counter() - t_total_start,
+                )
+                if linkedin_fill_goto_seconds is not None:
+                    incr_apply_runner_duration("linkedin_fill_goto", linkedin_fill_goto_seconds)
+                if linkedin_fill_post_goto_wait_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_post_goto_wait",
+                        linkedin_fill_post_goto_wait_seconds,
+                    )
+                if linkedin_fill_easy_apply_click_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_easy_apply_click",
+                        linkedin_fill_easy_apply_click_seconds,
+                    )
+                if linkedin_fill_dom_scan_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_dom_scan",
+                        linkedin_fill_dom_scan_seconds,
+                    )
+                if linkedin_fill_value_resolution_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_value_resolution",
+                        linkedin_fill_value_resolution_seconds,
+                    )
+                if linkedin_fill_field_fill_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_field_fill",
+                        linkedin_fill_field_fill_seconds,
+                    )
+                if linkedin_fill_resume_upload_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_resume_upload",
+                        linkedin_fill_resume_upload_seconds,
+                    )
+                if linkedin_fill_screenshot_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_fill_screenshot",
+                        linkedin_fill_screenshot_seconds,
+                    )
+                if linkedin_live_submit_click_seconds is not None:
+                    incr_apply_runner_duration(
+                        "linkedin_live_submit_click",
+                        linkedin_live_submit_click_seconds,
+                    )
+            except Exception:
+                pass
 
 
 # --- External ATS: Greenhouse, Lever, Workday ---

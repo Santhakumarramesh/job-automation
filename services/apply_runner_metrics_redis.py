@@ -1,5 +1,5 @@
 """
-Optional Redis counters for LinkedIn apply / browser automation (Phase 4.5.1).
+Optional Redis counters and timing sums for LinkedIn apply / browser automation (Phase 4.5.1 + Phase 7.3).
 
 Enable with ``APPLY_RUNNER_METRICS_REDIS=1``. Uses the same Redis URL as Celery metrics
 (``REDIS_METRICS_URL`` or ``REDIS_BROKER``). Hash: ``ccp:metrics:apply_runner``.
@@ -15,6 +15,18 @@ Events (fixed set — do not pass arbitrary strings from user input):
 
 ``read_linkedin_nonsubmit_pattern_totals()`` returns ``(nonsubmit_total, denom_total)`` for pattern rollback:
 ``nonsubmit = checkpoint_pause + challenge_abort``, ``denom = nonsubmit + live_submit_attempt_total`` (live-submit attempts proxy for flows that reached the autonomy gate).
+
+Timings (fixed set — sums + counts):
+  - ``linkedin_fill_total_seconds_sum`` / ``..._count`` — wall time for the runner function from ``page.goto`` to return.
+  - ``linkedin_fill_goto_seconds_sum`` / ``..._count`` — ``page.goto`` wall time.
+  - ``linkedin_fill_post_goto_wait_seconds_sum`` / ``..._count`` — wait-for-timeout immediately after goto.
+  - ``linkedin_fill_easy_apply_click_seconds_sum`` / ``..._count`` — time spent locating/clicking Easy Apply.
+  - ``linkedin_fill_dom_scan_seconds_sum`` / ``..._count`` — time spent in DOM scanning / field mapping for the Easy Apply modal.
+  - ``linkedin_fill_value_resolution_seconds_sum`` / ``..._count`` — time spent deriving autofill values (profile lookup + answerer LLM).
+  - ``linkedin_fill_field_fill_seconds_sum`` / ``..._count`` — time spent calling Playwright ``fill()`` for mapped fields.
+  - ``linkedin_fill_resume_upload_seconds_sum`` / ``..._count`` — time spent uploading a resume (if present).
+  - ``linkedin_fill_screenshot_seconds_sum`` / ``..._count`` — time spent taking the pre-submit screenshot (if configured).
+  - ``linkedin_live_submit_click_seconds_sum`` / ``..._count`` — time spent clicking submit (if configured and submit button found).
 """
 
 from __future__ import annotations
@@ -32,6 +44,21 @@ _ALLOWED_EVENTS = frozenset(
         "linkedin_live_submit_attempt",
         "linkedin_live_submit_success",
         "linkedin_live_submit_blocked_autonomy",
+    }
+)
+
+_ALLOWED_DURATION_STAGES = frozenset(
+    {
+        "linkedin_fill_total",
+        "linkedin_fill_goto",
+        "linkedin_fill_post_goto_wait",
+        "linkedin_fill_easy_apply_click",
+        "linkedin_fill_dom_scan",
+        "linkedin_fill_value_resolution",
+        "linkedin_fill_field_fill",
+        "linkedin_fill_resume_upload",
+        "linkedin_fill_screenshot",
+        "linkedin_live_submit_click",
     }
 )
 
@@ -65,6 +92,36 @@ def incr_apply_runner_event(event: str) -> None:
         field = f"{key}_total"
         pipe = r.pipeline()
         pipe.hincrby(_KEY_HASH, field, 1)
+        pipe.hset(_KEY_HASH, "updated_at", str(int(time.time())))
+        pipe.execute()
+    except Exception:
+        pass
+
+def incr_apply_runner_duration(stage: str, duration_seconds: float) -> None:
+    """
+    Add a timing sample to ``{stage}_seconds_sum`` / ``{stage}_seconds_count``.
+
+    Uses Redis hash ``ccp:metrics:apply_runner`` so it can be scraped via the
+    admin endpoint and (optionally) mirrored into Prometheus.
+    """
+    if not apply_runner_metrics_enabled():
+        return
+    st = (stage or "").strip()
+    if st not in _ALLOWED_DURATION_STAGES:
+        return
+    try:
+        dur = float(duration_seconds)
+    except (TypeError, ValueError):
+        return
+    if dur < 0:
+        dur = 0.0
+    try:
+        r = _client()
+        if r is None:
+            return
+        pipe = r.pipeline()
+        pipe.hincrbyfloat(_KEY_HASH, f"{st}_seconds_sum", dur)
+        pipe.hincrby(_KEY_HASH, f"{st}_seconds_count", 1)
         pipe.hset(_KEY_HASH, "updated_at", str(int(time.time())))
         pipe.execute()
     except Exception:
