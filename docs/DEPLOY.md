@@ -40,6 +40,7 @@ Set `APP_ENV=production` (or rely on `STRICT_STARTUP=1`) and satisfy [startup_ch
 2. **Tracker:** `TRACKER_USE_DB=1` and `DATABASE_URL` (or `TRACKER_DATABASE_URL`) — SQLite or Postgres.
 3. **CORS:** Not `*` unless you explicitly set `API_CORS_SKIP_WILDCARD_PROD_CHECK=1`.
 4. **JWT (JWKS):** Prefer `JWT_AUDIENCE` when using `JWT_JWKS_URL` or `JWT_ISSUER`.
+5. **Multi-tenant writes (optional):** `API_ENFORCE_USER_WORKSPACE_ON_WRITES=1` makes `POST /api/jobs` require that `workspace_id` / `organization_id` on the job payload matches the caller’s JWT / `X-Workspace-Id` workspace (admins exempt unless `API_WORKSPACE_ENFORCE_FOR_ADMIN=1`). See `services/workspace_write_guard.py`.
 
 Optional: `AWS_SECRETS_MANAGER_SECRET_ID` to merge secrets at startup ([SECRETS_AND_CONFIG.md](SECRETS_AND_CONFIG.md)).
 

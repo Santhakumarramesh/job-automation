@@ -76,7 +76,11 @@ class JobRequest(BaseModel):
     workspace_id: Optional[str] = Field(
         default=None,
         max_length=200,
-        description="Stored on tracker rows for jobs from this enqueue (also accepts organization_id in payload).",
+        description=(
+            "Stored on tracker rows for jobs from this enqueue (also accepts organization_id in payload). "
+            "When API_ENFORCE_USER_WORKSPACE_ON_WRITES=1 and the caller has a JWT/header workspace, "
+            "this must match that tenant (see workspace_write_guard)."
+        ),
     )
     idempotency_key: Optional[str] = Field(
         default=None,
@@ -240,6 +244,11 @@ def submit_job(
         wid = str(payload.get("workspace_id") or payload.get("organization_id") or "").strip()
         if wid:
             payload["workspace_id"] = wid[:200]
+
+    from services.workspace_write_guard import enforce_user_workspace_on_job_payload
+
+    enforce_user_workspace_on_job_payload(user=user, payload=payload)
+
     job_id = enqueue_job(
         req.name,
         payload,

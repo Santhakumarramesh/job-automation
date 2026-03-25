@@ -906,6 +906,30 @@ def test_submit_job_workspace_id_in_payload(monkeypatch):
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_workspace_enforced_when_env(monkeypatch):
+    from app.auth import User, get_current_user
+    from app.main import app
+
+    monkeypatch.setenv("API_ENFORCE_USER_WORKSPACE_ON_WRITES", "1")
+    monkeypatch.delenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", raising=False)
+    app.dependency_overrides[get_current_user] = lambda: User("alice", [], workspace_id="ws-ok")
+    try:
+        job_data = {"name": "T", "payload": {"workspace_id": "ws-bad"}}
+        with patch("app.main.enqueue_job", return_value="x"):
+            r = client.post("/api/jobs", json=job_data)
+        assert r.status_code == 403
+
+        job_data2 = {"name": "T2", "payload": {}}
+        with patch("app.main.enqueue_job") as mock_enqueue:
+            mock_enqueue.return_value = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            r2 = client.post("/api/jobs", json=job_data2)
+        assert r2.status_code == 202
+        assert mock_enqueue.call_args[0][1]["workspace_id"] == "ws-ok"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 def test_list_applications_workspace_query_and_user_default():
     import os
     import tempfile
