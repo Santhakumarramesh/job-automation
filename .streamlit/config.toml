@@ -1,0 +1,6 @@
+# Streamlit local / hosted UI defaults (Phase 4 — mobile-friendly operator surface).
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

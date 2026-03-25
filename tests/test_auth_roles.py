@@ -65,9 +65,10 @@ def test_decode_jwt_prefers_hs256_when_secret_and_jwks_set(monkeypatch):
     from app.auth import _decode_jwt_identity
 
     token = jwt.encode({"sub": "hs-user"}, "unit-test-secret-key-32chars!!", algorithm="HS256")
-    sub, roles, _ws = _decode_jwt_identity(f"Bearer {token}")
+    sub, roles, _ws, rt = _decode_jwt_identity(f"Bearer {token}")
     assert sub == "hs-user"
     assert isinstance(roles, list)
+    assert rt is None
 
 
 def test_decode_jwt_rs256_uses_jwks_path(monkeypatch):
@@ -77,6 +78,44 @@ def test_decode_jwt_rs256_uses_jwks_path(monkeypatch):
     with patch("app.auth._decode_with_jwks", return_value={"sub": "rs-user", "roles": ["admin"]}):
         from app.auth import _decode_jwt_identity
 
-        sub, roles, _ws = _decode_jwt_identity(f"Bearer {token}")
+        sub, roles, _ws, rt = _decode_jwt_identity(f"Bearer {token}")
     assert sub == "rs-user"
     assert "admin" in roles
+    assert rt is None
+
+
+def test_decode_jwt_expands_role_template(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "unit-test-secret-key-32chars!!")
+    monkeypatch.setenv(
+        "JWT_ROLE_TEMPLATE_MAP",
+        '{"operator_approver": ["approver", "safety_reviewer"]}',
+    )
+    token = jwt.encode(
+        {"sub": "u-tpl", "role_template": "operator_approver", "role": "viewer"},
+        "unit-test-secret-key-32chars!!",
+        algorithm="HS256",
+    )
+    from app.auth import _decode_jwt_identity
+
+    sub, roles, _ws, rt = _decode_jwt_identity(f"Bearer {token}")
+    assert sub == "u-tpl"
+    assert rt == "operator_approver"
+    assert "viewer" in roles
+    assert "approver" in roles
+    assert "safety_reviewer" in roles
+
+
+def test_decode_jwt_custom_template_claim(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "unit-test-secret-key-32chars!!")
+    monkeypatch.setenv("JWT_ROLE_TEMPLATE_CLAIM", "tpl")
+    monkeypatch.setenv("JWT_ROLE_TEMPLATE_MAP", '{"x": ["extra"]}')
+    token = jwt.encode(
+        {"sub": "u2", "tpl": "x"},
+        "unit-test-secret-key-32chars!!",
+        algorithm="HS256",
+    )
+    from app.auth import _decode_jwt_identity
+
+    _sub, roles, _ws, rt = _decode_jwt_identity(f"Bearer {token}")
+    assert rt == "x"
+    assert "extra" in roles

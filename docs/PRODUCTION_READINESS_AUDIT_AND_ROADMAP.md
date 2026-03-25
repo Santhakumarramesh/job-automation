@@ -104,7 +104,7 @@
 - [x] **Workspace on enqueue (v0):** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` + `API_WORKSPACE_ENFORCE_FOR_ADMIN` — `services/workspace_write_guard.py` on `POST /api/jobs` and LinkedIn batch apply (see [DEPLOY.md](DEPLOY.md)).
 - [x] **LinkedIn ATS auth (v0):** optional `API_ATS_LINKEDIN_REQUIRE_AUTH` — rejects `demo-user` on confirm/apply routes; batch apply stamps `user_id` when missing.
 - [x] Tenant hardening for admin reads: `API_WORKSPACE_ENFORCE_FOR_ADMIN` (full org-level RBAC + fine-grained roles still roadmap).
-- [ ] Mobile/PWA approvals, role templates — roadmap.
+- [x] **Mobile / operator UI + role templates (v0):** Streamlit mobile-friendly CSS + caption for batch-apply approvals; optional JWT **`JWT_ROLE_TEMPLATE_CLAIM`** + **`JWT_ROLE_TEMPLATE_MAP`** (+ **`M2M_ROLE_TEMPLATE`**) in `services/role_templates.py` / `app/auth.py`. Full installable PWA (manifest/service worker) remains optional / reverse-proxy-owned.
 - [x] **Deeper analytics (v0):** `timeseries_v0` on admin tracker summary (`by_applied_iso_week_utc`, `by_applied_month_utc`) + `GET /api/admin/tracker-analytics/export` (`kind=csv|json`, slim columns for BI). Grafana panels remain optional/ops-owned.
 
 ---

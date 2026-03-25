@@ -78,4 +78,16 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 
 - Implementation: `services/startup_checks.py`, `services/secrets_loader.py`
 - Example env keys: `.env.example`
+
+## JWT role templates (Phase 4, optional)
+
+Some IdPs prefer a **single template** claim (e.g. `role_template: "operator_approver"`) instead of enumerating every RBAC string.
+
+| Variable | Meaning |
+|----------|---------|
+| `JWT_ROLE_TEMPLATE_CLAIM` | JWT claim name to read (default `role_template`). |
+| `JWT_ROLE_TEMPLATE_MAP` | JSON object: template name → list of role strings (or one comma-separated string). Names and roles are normalized to lowercase; unknown templates are ignored. |
+| `M2M_ROLE_TEMPLATE` | Optional template name for **M2M** principals (`M2M_API_KEY` path); uses the same map. |
+
+Expansion is applied in `app/auth.py` **after** collecting normal `role` / `roles` / `realm_access` claims. The resolved template string is stored on `User.role_template` for observability.
 - Optional CORS for browser clients: `API_CORS_ORIGINS` — `services/api_cors.py` (production rejects `*` unless `API_CORS_SKIP_WILDCARD_PROD_CHECK=1`; see startup checks)

@@ -8,6 +8,8 @@ from typing import List, Optional, Tuple
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from services.role_templates import expand_roles_from_template, normalize_role_template_claim
+
 _OIDC_JWKS_CACHE_URL: Optional[str] = None
 _OIDC_JWKS_CACHE_MONO: float = 0.0
 _OIDC_JWKS_TTL_SEC = 3600.0
@@ -89,10 +91,13 @@ class User:
         user_id: str,
         roles: Optional[List[str]] = None,
         workspace_id: Optional[str] = None,
+        role_template: Optional[str] = None,
     ):
         self.id = user_id
         self.roles = [str(r).strip().lower() for r in (roles or []) if r is not None and str(r).strip()]
         self.workspace_id: Optional[str] = workspace_id
+        rt = str(role_template or "").strip()
+        self.role_template: Optional[str] = rt[:120] if rt else None
 
     @property
     def is_admin(self) -> bool:
@@ -157,7 +162,9 @@ def _try_m2m_user(request: Request) -> Optional[User]:
     if os.getenv("M2M_API_KEY_IS_ADMIN", "").lower() in ("1", "true", "yes"):
         adm = _admin_role_set()
         roles = roles + ([next(iter(adm))] if adm else ["admin"])
-    return User(user_id=uid, roles=roles)
+    rtm = normalize_role_template_claim(os.getenv("M2M_ROLE_TEMPLATE"))
+    roles = expand_roles_from_template(roles, rtm)
+    return User(user_id=uid, roles=roles, role_template=rtm)
 
 
 def _header_workspace_id(request: Request) -> Optional[str]:
@@ -175,11 +182,13 @@ def _apply_request_workspace(user: User, request: Request, jwt_workspace: Option
     user.workspace_id = jw[:200] if jw else None
 
 
-def _decode_jwt_identity(authorization: Optional[str]) -> Optional[Tuple[str, List[str], Optional[str]]]:
+def _decode_jwt_identity(
+    authorization: Optional[str],
+) -> Optional[Tuple[str, List[str], Optional[str], Optional[str]]]:
     """
     Bearer JWT: HS256 via ``JWT_SECRET``, or RS256/ES* via ``JWT_JWKS_URL`` or ``JWT_ISSUER`` discovery.
 
-    Returns (sub, roles, workspace_id) or None if not a JWT request.
+    Returns (sub, roles, workspace_id, role_template) or None if not a JWT request.
     """
     if not authorization or not jwt_auth_configured():
         return None
@@ -222,13 +231,16 @@ def _decode_jwt_identity(authorization: Optional[str]) -> Optional[Tuple[str, Li
     if not sub:
         raise HTTPException(status_code=401, detail="JWT missing sub/user_id claim")
     roles = _jwt_roles_from_payload(payload)
+    claim = (os.getenv("JWT_ROLE_TEMPLATE_CLAIM") or "role_template").strip() or "role_template"
+    rt = normalize_role_template_claim(payload.get(claim))
+    roles = expand_roles_from_template(roles, rt)
     jw_raw = payload.get("workspace_id") or payload.get("org_id")
     jw: Optional[str] = None
     if jw_raw is not None:
         s = str(jw_raw).strip()
         if s:
             jw = s[:200]
-    return (str(sub), roles, jw)
+    return (str(sub), roles, jw, rt)
 
 
 def get_current_user(
@@ -241,6 +253,7 @@ def get_current_user(
     - M2M: ``M2M_API_KEY`` + header ``M2M_API_KEY_HEADER`` (default ``X-M2M-API-Key``).
     - JWT: HS256 (``JWT_SECRET``) or OIDC (``JWT_JWKS_URL`` / ``JWT_ISSUER`` + optional ``JWT_AUDIENCE``).
     - JWT roles from `role`, `roles`, or Keycloak `realm_access.roles`.
+    - Optional role **template** claim (`JWT_ROLE_TEMPLATE_CLAIM`, default `role_template`) expanded via `JWT_ROLE_TEMPLATE_MAP`.
     - API key: user id api-key-user; admin if API_KEY_IS_ADMIN=1.
     - No API_KEY: demo-user (non-admin unless DEMO_USER_IS_ADMIN=1).
     """
@@ -251,8 +264,8 @@ def get_current_user(
 
     jwt_identity = _decode_jwt_identity(authorization)
     if jwt_identity is not None:
-        sub, roles, jw = jwt_identity
-        u = User(user_id=sub, roles=roles)
+        sub, roles, jw, rt = jwt_identity
+        u = User(user_id=sub, roles=roles, role_template=rt)
         _apply_request_workspace(u, request, jw)
         return u
 

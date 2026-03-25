@@ -344,10 +344,33 @@ def build_graph(use_iterative_ats: bool = False):
     return workflow.compile()
 
 
+def _inject_mobile_operator_approval_styles() -> None:
+    """
+    Phase 4 — slightly larger tap targets / typography on narrow viewports for
+    **LinkedIn batch apply → live submit approval** (Streamlit UI only; not a full PWA).
+    """
+    st.markdown(
+        """
+<style>
+@media (max-width: 900px) {
+  div[data-testid="stCheckbox"] { padding: 0.35rem 0 !important; }
+  div[data-testid="stCheckbox"] label p {
+    font-size: 1.05rem !important;
+    line-height: 1.35 !important;
+  }
+  button[kind="primary"] { min-height: 48px !important; }
+}
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def run():
     """Main entry: render full Streamlit app."""
     load_dotenv()
     st.set_page_config(page_title="Career Co-Pilot Pro", page_icon="🚀", layout="wide")
+    _inject_mobile_operator_approval_styles()
 
     st.title("🚀 Career Co-Pilot Pro")
     st.markdown("LLM-Powered Job Finding, Semantic Analysis, and Interview Preparation")
@@ -1595,6 +1618,11 @@ def run():
                 "Playwright, LinkedIn credentials). Use **shadow_mode** for Phase 2 (fill, no submit). "
                 "Phase 3: add `pilot_submit_allowed: true` on jobs when `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`. "
                 "Max 50 jobs per request."
+            )
+            st.caption(
+                "**Phone / tablet:** use landscape if the jobs JSON is cramped; add this Streamlit URL to your "
+                "home screen if your browser supports it — live submit still requires the **I approve live…** "
+                "checkbox when the API enforces operator approval."
             )
             baj_jobs = st.text_area(
                 "jobs (JSON array)",
