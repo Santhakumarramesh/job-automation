@@ -69,7 +69,7 @@
 
 - [x] **CI:** pytest + startup smoke on `main`/PRs.
 - [x] **Ruff:** `[tool.ruff]` in `pyproject.toml` (subset: `E4`, `E7`, `E9`, `F`; per-file `E402` for `run_streamlit.py` / `scripts/regenerate_resume_pdf.py`). Add a CI step after `pip install`: `ruff check .` (requires `ruff` from `.[dev]`). **Note:** committing `.github/workflows/*.yml` may require a GitHub PAT with the **workflow** scope; keep the snippet local until then.
-- [x] **mypy (v0 scoped):** `mypy.ini` + CI step `mypy --config-file mypy.ini` on stable API/policy/analytics modules (`app/auth.py`, `app/main.py`, `services/application_decision.py`, `services/application_insights.py`, `services/autonomy_submit_gate.py`, `services/role_templates.py`, `services/tracker_analytics.py`, `services/workspace_write_guard.py`). Broader repo typing remains iterative.
+- [x] **mypy (v0 scoped):** `mypy.ini` + CI step `mypy --config-file mypy.ini` on stable API/policy/analytics modules (`app/auth.py`, `app/main.py`, `services/application_decision.py`, `services/application_insights.py`, `services/autonomy_submit_gate.py`, `services/role_templates.py`, `services/tracker_analytics.py`, `services/truth_apply_gate.py`, `services/workspace_write_guard.py`). Broader repo typing remains iterative.
 - [x] Example **dashboard queries** — [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md) (admin summary API + SQL for `job_state` / JSONB).
 
 **Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.
