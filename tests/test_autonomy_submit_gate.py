@@ -11,6 +11,8 @@ def _clear_autonomy_env(monkeypatch):
     monkeypatch.delenv("AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY", raising=False)
     monkeypatch.delenv("AUTONOMY_LINKEDIN_PILOT_USER_IDS", raising=False)
     monkeypatch.delenv("AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS", raising=False)
+    monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", raising=False)
+    monkeypatch.delenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", raising=False)
 
 
 def test_no_block_by_default():
@@ -61,3 +63,45 @@ def test_empty_allowlists_fall_back_to_job_flag_only(monkeypatch):
     monkeypatch.setenv("AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS", "  ,  ")
     assert linkedin_live_submit_block_reason({"user_id": "any"}) is not None
     assert linkedin_live_submit_block_reason({"pilot_submit_allowed": True}) is None
+
+
+def test_telemetry_rollback_blocks_when_failure_rate_high(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", "0.5")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", "4")
+
+    def _totals():
+        return (10, 4)
+
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_live_submit_totals",
+        _totals,
+    )
+    r = linkedin_live_submit_block_reason({})
+    assert r is not None
+    assert "telemetry rollback" in r
+
+
+def test_telemetry_rollback_skips_below_min_attempts(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", "0.1")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", "100")
+
+    def _totals():
+        return (5, 0)
+
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_live_submit_totals",
+        _totals,
+    )
+    assert linkedin_live_submit_block_reason({}) is None
+
+
+def test_kill_switch_wins_over_telemetry_rollback(monkeypatch):
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED", "1")
+    monkeypatch.setenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", "0.01")
+    monkeypatch.setattr(
+        "services.apply_runner_metrics_redis.read_linkedin_live_submit_totals",
+        lambda: (999, 0),
+    )
+    r = linkedin_live_submit_block_reason({})
+    assert r is not None
+    assert "LIVE_SUBMIT_DISABLED" in r

@@ -114,13 +114,12 @@ At the end of Phase 2, the system has **evidence** for where autonomy is safe.
     - Success vs failure rates for auto‑submit.
     - Rollbacks or manual overrides.
     - Any unexpected form changes or mis‑identification.
+  - Optional **automatic** pause of live submit when Redis counters exceed a configured failure rate (`AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE` — [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md) Phase 3).
   - Immediate downgrade of jobs or patterns that show issues.
 
 - Public readiness checklist:
-  - Publish a “Production Readiness” section, covering:
-    - Autonomy scope (where auto‑submit is enabled).
-    - Evidence collected (shadow run stats, pilot stats).
-    - Known limitations and current mitigations.
+  - Use [AUTONOMY_MODEL.md — Public readiness](AUTONOMY_MODEL.md#public-readiness-narrow-autonomy) (scope, evidence, controls, observability, incident).
+  - Keep release notes aligned with what is enabled in each environment.
 
 At the end of Phase 3, the system can truthfully claim **narrow, well‑governed autonomy** in line with the documented scope.
 

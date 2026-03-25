@@ -19,6 +19,13 @@ Env
 
   If both allowlist env vars are empty or unset, only the per-job pilot flags apply (same as v0).
 
+- ``AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE`` — optional float in ``(0, 1]``.
+  When set, and Redis has at least ``AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS`` live-submit
+  attempts (``linkedin_live_submit_attempt_total``), block new live submits if
+  ``(attempt - success) / attempt`` is **≥** this threshold. Requires a Redis URL
+  (``REDIS_METRICS_URL`` / ``REDIS_BROKER``). Evaluated after the kill switch and before
+  pilot-only rules.
+
 Use together: e.g. pilot-only in staging, kill switch in incident response.
 """
 
@@ -46,6 +53,42 @@ def _csv_id_set(env_name: str) -> set[str]:
     return {x.strip() for x in raw.split(",") if x.strip()}
 
 
+def _rollback_failure_rate_block_reason() -> Optional[str]:
+    raw = os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", "").strip()
+    if not raw:
+        return None
+    try:
+        threshold = float(raw)
+    except ValueError:
+        return None
+    if not (0.0 < threshold <= 1.0):
+        return None
+    try:
+        min_attempts = int(os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", "10") or "10")
+    except ValueError:
+        min_attempts = 10
+    if min_attempts < 1:
+        min_attempts = 1
+    try:
+        from services.apply_runner_metrics_redis import read_linkedin_live_submit_totals
+    except Exception:
+        return None
+    totals = read_linkedin_live_submit_totals()
+    if totals is None:
+        return None
+    attempt, success = totals
+    if attempt < min_attempts:
+        return None
+    failure_rate = (attempt - success) / float(attempt)
+    if failure_rate + 1e-12 >= threshold:
+        return (
+            "autonomy: telemetry rollback — live submit failure rate "
+            f"{failure_rate:.3f} >= {threshold:g} over {attempt} attempts "
+            "(AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE); adjust env or Redis counters"
+        )
+    return None
+
+
 def _job_in_pilot_allowlists(job: Dict[str, Any]) -> bool:
     """True if user_id or workspace_id matches non-empty env allowlists."""
     users = _csv_id_set("AUTONOMY_LINKEDIN_PILOT_USER_IDS")
@@ -71,6 +114,9 @@ def linkedin_live_submit_block_reason(job: Optional[Dict[str, Any]] = None) -> O
             "autonomy: live LinkedIn submit disabled "
             "(AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1)"
         )
+    _rb = _rollback_failure_rate_block_reason()
+    if _rb:
+        return _rb
     if _truthy_env("AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY"):
         j = dict(job or {})
         if _job_pilot_flag(j):

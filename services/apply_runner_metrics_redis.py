@@ -9,14 +9,16 @@ Events (fixed set — do not pass arbitrary strings from user input):
   - ``linkedin_login_challenge_abort`` — headless flow stopped at LinkedIn challenge URL
   - ``linkedin_live_submit_attempt`` — reached live submit (after autonomy gate)
   - ``linkedin_live_submit_success`` — submit click path returned applied
-  - ``linkedin_live_submit_blocked_autonomy`` — blocked by ``autonomy_submit_gate`` (kill switch / pilot-only)
+  - ``linkedin_live_submit_blocked_autonomy`` — blocked by ``autonomy_submit_gate`` (kill switch / pilot-only / telemetry rollback)
+
+``read_linkedin_live_submit_totals()`` returns ``(attempt_total, success_total)`` from the hash for telemetry rollback (no ``APPLY_RUNNER_METRICS_REDIS`` gate on read).
 """
 
 from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 _KEY_HASH = "ccp:metrics:apply_runner"
 
@@ -64,6 +66,33 @@ def incr_apply_runner_event(event: str) -> None:
         pipe.execute()
     except Exception:
         pass
+
+
+_ATTEMPT_FIELD = "linkedin_live_submit_attempt_total"
+_SUCCESS_FIELD = "linkedin_live_submit_success_total"
+
+
+def read_linkedin_live_submit_totals() -> Optional[Tuple[int, int]]:
+    """
+    Return ``(attempt_total, success_total)`` from Redis, or ``None`` if Redis is unavailable.
+
+    Used by ``autonomy_submit_gate`` telemetry rollback. Does **not** require
+    ``APPLY_RUNNER_METRICS_REDIS=1`` — reads whatever counters exist in the hash.
+    """
+    try:
+        r = _client()
+        if r is None:
+            return None
+        h = r.hgetall(_KEY_HASH) or {}
+        a_raw = h.get(_ATTEMPT_FIELD) or "0"
+        s_raw = h.get(_SUCCESS_FIELD) or "0"
+        attempt = int(float(a_raw))
+        success = int(float(s_raw))
+        if success > attempt:
+            success = attempt
+        return (attempt, success)
+    except Exception:
+        return None
 
 
 def read_apply_runner_metrics_summary() -> Dict[str, Any]:

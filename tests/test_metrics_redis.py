@@ -72,6 +72,23 @@ def test_apply_runner_incr_ignores_unknown_event():
     mock_r.pipeline.assert_not_called()
 
 
+def test_read_linkedin_live_submit_totals():
+    from services import apply_runner_metrics_redis as ar
+
+    mock_r = MagicMock()
+    mock_r.hgetall.return_value = {
+        "linkedin_live_submit_attempt_total": "8",
+        "linkedin_live_submit_success_total": "99",
+    }
+    with patch.dict(os.environ, {"REDIS_BROKER": "redis://localhost:6379/0"}, clear=False):
+        with patch.object(ar, "_client", return_value=mock_r):
+            assert ar.read_linkedin_live_submit_totals() == (8, 8)
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch.object(ar, "_client", return_value=None):
+            assert ar.read_linkedin_live_submit_totals() is None
+
+
 def test_apply_runner_incr_calls_redis():
     from services import apply_runner_metrics_redis as ar
 

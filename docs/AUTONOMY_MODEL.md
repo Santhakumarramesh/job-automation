@@ -216,10 +216,12 @@ The operator layer must treat `safe_to_submit == false` as a **hard stop** for a
 | `AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1` | Live submit **only** if the job has `pilot_submit_allowed: true` (or legacy `pilot_submit: true`), **or** (when allowlists below are non-empty) `user_id` / `authenticated_user_id` matches `AUTONOMY_LINKEDIN_PILOT_USER_IDS`, or `workspace_id` / `organization_id` matches `AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS` (comma-separated IDs, trimmed). If both allowlist env vars are empty, only per-job pilot flags apply. |
 | `AUTONOMY_LINKEDIN_PILOT_USER_IDS` | Optional comma-separated user IDs; used only when `PILOT_SUBMIT_ONLY` is on and non-empty. |
 | `AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS` | Optional comma-separated workspace/org IDs; same semantics as user allowlist. |
+| `AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE` | Optional float in `(0, 1]`. When set, after at least `AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS` live-submit **attempts** in Redis, blocks new submits if `(attempt − success) / attempt` **≥** this value. Requires Redis (`REDIS_METRICS_URL` / `REDIS_BROKER`). |
+| `AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS` | Minimum `linkedin_live_submit_attempt_total` before rollback can trigger (default `10`). |
 
-If **both** are set, the **kill switch** is evaluated first.
+**Evaluation order (live submit):** `LIVE_SUBMIT_DISABLED` → **telemetry rollback** (if configured) → `PILOT_SUBMIT_ONLY` (if on).
 
-**Default:** neither variable set → **same behavior as before** (live submit when the runner would submit).
+**Default:** none of the blocking env vars set → **same behavior as before** (live submit when the runner would submit).
 
 **Telemetry (optional Redis)**
 
@@ -240,3 +242,16 @@ With `APPLY_RUNNER_METRICS_REDIS=1`, counters include:
 1. Run **shadow** on a cohort; review `tracker.shadow` vs real **Applied**.
 2. Enable **`AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY=1`**; either add `pilot_submit_allowed: true` to vetted jobs in export JSON, **or** set **`AUTONOMY_LINKEDIN_PILOT_USER_IDS`** / **`AUTONOMY_LINKEDIN_PILOT_WORKSPACE_IDS`** so all jobs for known pilot users/workspaces can live-submit without per-job flags.
 3. Use **`AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1`** for instant rollback during incidents.
+4. Optionally set **`AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE`** so sustained submit failures (from Redis counters) automatically block further live submits until you adjust thresholds or reset counters.
+
+---
+
+## Public readiness (narrow autonomy)
+
+Use this as an **operator / release** checklist before widening live auto-submit beyond a pilot.
+
+1. **Scope:** Document where live submit is allowed (e.g. LinkedIn Easy Apply only; external ATS remains `manual_assist`). Point to this file and [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md).
+2. **Evidence:** Run **shadow** on a representative cohort; compare tracker **Shadow – Would Apply** vs **Applied** and review `application_decision` snapshots. Capture a short summary (date range, counts, known limitations).
+3. **Controls:** Confirm env gates are set for the target environment — kill switch, pilot-only and/or allowlists, optional **failure-rate rollback** — and that `APPLY_RUNNER_METRICS_REDIS=1` is on if you rely on counters or rollback.
+4. **Observability:** Use `GET /api/admin/apply-runner-metrics` (or your own Redis/Grafana views) for `linkedin_live_submit_*` totals; align with tracker `submission_status` and **Skipped – Autonomy Gate** rows.
+5. **Incident:** Document who can flip `AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED=1` and how to verify the runner is respecting it (dry-run/smoke job).
