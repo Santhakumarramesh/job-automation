@@ -1,6 +1,5 @@
 """Optional API rate limiting (services/rate_limit.py)."""
 
-import os
 from unittest.mock import patch
 
 import pytest

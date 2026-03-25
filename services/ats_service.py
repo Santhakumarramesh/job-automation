@@ -2,7 +2,6 @@
 ATS service. score_resume, iterative_optimizer, fit gate.
 """
 
-from typing import Any, Callable, Optional
 
 from enhanced_ats_checker import EnhancedATSChecker
 from agents.iterative_ats_optimizer import run_iterative_ats_optimizer

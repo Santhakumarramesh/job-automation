@@ -6,16 +6,14 @@ Supports:
 Resume renamed per job: {Name}_{Position}_at_{Company}_Resume.pdf
 """
 
-import asyncio
 import json
 import os
 import random
 import re
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 try:
     from playwright.async_api import Page
@@ -82,7 +80,7 @@ def _resolve_resume_path(config: RunConfig, job: Optional[dict] = None) -> str:
     proj = Path(__file__).resolve().parent.parent
     if job:
         try:
-            from services.resume_naming import resume_path_for_job, ensure_resume_exists_for_job
+            from services.resume_naming import ensure_resume_exists_for_job
             profile = config.profile or {}
             name = profile.get("full_name", "") or os.getenv("CANDIDATE_NAME", "")
             path = ensure_resume_exists_for_job(

@@ -79,3 +79,24 @@ metrics = [
 
 [tool.setuptools.packages.find]
 include = ["app*", "agents*", "dashboard*", "config*", "services*", "providers*", "ui*", "mcp_servers*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.egg-info",
+    "alembic/versions",
+]
+
+[tool.ruff.lint]
+# Default E/F/W; keep scope tight for CI until the tree is fully cleaned.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Intentional: load_dotenv / sys.path before project imports.
+"run_streamlit.py" = ["E402"]
+"scripts/regenerate_resume_pdf.py" = ["E402"]

@@ -67,7 +67,8 @@
 ### CI & observability
 
 - [x] **CI:** pytest + startup smoke on `main`/PRs.
-- [ ] Add **ruff** (and optionally **mypy**) to CI when the tree is clean enough.
+- [x] **Ruff:** `[tool.ruff]` in `pyproject.toml` (subset: `E4`, `E7`, `E9`, `F`; per-file `E402` for `run_streamlit.py` / `scripts/regenerate_resume_pdf.py`). Add a CI step after `pip install`: `ruff check .` (requires `ruff` from `.[dev]`). **Note:** committing `.github/workflows/*.yml` may require a GitHub PAT with the **workflow** scope; keep the snippet local until then.
+- [ ] **mypy** (optional) when the tree is ready.
 - [ ] Document or ship example **dashboard queries** (job_state, apply outcomes) using existing metrics/tracker exports.
 
 **Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.

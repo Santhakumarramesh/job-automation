@@ -202,7 +202,6 @@ def compute_pipeline_correlations(df) -> Dict[str, Any]:
     if df.empty or "policy_reason" not in df.columns:
         return out
 
-    pol = df["policy_reason"].fillna("").astype(str).str.strip()
     if "offer_outcome" in df.columns:
         off = df["offer_outcome"].fillna("").map(_norm_pipeline_val)
         acc = off.isin(("accepted", "yes"))

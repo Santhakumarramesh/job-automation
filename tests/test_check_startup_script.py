@@ -31,7 +31,6 @@ def test_check_startup_json(monkeypatch):
 
 def test_fail_on_warnings(monkeypatch):
     monkeypatch.delenv("AWS_SECRETS_MANAGER_SECRET_ID", raising=False)
-    from services.startup_checks import collect_startup_report
 
     def fake_report(ctx: str):
         return [], ["test warning only"]

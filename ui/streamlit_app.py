@@ -36,7 +36,6 @@ from services.application_service import get_applications, log_to_tracker, save_
 from services.follow_up_service import list_follow_ups as list_follow_up_queue
 from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
-from services.profile_service import load_profile
 from services.application_decision import build_application_decision
 from services.policy_service import enrich_job_dict_for_policy_export
 from agents.interview_prep_agent import generate_interview_prep
@@ -602,7 +601,10 @@ def run():
             st.session_state.jobs_df["Select"] = edited_df["Select"]
 
             sel_for_gen = st.session_state.jobs_df.get("Select")
-            selected_for_gen = st.session_state.jobs_df[sel_for_gen == True] if sel_for_gen is not None and hasattr(sel_for_gen, "any") else pd.DataFrame()
+            if sel_for_gen is not None and hasattr(sel_for_gen, "fillna"):
+                selected_for_gen = st.session_state.jobs_df[sel_for_gen.fillna(False).astype(bool)]
+            else:
+                selected_for_gen = pd.DataFrame()
             if not selected_for_gen.empty:
                 apply_mode_col = selected_for_gen.get("apply_mode", pd.Series(["manual_assist"] * len(selected_for_gen)))
                 n_auto = (apply_mode_col == "auto_easy_apply").sum() if hasattr(apply_mode_col, "sum") else 0
@@ -621,7 +623,10 @@ def run():
                             st.caption(f"**{comp} / {tit}** — apply_mode: {am} | fit: {fd} | ATS: {ats} | unsupported: {unsup if unsup else '—'}")
             if st.button("🌟 Generate Documents for Selected Jobs (Premium)", type="primary"):
                 sel = st.session_state.jobs_df.get("Select")
-                selected_jobs = st.session_state.jobs_df[sel == True] if sel is not None and hasattr(sel, "any") else pd.DataFrame()
+                if sel is not None and hasattr(sel, "fillna"):
+                    selected_jobs = st.session_state.jobs_df[sel.fillna(False).astype(bool)]
+                else:
+                    selected_jobs = pd.DataFrame()
                 if selected_jobs.empty:
                     st.warning("Please select at least one job.")
                 else:
@@ -653,7 +658,10 @@ def run():
                         st.download_button("📥 Download All Premium Files (ZIP)", zip_buffer.getvalue(), "premium_documents.zip", "application/zip", use_container_width=True)
 
             sel = st.session_state.jobs_df.get("Select")
-            selected = st.session_state.jobs_df[sel == True] if sel is not None and hasattr(sel, "any") else pd.DataFrame()
+            if sel is not None and hasattr(sel, "fillna"):
+                selected = st.session_state.jobs_df[sel.fillna(False).astype(bool)]
+            else:
+                selected = pd.DataFrame()
             linkedin_jobs = pd.DataFrame()
             if not selected.empty and "url" in selected.columns:
                 urls = selected["url"].fillna("").astype(str)
@@ -815,7 +823,10 @@ def run():
                     sel = df.get("Select")
                     urls = df["url"].fillna("").astype(str)
                     is_li = urls.str.contains("linkedin.com", na=False)
-                    mask = is_li & (sel == True) if sel is not None else is_li
+                    if sel is not None and hasattr(sel, "fillna"):
+                        mask = is_li & sel.fillna(False).astype(bool)
+                    else:
+                        mask = is_li
                     n_up = 0
                     for idx in df[mask].index:
                         j = _df_row_to_plain_dict(df.loc[idx])
@@ -939,7 +950,7 @@ def run():
             job_url_or_jd = st.text_area("Paste JD (or leave blank to fetch from source)", height=150, key="live_jd_alt")
         target_ats = st.number_input("Target ATS score", min_value=75, max_value=100, value=100, key="live_target")
         truth_safe_live = st.checkbox("Truth-safe mode", value=True, key="live_truth")
-        auto_apply_full_match = st.checkbox("Auto-apply only on full match", value=True, key="live_auto")
+        st.checkbox("Auto-apply only on full match", value=True, key="live_auto")
 
         if st.button("🎯 Run Live ATS Optimizer", type="primary", key="live_optimizer_btn"):
             master_bytes = live_master_pdf.read() if live_master_pdf else st.session_state.get("base_resume_bytes")

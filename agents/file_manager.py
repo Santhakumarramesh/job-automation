@@ -2,7 +2,7 @@
 import os
 import re
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.units import inch
@@ -100,8 +100,6 @@ def _condense_for_one_page(md_text):
                 skill_lines = []
             in_skills = 'Technical Skills' in s or 'Skills' in s
             in_summary = 'Professional Summary' in s or 'Summary' in s
-            if not in_summary:
-                summary_chars = 0
         if in_skills and (s.startswith('-') or s.startswith('* ')):
             skill_lines.append(s.lstrip('-* ').strip())
             continue
@@ -164,7 +162,6 @@ def build_styled_resume_pdf(markdown_text, filepath, candidate_name, one_page=Tr
     in_header = True
     header_lines = []
     body_lines = []
-    pending_subsection = None  # For "Role | Company | Location Date" single-line format
 
     for line in lines:
         stripped = line.strip()

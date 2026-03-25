@@ -8,7 +8,7 @@ Requires: pip install mcp, linkedin-mcp-server running (uv run linkedin-mcp-serv
 import asyncio
 import json
 import os
-from typing import Any, Optional
+from typing import Optional
 
 from providers.common_schema import JobListing, normalize_to_schema
 from providers.base_provider import JobProvider, SearchFilters

@@ -48,8 +48,8 @@ def prefit_score_job(job: Any, kw: dict[str, list]) -> int:
     for s in kw.get("skills") or []:
         if str(s).lower() in desc:
             score += 8
-    for l in kw.get("locations") or []:
-        if str(l).lower() in loc:
+    for loc_kw in kw.get("locations") or []:
+        if str(loc_kw).lower() in loc:
             score += 20
             break
     return min(score, 100)

@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from services.api_cors import install_cors_middleware
+from services.prometheus_setup import install_prometheus
+from services.rate_limit import install_rate_limit_middleware
+
 from .auth import User, get_current_user, require_admin
 from .tasks import enqueue_job
 
@@ -58,10 +62,6 @@ app = FastAPI(
     openapi_tags=_OPENAPI_TAGS,
 )
 app.add_middleware(_CorrelationMiddleware)
-
-from services.api_cors import install_cors_middleware
-from services.prometheus_setup import install_prometheus
-from services.rate_limit import install_rate_limit_middleware
 
 install_prometheus(app)
 install_rate_limit_middleware(app)
@@ -1454,7 +1454,7 @@ def _build_openapi_schema():
         "name": m2m_header,
         "description": (
             "Optional worker / automation key when `M2M_API_KEY` is set "
-            f"(default header name `X-M2M-API-Key`; override with `M2M_API_KEY_HEADER`). "
+            "(default header name `X-M2M-API-Key`; override with `M2M_API_KEY_HEADER`). "
             "User id from `M2M_USER_ID` (default `m2m-service`); roles from `M2M_SERVICE_ROLES`."
         ),
     }

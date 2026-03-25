@@ -98,7 +98,6 @@ def answer_question_structured(
     reasons: List[str] = []
     answer = ""
     manual = False
-    pre_len = 0
 
     if qtype == "sponsorship":
         answer = profile.get("work_authorization_note") or profile.get("short_answers", {}).get("sponsorship", "")

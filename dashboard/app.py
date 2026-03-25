@@ -3,7 +3,6 @@ Job Apply Dashboard - ATS Score, Applications, Before/After, Live Updates.
 Unique dark theme with live Excel sync.
 """
 import os
-import sys
 import pandas as pd
 import streamlit as st
 from datetime import datetime

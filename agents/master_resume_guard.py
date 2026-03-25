@@ -4,12 +4,11 @@ Parses master resume to build allowed skills/claims inventory.
 Rejects unsupported keyword stuffing and decides whether a JD is a truthful match.
 """
 
-import json
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 try:
     from providers.common_schema import JobListing
@@ -276,7 +275,6 @@ def truth_inventory_from_profile(profile: CandidateProfile) -> dict:
 
 def _extract_section(text: str, section_names: list[str]) -> str:
     """Extract content between ## SectionName and next ##."""
-    text_upper = text.upper()
     start = -1
     for name in section_names:
         pat = rf'^#+\s*{re.escape(name)}\s*$'
@@ -471,7 +469,7 @@ def is_truthful_match(master_resume_text: str, jd_text: str) -> tuple[bool, str]
     """
     inv = parse_master_resume(master_resume_text)
     jd_kw = _extract_jd_keywords(jd_text)
-    unsupported = get_unsupported_requirements(jd_kw[:15], inv)
+    _ = get_unsupported_requirements(jd_kw[:15], inv)
     fit = compute_job_fit_score(jd_text, inv, ats_score=100)
 
     if fit["reject"]:

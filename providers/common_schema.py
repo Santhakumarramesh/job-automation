@@ -4,7 +4,6 @@ Ensures Apify, LinkedIn MCP, and manual URLs produce identical structures.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
 import pandas as pd
 
 

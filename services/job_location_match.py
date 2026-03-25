@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 REASON_SKIP_JOB_LOCATION = "skip_job_location_outside_application_locations"
 REASON_MANUAL_JOB_LOCATION_UNKNOWN = "manual_assist_job_location_unknown"

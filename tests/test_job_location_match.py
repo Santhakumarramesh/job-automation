@@ -1,6 +1,5 @@
 """Optional POLICY_ENFORCE_JOB_LOCATION gate."""
 
-import os
 
 import pytest
 

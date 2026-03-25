@@ -255,7 +255,8 @@ Return ONLY the JSON object, no markdown or extra text."""
             feedback.append(f"- **Strengths:** {llm_result.get('strengths', 'N/A')}")
             feedback.append(f"- **Weaknesses:** {llm_result.get('weaknesses', 'N/A')}")
         feedback.append(f"- **Formatting:** {fmt_score}% — {'OK' if not fmt_issues else '; '.join(fmt_issues)}")
-        feedback.append(f"- **Keyword Match:** {kw_score}% — {'Strong' if kw_score >= 70 else f'Add: {", ".join(missing_keywords[:5])}'}")
+        _kw_tail = "Strong" if kw_score >= 70 else "Add: " + ", ".join(missing_keywords[:5])
+        feedback.append(f"- **Keyword Match:** {kw_score}% — {_kw_tail}")
         feedback.append(f"- **Action Verbs & Metrics:** {avm_score}% — {avm_details['action_verbs']} action verbs, {avm_details['metrics']} metrics in {avm_details['total_bullets']} bullets")
         if missing_sections:
             feedback.append(f"- **Missing Sections:** {', '.join(missing_sections)}")

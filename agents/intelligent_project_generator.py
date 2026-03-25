@@ -72,6 +72,6 @@ Based on this, generate one specific, fast-to-build project idea.
     response = project_llm.invoke(messages)
     project_idea = response.content
 
-    print(f"💡 Generated project idea to address skill gaps.")
+    print("💡 Generated project idea to address skill gaps.")
 
     return {"generated_project_text": project_idea}

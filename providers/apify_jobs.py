@@ -2,7 +2,6 @@
 Apify job provider. Uses AI Deep Job Search actor.
 """
 
-from datetime import datetime
 from typing import Optional
 from apify_client import ApifyClient
 

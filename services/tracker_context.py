@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 
 def build_tracker_row_extras(state: Optional[dict]) -> Dict[str, str]:

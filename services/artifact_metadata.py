@@ -6,7 +6,7 @@ Aggregates resume/cover paths, screenshot list, Q&A audit JSON, and optional art
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Union
+from typing import Any, Union
 
 
 def _parse_json_field(raw: Union[str, None, Any], default):

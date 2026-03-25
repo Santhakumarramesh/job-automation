@@ -5,8 +5,7 @@ Supports Apify, LinkedIn MCP, or both.
 
 import os
 import pandas as pd
-from providers.registry import get_jobs, list_providers
-from providers.common_schema import JobListing
+from providers.registry import get_jobs
 
 
 class EnhancedJobFinder:
