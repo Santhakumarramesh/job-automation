@@ -8,6 +8,7 @@ Postgres DDL revisions: Alembic in alembic/ — pip install .[migrations]; see d
 """
 
 import atexit
+import json
 import os
 import sqlite3
 import uuid
@@ -43,6 +44,15 @@ TRACKER_COLUMNS = [
 
 FOLLOW_UP_COLUMN_SET = frozenset({"follow_up_at", "follow_up_status", "follow_up_note"})
 PIPELINE_COLUMN_SET = frozenset({"interview_stage", "offer_outcome"})
+
+
+def _application_decision_cell_value(v: Any) -> Any:
+    """Empty → SQL NULL on Postgres (jsonb); SQLite keeps ''."""
+    s = str(v or "").strip()
+    if not s:
+        return None if _use_postgres() else ""
+    return s[:31000]
+
 
 _PG_PLACEHOLDER = "%s"
 _SQLITE_PLACEHOLDER = "?"
@@ -303,7 +313,7 @@ def _init_schema_postgres(conn) -> None:
             truth_safe_ats_ceiling TEXT DEFAULT '',
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
-            application_decision TEXT DEFAULT '',
+            application_decision JSONB,
             job_state TEXT DEFAULT '',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
@@ -323,7 +333,7 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "selected_address_label", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
     _pg_ensure_column(conn, "workspace_id", "TEXT DEFAULT ''")
-    _pg_ensure_column(conn, "application_decision", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "application_decision", "JSONB")
     _pg_ensure_column(conn, "job_state", "TEXT DEFAULT ''")
 
 
@@ -419,7 +429,7 @@ def _row_vals(row, col: str) -> str:
             return "{}"
         return s[:8000]
     if col == "application_decision":
-        return str(v or "")[:31000]
+        return _application_decision_cell_value(v)
     if col == "job_state":
         return str(v or "").strip()[:64]
     if col == "workspace_id":
@@ -486,7 +496,7 @@ def _cell(row: dict, c: str) -> str:
     if c in ("interview_stage", "offer_outcome"):
         return str(v or "").strip()[:120]
     if c == "application_decision":
-        return str(v or "")[:31000]
+        return _application_decision_cell_value(v)
     if c == "job_state":
         return str(v or "").strip()[:64]
     if c == "workspace_id":
@@ -634,6 +644,21 @@ def load_applications_db() -> pd.DataFrame:
             with _pg_connection() as conn:
                 _init_schema_postgres(conn)
                 df = pd.read_sql_query("SELECT * FROM applications ORDER BY applied_at DESC NULLS LAST", conn)
+                if "application_decision" in df.columns:
+
+                    def _norm_application_decision(x: Any) -> str:
+                        if x is None:
+                            return ""
+                        try:
+                            if pd.isna(x):
+                                return ""
+                        except (TypeError, ValueError):
+                            pass
+                        if isinstance(x, dict):
+                            return json.dumps(x, separators=(",", ":"))[:31000]
+                        return str(x).strip()[:31000]
+
+                    df["application_decision"] = df["application_decision"].map(_norm_application_decision)
                 return df.reindex(columns=TRACKER_COLUMNS, fill_value="")
         with _sqlite_connection() as conn:
             _init_schema_sqlite(conn)

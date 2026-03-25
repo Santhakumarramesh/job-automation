@@ -67,6 +67,8 @@ def _parse_application_decision_cell(val) -> dict:
     """Parse tracker ``application_decision`` JSON cell; empty dict if missing/invalid."""
     if val is None:
         return {}
+    if isinstance(val, dict):
+        return val
     try:
         if pd.isna(val):
             return {}

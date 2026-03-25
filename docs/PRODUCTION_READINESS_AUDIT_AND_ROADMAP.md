@@ -51,7 +51,7 @@
 - [x] Per canonical screening field: **answer_state**, **truth_safe**, **submit_safe** (heuristic from answerer `reason_codes`).
 - [x] **Persist** last decision snapshot on tracker write paths (runner + `log_application` graph state).
 - [x] **Indexed `job_state`:** column on `applications` + admin analytics `by_job_state`; filled from v0.1 decision JSON on log paths.
-- [ ] **Optional:** JSONB for `application_decision` (Postgres) for server-side querying.
+- [x] **Optional:** JSONB for `application_decision` (Postgres) — Alembic `tracker_0009`; `tracker_db` PG create/ensure + NULL for empty on write; [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md).
 
 ### UI supervision
 
@@ -70,7 +70,7 @@
 - [x] **CI:** pytest + startup smoke on `main`/PRs.
 - [x] **Ruff:** `[tool.ruff]` in `pyproject.toml` (subset: `E4`, `E7`, `E9`, `F`; per-file `E402` for `run_streamlit.py` / `scripts/regenerate_resume_pdf.py`). Add a CI step after `pip install`: `ruff check .` (requires `ruff` from `.[dev]`). **Note:** committing `.github/workflows/*.yml` may require a GitHub PAT with the **workflow** scope; keep the snippet local until then.
 - [ ] **mypy** (optional) when the tree is ready.
-- [ ] Document or ship example **dashboard queries** (job_state, apply outcomes) using existing metrics/tracker exports.
+- [x] Example **dashboard queries** — [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md) (admin summary API + SQL for `job_state` / JSONB).
 
 **Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.
 

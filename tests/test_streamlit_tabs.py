@@ -153,6 +153,10 @@ def _check_streamlit_decision_helpers() -> None:
 
     assert _parse_application_decision_cell("") == {}
     assert _parse_application_decision_cell('{"job_state":"skip"}') == {"job_state": "skip"}
+    assert _parse_application_decision_cell({"job_state": "skip", "safe_to_submit": False}) == {
+        "job_state": "skip",
+        "safe_to_submit": False,
+    }
     assert _parse_application_decision_cell(pd.NA) == {}
 
     jd = _job_dict_for_application_decision(

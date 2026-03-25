@@ -45,7 +45,9 @@ alembic revision -m "describe change"
 
 Edit the generated file under `alembic/versions/`, then `alembic upgrade head`.
 
-Baseline: `tracker_0001` (applications). **Phase 12:** `tracker_0002` adds `follow_up_at`, `follow_up_status`, `follow_up_note` (idempotent if columns already exist). **`tracker_0004`** adds `ats_provider`, `ats_provider_apply_target`, `truth_safe_ats_ceiling`, `selected_address_label`, `package_field_stats` (SQLite picks these up via `tracker_db` auto-migrate as well). **`tracker_0005`** adds `job_idempotency` for `IDEMPOTENCY_USE_DB=1` (SQLite creates the table on first use without Alembic). **`tracker_0008`** adds indexed `job_state` (denormalized from `application_decision` JSON on write; SQLite via `tracker_db` migrate as well).
+Baseline: `tracker_0001` (applications). **Phase 12:** `tracker_0002` adds `follow_up_at`, `follow_up_status`, `follow_up_note` (idempotent if columns already exist). **`tracker_0004`** adds `ats_provider`, `ats_provider_apply_target`, `truth_safe_ats_ceiling`, `selected_address_label`, `package_field_stats` (SQLite picks these up via `tracker_db` auto-migrate as well). **`tracker_0005`** adds `job_idempotency` for `IDEMPOTENCY_USE_DB=1` (SQLite creates the table on first use without Alembic). **`tracker_0008`** adds indexed `job_state` (denormalized from `application_decision` JSON on write; SQLite via `tracker_db` migrate as well). **`tracker_0009`** alters Postgres `application_decision` from `TEXT` to **JSONB** (invalid JSON in existing rows will fail the migration—fix or clear those cells first). SQLite stays TEXT.
+
+Example SQL for rollups: [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md).
 
 ## Downgrade
 
