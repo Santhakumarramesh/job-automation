@@ -635,6 +635,8 @@ def test_openapi_schema_grouped_by_tags():
     assert schema["paths"]["/api/admin/celery/inspect"]["get"]["tags"] == ["admin"]
     assert "/api/admin/apply-runner-metrics" in paths
     assert schema["paths"]["/api/admin/apply-runner-metrics"]["get"]["tags"] == ["admin"]
+    assert "/api/admin/tracker-analytics/summary" in paths
+    assert schema["paths"]["/api/admin/tracker-analytics/summary"]["get"]["tags"] == ["admin"]
     assert "/api/admin/applications/export" in paths
     assert "/api/admin/applications/by-user" in paths
 
@@ -826,6 +828,33 @@ def test_admin_celery_inspect_forbidden_when_disabled(monkeypatch):
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_tracker_analytics_summary_ok(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    import pandas as pd
+
+    from services.application_tracker import TRACKER_COLUMNS
+
+    df = pd.DataFrame(
+        [
+            {
+                **{c: "" for c in TRACKER_COLUMNS},
+                "status": "Applied",
+                "submission_status": "Applied",
+                "recruiter_response": "Pending",
+                "user_id": "alice",
+            },
+        ]
+    )
+    with patch("services.application_tracker.load_applications", return_value=df):
+        r = client.get("/api/admin/tracker-analytics/summary", headers={"X-API-Key": "admkey"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("rows_analyzed") == 1
+    assert body.get("applied_row_count") == 1
+    assert body.get("truncated") is False
+
+
 def test_admin_apply_runner_metrics_ok(monkeypatch):
     monkeypatch.setenv("API_KEY", "admkey")
     monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
@@ -971,4 +1000,12 @@ def test_admin_apply_runner_metrics_requires_admin(monkeypatch):
     monkeypatch.setenv("API_KEY", "userkey")
     monkeypatch.setenv("API_KEY_IS_ADMIN", "0")
     r = client.get("/api/admin/apply-runner-metrics", headers={"X-API-Key": "userkey"})
+    assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_tracker_analytics_requires_admin(monkeypatch):
+    monkeypatch.setenv("API_KEY", "userkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "0")
+    r = client.get("/api/admin/tracker-analytics/summary", headers={"X-API-Key": "userkey"})
     assert r.status_code == 403

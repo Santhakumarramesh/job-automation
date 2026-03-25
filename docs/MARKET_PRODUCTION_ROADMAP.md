@@ -9,8 +9,8 @@
 
 ## Current status
 
-- Current phase: **Phase 1 – 10/10 supervised product** (in progress).
-- Shadow‑mode autonomy and `safe_auto_apply` are planned for Phase 2+.
+- **Phase 1–3:** Supervised product, shadow mode, and narrow live-submit gates are implemented (see [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md) and the audit roadmap).
+- **Phase 4:** Scale & polish — **in progress** (e.g. admin tracker analytics); multi-tenant RBAC and deeper BI remain roadmap.
 
 ---
 
@@ -122,6 +122,18 @@ At the end of Phase 2, the system has **evidence** for where autonomy is safe.
   - Keep release notes aligned with what is enabled in each environment.
 
 At the end of Phase 3, the system can truthfully claim **narrow, well‑governed autonomy** in line with the documented scope.
+
+---
+
+## Phase 4 — Scale & polish (ongoing)
+
+**Goal:** Operate safely across more users and workspaces with better observability.
+
+**Started (v0):**
+
+- **Admin tracker analytics:** `GET /api/admin/tracker-analytics/summary` (admin API key) — pipeline and outcome counts, recruiter-response breakdown for applied rows, optional `user_id` / `workspace_id` filters. See [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md) Phase 4.
+
+**Still roadmap:** multi-tenant RBAC hardening, mobile/PWA approvals, role templates, time-series / BI exports.
 
 ---
 

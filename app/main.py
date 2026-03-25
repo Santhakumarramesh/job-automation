@@ -1001,6 +1001,52 @@ def admin_list_applications(
     return {"count": len(records), "items": records[:2000], "scoped": False}
 
 
+@api_router.get("/admin/tracker-analytics/summary", tags=["admin"])
+def admin_tracker_analytics_summary(
+    admin=Depends(require_admin),
+    user_id: Optional[str] = Query(
+        None,
+        max_length=240,
+        description="When set, restrict analytics to this tracker user_id.",
+    ),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="When non-empty, only rows with this workspace_id.",
+    ),
+    max_rows: int = Query(
+        50_000,
+        ge=1,
+        le=200_000,
+        description="Cap rows analyzed after load (large multi-tenant trackers).",
+    ),
+):
+    """
+    Phase 4 — aggregated tracker counts: status, submission_status, recruiter_response,
+    cross-tabs for response rates by status, and applied rows broken down by recruiter_response.
+    """
+    from services.application_tracker import load_applications
+    from services.tracker_analytics import build_admin_tracker_analytics_summary
+
+    uid = user_id.strip() if user_id else None
+    wf = _admin_workspace_filter(workspace_id)
+    df = load_applications(for_user_id=uid, workspace_id=wf)
+    total_matching = len(df)
+    truncated = total_matching > max_rows
+    if truncated:
+        df = df.head(max_rows)
+    summary = build_admin_tracker_analytics_summary(df)
+    summary.pop("row_count", None)
+    return {
+        "user_id_filter": uid,
+        "workspace_id_filter": wf,
+        "rows_analyzed": int(len(df)),
+        "total_matching_before_cap": total_matching,
+        "truncated": truncated,
+        **summary,
+    }
+
+
 @api_router.get("/admin/metrics/summary", tags=["admin"])
 def admin_metrics_summary(admin=Depends(require_admin)):
     """

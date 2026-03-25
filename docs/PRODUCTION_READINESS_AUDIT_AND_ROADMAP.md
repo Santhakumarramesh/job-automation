@@ -97,7 +97,10 @@
 
 ## Phase 4 — Scale & polish (ongoing)
 
-- Multi-tenant hardening, mobile/PWA approvals, role templates, analytics on response rates by state — **roadmap only** until Phase 1–3 are stable.
+- [x] **Admin tracker analytics (v0):** `GET /api/admin/tracker-analytics/summary` — rollups by `status`, `submission_status`, `recruiter_response`, cross-tab `status_by_recruiter_response`, `applied_by_recruiter_response`; optional `user_id` / `workspace_id` filters and `max_rows` cap (`services/tracker_analytics.py`).
+- [ ] Multi-tenant hardening (stricter workspace scoping on write paths, org-level RBAC).
+- [ ] Mobile/PWA approvals, role templates — roadmap.
+- [ ] Deeper analytics (time series, exports to BI, Grafana panels) — roadmap.
 
 ---
 
