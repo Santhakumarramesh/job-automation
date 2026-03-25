@@ -534,6 +534,30 @@ def run():
 
     with tab3:
         st.header("🤖 AI Job Finder")
+        try:
+            from services.profile_service import load_profile as _load_profile_truth_gate
+            from services.truth_apply_gate import (
+                assess_truth_apply_profile,
+                truth_apply_hard_gate_enabled,
+            )
+
+            _assess = assess_truth_apply_profile(_load_profile_truth_gate())
+            if not _assess.get("ok"):
+                _miss = _assess.get("missing_required_fields") or []
+                _miss_s = ", ".join(_miss) if _miss else "see profile sidebar"
+                if truth_apply_hard_gate_enabled():
+                    st.warning(
+                        f"**Truth apply gate (on):** live LinkedIn batch apply is blocked until required "
+                        f"profile fields are set ({_miss_s}). Dry run / shadow are still allowed. "
+                        f"Edit `config/candidate_profile.json` or set `TRUTH_APPLY_HARD_GATE=0`."
+                    )
+                else:
+                    st.info(
+                        f"Profile incomplete for auto-apply ({_miss_s}). Policy will use **manual_assist** "
+                        f"for auto lane; set **`TRUTH_APPLY_HARD_GATE=1`** on the API to **block** live apply until fixed."
+                    )
+        except ImportError:
+            pass
         job_source = st.selectbox(
             "Job source",
             ["Apify", "LinkedIn MCP", "Both"],

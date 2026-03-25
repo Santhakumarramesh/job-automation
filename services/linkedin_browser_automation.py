@@ -122,21 +122,6 @@ def apply_to_jobs_payload(
     """
     root = project_root or _default_project_root()
 
-    try:
-        from playwright.async_api import async_playwright
-        from agents.application_runner import (
-            RunConfig,
-            RunResult,
-            answerer_review_pending,
-            run_application,
-            save_run_results,
-        )
-
-        from services.application_tracker import log_runner_result_to_tracker
-        from services.profile_service import load_profile
-    except ImportError as e:
-        return {"status": "error", "message": f"Import failed: {e}. Install: pip install playwright mcp && playwright install chromium"}
-
     if isinstance(jobs, str):
         try:
             jobs = json.loads(jobs)
@@ -198,9 +183,39 @@ def apply_to_jobs_payload(
             }
 
     try:
-        profile = load_profile()
+        from services.profile_service import load_profile as _load_profile_for_gate
+
+        profile = _load_profile_for_gate()
     except Exception:
         profile = {}
+
+    from services.truth_apply_gate import truth_apply_live_blocked_message
+
+    _gate_msg = truth_apply_live_blocked_message(
+        profile,
+        dry_run=bool(dry_run),
+        shadow_mode=bool(shadow_mode),
+    )
+    if _gate_msg:
+        return {
+            "status": "error",
+            "message": _gate_msg,
+            "truth_gate": "profile_incomplete",
+        }
+
+    try:
+        from playwright.async_api import async_playwright
+        from agents.application_runner import (
+            RunConfig,
+            RunResult,
+            answerer_review_pending,
+            run_application,
+            save_run_results,
+        )
+
+        from services.application_tracker import log_runner_result_to_tracker
+    except ImportError as e:
+        return {"status": "error", "message": f"Import failed: {e}. Install: pip install playwright mcp && playwright install chromium"}
 
     resume_path = os.getenv("RESUME_PATH")
     if not resume_path or not os.path.isfile(resume_path):

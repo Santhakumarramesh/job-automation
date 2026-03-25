@@ -63,7 +63,7 @@
 ### Truth validation
 
 - [x] Truth inventory + profile validation paths (MCP + scripts).
-- [ ] **Hard gate:** block or downgrade apply when critical profile/truth missing (single function called from runner + UI).
+- [x] **Hard gate:** `TRUTH_APPLY_HARD_GATE=1` blocks **live** LinkedIn apply when profile is not auto-apply ready (`assess_truth_apply_profile` / `truth_apply_live_blocked_message` in `services/truth_apply_gate.py`); wired into `apply_to_jobs_payload`, `run_application` (LinkedIn), Streamlit Job Finder banner. Policy still downgrades exports when profile incomplete.
 
 ### CI & observability
 

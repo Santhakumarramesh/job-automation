@@ -632,6 +632,21 @@ async def run_application(
 
     # Strict gate before LinkedIn auto-apply only
     if form_type == "linkedin":
+        from services.truth_apply_gate import truth_apply_live_blocked_message
+
+        _tg = truth_apply_live_blocked_message(
+            config.profile,
+            dry_run=bool(config.dry_run),
+            shadow_mode=bool(config.shadow_mode),
+        )
+        if _tg:
+            return RunResult(
+                status="skipped",
+                company=company,
+                position=position,
+                job_url=url,
+                error=f"truth_apply_gate: {_tg}",
+            )
         blocked = _policy_blocked(job)
         if blocked:
             return RunResult(status="skipped", company=company, position=position, job_url=url, error=blocked)
