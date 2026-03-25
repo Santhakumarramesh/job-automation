@@ -57,7 +57,7 @@
 
 - [x] Streamlit: show **job_state**, **safe_to_submit**, **critical_unsatisfied**, per-field table from `build_application_decision` (Job Finder preview); tracker column snapshot expander; API tab POST.
 - [x] **manual_assist:** table of fields with safe/review/missing + autofill preview (Job Finder supervision — sorted table, optional “all fields”, copy bundle).
-- [ ] **safe_auto_apply:** show preconditions checklist + link to dry-run / screenshots (when available).
+- [x] **safe_auto_apply:** preconditions checklist + dry-run / shadow / CLI screenshot pointers (Job Finder supervision when `job_state` is `safe_auto_apply`; `safe_auto_apply_precondition_checklist` in `application_decision`).
 - [ ] Explicit **“I approve submit”** logging (audit trail) before live submit in UI flows.
 
 ### Truth validation

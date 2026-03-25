@@ -37,7 +37,10 @@ from services.application_service import get_applications, log_to_tracker, save_
 from services.follow_up_service import list_follow_ups as list_follow_up_queue
 from services.application_insights import build_application_insights
 from services.job_search_service import get_jobs
-from services.application_decision import build_application_decision
+from services.application_decision import (
+    build_application_decision,
+    safe_auto_apply_precondition_checklist,
+)
 from services.policy_service import enrich_job_dict_for_policy_export
 from agents.interview_prep_agent import generate_interview_prep
 
@@ -780,7 +783,20 @@ def run():
                                     "critical_fields": len(d.get("critical_unsatisfied") or []),
                                 }
                             )
-                            details.append((label, d))
+                            details.append(
+                                (
+                                    label,
+                                    d,
+                                    {
+                                        "easy_apply_confirmed": bool(
+                                            job.get("easy_apply_confirmed", False)
+                                        ),
+                                        "url": str(
+                                            job.get("url") or job.get("apply_url") or ""
+                                        ).strip(),
+                                    },
+                                )
+                            )
                         st.session_state["jobfinder_decision_cache"] = {
                             "summaries": summaries,
                             "details": details,
@@ -800,13 +816,48 @@ def run():
                                 format_func=lambda i: labels[i],
                                 key="jobfinder_decision_pick",
                             )
-                            _dec = cache["details"][pick][1]
+                            _entry = cache["details"][pick]
+                            _dec = _entry[1]
+                            _meta = (
+                                _entry[2]
+                                if len(_entry) > 2 and isinstance(_entry[2], dict)
+                                else {}
+                            )
                             crit = _dec.get("critical_unsatisfied") or []
                             if crit:
                                 st.warning("Critical / not submit-safe: " + ", ".join(str(x) for x in crit))
+                            js = str(_dec.get("job_state") or "")
+                            if js == "safe_auto_apply":
+                                st.markdown("##### Safe auto-apply — preconditions")
+                                st.caption(
+                                    "Operator checklist before CLI/API submit. "
+                                    "Prefer **dry_run** or **shadow_mode** first (ATS / REST API tab)."
+                                )
+                                chk = safe_auto_apply_precondition_checklist(
+                                    _dec,
+                                    easy_apply_confirmed=bool(
+                                        _meta.get("easy_apply_confirmed")
+                                    ),
+                                )
+                                st.dataframe(
+                                    pd.DataFrame(chk),
+                                    hide_index=True,
+                                    use_container_width=True,
+                                )
+                                u = str(_meta.get("url") or "").strip()
+                                if u:
+                                    st.caption(f"Job URL: {u}")
+                                st.markdown(
+                                    """
+**Dry run & artifacts**
+
+- **Dry run (no submit):** open the **ATS / REST API** tab → *Batch apply to LinkedIn* → enable **dry_run**.
+- **Shadow (fill, no submit):** same section → **shadow_mode** (tracker shows Shadow / would-apply labels).
+- **CLI apply:** `scripts/apply_linkedin_jobs.py` — Playwright traces/screenshots depend on your runner flags and cwd (see `scripts/` and `docs/DEPLOY.md`).
+                                    """
+                                )
                             rows_ans = _decision_answer_rows(_dec, max_text=500)
                             if rows_ans:
-                                js = str(_dec.get("job_state") or "")
                                 if js == "manual_assist":
                                     st.markdown("##### Manual assist — screening fields & autofill preview")
                                     st.caption(

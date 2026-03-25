@@ -6,6 +6,7 @@ from services.application_decision import (
     application_decision_json_for_tracker_job,
     build_application_decision,
     extract_job_state_from_decision_json,
+    safe_auto_apply_precondition_checklist,
 )
 
 
@@ -89,6 +90,27 @@ def test_decision_safe_auto_apply_when_policy_and_answers_clean():
     assert out["apply_mode_legacy"] == "auto_easy_apply"
     assert out["safe_to_submit"] is True
     assert out["critical_unsatisfied"] == []
+    chk = safe_auto_apply_precondition_checklist(
+        out,
+        easy_apply_confirmed=True,
+    )
+    assert all(r["satisfied"] for r in chk)
+    assert len(chk) == 5
+
+
+def test_safe_auto_apply_precondition_checklist_skip_job():
+    out = build_application_decision(
+        {
+            "url": "https://linkedin.com/jobs/view/1",
+            "easy_apply_confirmed": True,
+            "fit_decision": "reject",
+        },
+        profile=_complete_profile(),
+    )
+    chk = safe_auto_apply_precondition_checklist(out, easy_apply_confirmed=True)
+    assert chk[0]["satisfied"] is False
+    assert chk[2]["satisfied"] is False
+    assert any(r["satisfied"] is False for r in chk)
 
 
 def test_decision_blocked_reason_overrides():

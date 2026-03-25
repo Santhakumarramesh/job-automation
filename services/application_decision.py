@@ -17,7 +17,10 @@ from agents.application_answerer import (
     REASON_GENERIC_LLM,
     REASON_PLACEHOLDER_MANUAL,
 )
-from services.policy_service import enrich_job_dict_for_policy_export
+from services.policy_service import (
+    enrich_job_dict_for_policy_export,
+    normalize_fit_decision_label,
+)
 
 
 def _map_apply_mode_to_job_state(apply_mode: str) -> str:
@@ -140,6 +143,65 @@ def build_application_decision(
         "answers": answers_out,
         "critical_unsatisfied": critical_unsatisfied,
     }
+
+
+def safe_auto_apply_precondition_checklist(
+    decision: Dict[str, Any],
+    *,
+    easy_apply_confirmed: bool = False,
+) -> list[dict[str, Any]]:
+    """
+    Human-readable rows for supervised UI when reviewing the auto lane.
+
+    Each row: ``precondition`` (str), ``satisfied`` (bool), ``detail`` (str).
+    """
+    d = decision or {}
+    job_state = str(d.get("job_state") or "")
+    apply_mode = str(d.get("apply_mode_legacy") or "")
+    fit_norm = normalize_fit_decision_label(str(d.get("fit_decision") or "")).strip().lower()
+    crit = d.get("critical_unsatisfied") or []
+    if not isinstance(crit, list):
+        crit = []
+    safe_submit = bool(d.get("safe_to_submit"))
+    in_auto_lane = job_state == "safe_auto_apply" and apply_mode == "auto_easy_apply"
+    fit_ok = fit_norm == "apply"
+    crit_ok = len(crit) == 0
+
+    return [
+        {
+            "precondition": "Policy lane is LinkedIn auto (safe_auto_apply)",
+            "satisfied": in_auto_lane,
+            "detail": f"job_state={job_state!r}, apply_mode_legacy={apply_mode!r}"[:220],
+        },
+        {
+            "precondition": "Easy Apply confirmed on job row",
+            "satisfied": bool(easy_apply_confirmed),
+            "detail": (
+                "Confirm Easy Apply on the listing before live submit."
+                if not easy_apply_confirmed
+                else "easy_apply_confirmed is set."
+            ),
+        },
+        {
+            "precondition": "Fit decision is apply",
+            "satisfied": fit_ok,
+            "detail": str(d.get("fit_decision") or "(empty)")[:120],
+        },
+        {
+            "precondition": "No critical / not submit-safe screening fields",
+            "satisfied": crit_ok,
+            "detail": (", ".join(str(x) for x in crit) if crit else "None — canonical fields OK."),
+        },
+        {
+            "precondition": "safe_to_submit (contract aggregate)",
+            "satisfied": safe_submit,
+            "detail": (
+                "Auto lane + zero critical_unsatisfied."
+                if safe_submit
+                else "Review policy_reason and screening table; do not submit until green."
+            ),
+        },
+    ]
 
 
 def extract_job_state_from_decision_json(raw: Optional[str]) -> str:
