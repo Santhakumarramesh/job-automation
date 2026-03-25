@@ -35,7 +35,7 @@
 | **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; **indexed `job_state` column** populated on new writes (Postgres: `tracker_0008`; SQLite: `tracker_db` migrate). |
 | **DB enums** | **Indexed `job_state` (v0):** VARCHAR + **contract normalization** at ingest (`normalize_job_state_for_tracker`); Postgres optional **ENUM** for `job_state` (`tracker_0010`). Per-field `answer_state` native ENUM remains optional future work. |
 | **Streamlit supervision UX** | **Done (v0):** decision preview + tracker snapshot + REST tab; batch-apply **operator_submit_approved** path + **shadow_mode** toggle (Phase 2). |
-| **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
+| **Telemetry product** | Prometheus/Redis hooks exist; **v0** Grafana import for API/Celery metrics ([`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json)). **Still roadmap:** tracker “success by job_state” as a Grafana-ready panel bundle. |
 | **Shadow mode** | **v0 done** (MCP/API/CLI + tracker labels); Job Finder toggle syncs **shadow_mode** to the batch-apply API tab. |
 | **CI depth** | **Scoped mypy** + Ruff in [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) (copy to `.github/workflows/` when PAT allows); coverage targets not enforced. |
 
@@ -69,7 +69,7 @@
 
 - [x] **CI:** pytest + startup smoke on `main`/PRs.
 - [x] **Ruff:** `[tool.ruff]` in `pyproject.toml` (subset: `E4`, `E7`, `E9`, `F`; per-file `E402` for `run_streamlit.py` / `scripts/regenerate_resume_pdf.py`). Add a CI step after `pip install`: `ruff check .` (requires `ruff` from `.[dev]`). **Note:** committing `.github/workflows/*.yml` may require a GitHub PAT with the **workflow** scope; keep the snippet local until then.
-- [x] **mypy (v0 scoped):** `mypy.ini` + CI step `mypy --config-file mypy.ini` on stable API/policy/analytics modules (`app/auth.py`, `app/main.py`, `services/application_decision.py`, `services/application_insights.py`, `services/autonomy_submit_gate.py`, `services/role_templates.py`, `services/tracker_analytics.py`, `services/truth_apply_gate.py`, `services/workspace_write_guard.py`). Broader repo typing remains iterative.
+- [x] **mypy (v0 scoped):** `mypy.ini` + CI step `mypy --config-file mypy.ini` on stable API/policy/analytics modules (`app/auth.py`, `app/main.py`, `services/application_decision.py`, `services/application_insights.py`, `services/autonomy_submit_gate.py`, `services/role_templates.py`, `services/tracker_analytics.py`, `services/truth_apply_gate.py`, `services/workspace_write_guard.py`, `services/metrics_redis.py`, `services/prometheus_celery_bridge.py`). Broader repo typing remains iterative.
 - [x] Example **dashboard queries** — [TRACKER_DASHBOARD_QUERIES.md](TRACKER_DASHBOARD_QUERIES.md) (admin summary API + SQL for `job_state` / JSONB).
 
 **Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.
@@ -114,6 +114,7 @@
 - [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
 - [x] **mypy (v0 scoped):** `mypy.ini` + CI step on stable API/policy/analytics modules; full-repo strict typing remains optional iterative hardening.
 - [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
+- [x] **Grafana sample (v0):** [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json) — HTTP + Celery panels from scraped `/metrics` (import-time datasource binding).
 
 ---
 
@@ -127,7 +128,7 @@
 | 4 | GitHub Actions CI | **Sample in repo:** [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) — copy to `.github/workflows/ci.yml` when PAT has **workflow** scope (ruff, scoped mypy, pytest, profile, startup) |
 | 5 | Vision docs committed | **Done** — `SYSTEM_VISION`, `PRODUCT_SCOPE`, `AUTONOMY_MODEL`, `MARKET_PRODUCTION_ROADMAP`, plus audit checklist, external ATS, decision contract |
 
-**Actual immediate priorities:** expand mypy coverage beyond v0 scope; optional bundled Grafana dashboard JSON; release-note cadence for autonomy/public-readiness updates.
+**Actual immediate priorities:** expand mypy coverage beyond v0 scope; release-note cadence for autonomy/public-readiness updates (Grafana v0 sample: [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json)).
 
 ---
 

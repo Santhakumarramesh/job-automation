@@ -65,7 +65,7 @@ export PROMETHEUS_METRICS=1
 3. **Load** [prometheus/alert_rules.example.yml](prometheus/alert_rules.example.yml) into your ruler; tune windows to your scrape interval.
 4. **Optional:** cron [scripts/metrics_webhook_alert.py](../scripts/metrics_webhook_alert.py) for Redis-threshold webhooks.
 
-Grafana dashboard JSON is not shipped; build panels from the scraped metrics and team SLOs.
+**Grafana (v0 sample):** import [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json) (choose your Prometheus datasource). Panels cover `ccp_http_requests_total` and Celery Redis bridge Gauges (`ccp_celery_*`); tune PromQL to your scrape interval and SLOs.
 
 ## Alerting
 
