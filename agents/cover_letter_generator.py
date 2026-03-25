@@ -16,8 +16,9 @@ def generate_cover_letter(state: AgentState):
     if not state.get("is_eligible", True) or not state.get("tailored_resume_text", ""):
         return {"cover_letter_text": ""}
         
-    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.7)
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.7)
     
     # --- Tone Matching --- #
     company_name = state.get("target_company", "")

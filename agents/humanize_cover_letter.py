@@ -18,7 +18,8 @@ def humanize_cover_letter(state: AgentState):
         # Speed mode: do not run LLM humanization.
         return {"humanized_cover_letter_text": cover_letter_text}
 
-    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.75) # Slightly higher temp for creativity
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.75)  # Slightly higher temp for creativity
     
     if not cover_letter_text or len(cover_letter_text) < 100:
         print("⚠️ Cover letter text is too short to humanize. Skipping.")

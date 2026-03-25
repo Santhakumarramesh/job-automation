@@ -14,10 +14,9 @@ def tailor_resume(state: AgentState):
     if not state.get("is_eligible", True):
         return {"tailored_resume_text": ""}
         
-    llm = ChatOpenAI(
-        model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"),
-        temperature=0.7,
-    )
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.7)
     
     missing_skills = state.get("missing_skills", [])
     allowed_skills = state.get("allowed_skills")

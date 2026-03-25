@@ -1,4 +1,5 @@
 
+import os
 import re
 import json
 from langchain_openai import ChatOpenAI
@@ -25,7 +26,9 @@ def guard_job_quality(state: AgentState):
         return {"is_eligible": False, "eligibility_reason": reason}
 
     # Now, use the LLM to check for more subtle red flags
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.0)
     
     system_prompt = """You are an expert fraud detection model. Your task is to analyze a job description and determine if it is a scam, a multi-level marketing scheme, or has absurd requirements (e.g., 10+ years of experience for an entry-level role). 
 

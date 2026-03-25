@@ -39,7 +39,7 @@ These env vars apply mainly to **Celery worker** pipelines (resume tailoring + c
 
 | Variable | Meaning |
 |----------|---------|
-| `CCP_OPENAI_MODEL` | LLM model name used across pipeline steps that currently default to `gpt-4o`. Example: `gpt-4o-mini`. |
+| `CCP_OPENAI_MODEL` | LLM model name used across pipeline steps. If unset and `CCP_FAST_PIPELINE=1`, the pipeline defaults to `gpt-4o-mini` automatically. Example: `gpt-4o-mini`. |
 | `CCP_FAST_PIPELINE=1` | Speed mode: skips expensive **project generation** and **self-humanization** passes (resume + cover letter). Also skips the “tone matching” company-info retrieval step for faster cover-letter generation. |
 
 If `CCP_FAST_PIPELINE` is enabled, the pipeline still produces `tailored_resume_text` and `cover_letter_text`, but may omit project/custom additions and runs fewer LLM calls.

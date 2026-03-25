@@ -10,7 +10,9 @@ def analyze_job_description(state: AgentState):
     Parses the Job Description, extracts required skills, and rigorously checks 
     sponsorship and citizenship requirements for F1 OPT compatibility.
     """
-    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0)
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0)
     
     system_prompt = """You are an expert technical recruiter analyzing a job description. 
 You must extract the core requirements and meticulously check for citizenship / sponsorship constraints.

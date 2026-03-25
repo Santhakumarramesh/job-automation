@@ -18,7 +18,8 @@ def humanize_resume(state: AgentState):
         # Speed mode: do not run LLM humanization.
         return {"humanized_resume_text": resume_text}
 
-    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.7)
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.7)
     
     if not resume_text or len(resume_text) < 100:
         print("⚠️ Resume text is too short to humanize. Skipping.")

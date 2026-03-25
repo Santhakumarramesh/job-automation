@@ -31,13 +31,15 @@ def intelligent_project_generator(state: AgentState):
     """Analyzes the skill gap using an LLM and generates a relevant project idea."""
     print("🧠 Performing LLM-powered skill gap analysis...")
 
-    if os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes"):
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
+    if fast:
         # Speed mode: skip project generation entirely (cuts multiple LLM calls).
         return {"generated_project_text": ""}
 
     job_description = state.get('job_description', '')
     resume_text = state.get('base_resume_text', '')
-    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.0)
+    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
+    llm = ChatOpenAI(model=model, temperature=0.0)
 
     # 1. Dynamically extract skills from both texts using the LLM
     jd_skills = set(s.lower() for s in extract_skills_llm(job_description, llm))
@@ -53,7 +55,7 @@ def intelligent_project_generator(state: AgentState):
     print(f"⚠️ LLM identified skill gaps: {', '.join(missing_skills)}")
 
     # 3. Use an LLM to generate a relevant project idea
-    project_llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.8)
+    project_llm = ChatOpenAI(model=model, temperature=0.8)
     system_prompt = """You are a Senior Engineering Manager and Career Mentor for AI/ML professionals.
 Your task is to devise a single, high-impact portfolio project that the candidate can build and complete *before* their first interview (realistically within 1-3 days).
 
