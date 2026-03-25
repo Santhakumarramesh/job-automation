@@ -189,7 +189,7 @@ def main() -> int:
         for a in fired:
             print(f"- {a}")
         print("")
-        print("Use these sections in docs/ITPLY_RECOVERY_PLAYBOOKS.md:")
+        print("Use these sections in docs/APPLY_RECOVERY_PLAYBOOKS.md:")
         print("- Metrics-driven triage (Phase 7.4)")
     else:
         print("No Phase 7.4 alert thresholds are currently breached by the computed averages/ratios.")
