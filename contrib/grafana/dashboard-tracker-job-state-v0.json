@@ -222,6 +222,20 @@
       ],
       "title": "Applied (safe_to_submit=true) by week and job_state",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 61 },
+      "id": 14,
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(jsonb_array_length(COALESCE(application_decision->'critical_unsatisfied', '[]'::jsonb)), 0)::int AS critical_unsatisfied_count, COUNT(*)::bigint AS total_rows, SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'applied' THEN 1 ELSE 0 END)::bigint AS applied_rows FROM applications WHERE COALESCE(application_decision->>'safe_to_submit', 'false') = 'true' GROUP BY 1 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "critical_unsatisfied distribution (rows + applied)",
+      "type": "table"
     }
   ],
   "refresh": "1m",
