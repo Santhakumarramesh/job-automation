@@ -1,4 +1,6 @@
 
+import os
+
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
@@ -14,14 +16,17 @@ def generate_cover_letter(state: AgentState):
     if not state.get("is_eligible", True) or not state.get("tailored_resume_text", ""):
         return {"cover_letter_text": ""}
         
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.7)
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
     
     # --- Tone Matching --- #
-    company_name = state.get('target_company', '')
-    company_info = get_company_info(company_name)
+    company_name = state.get("target_company", "")
     tone_prompt = ""
-    if "Could not automatically retrieve" not in company_info:
-        tone_prompt = f"""First, analyze the following 'About Us' text to understand the company's culture and brand voice (e.g., formal and corporate vs. playful and startup-y).
+
+    if not fast:
+        company_info = get_company_info(company_name)
+        if "Could not automatically retrieve" not in company_info:
+            tone_prompt = f"""First, analyze the following 'About Us' text to understand the company's culture and brand voice (e.g., formal and corporate vs. playful and startup-y).
 
 **Company Info for Tone Analysis:**
 ---

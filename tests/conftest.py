@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -16,8 +17,7 @@ def isolate_tracker_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "job_applications.db"
     csv_path = tmp_path / "job_applications.csv"
 
-    # Prefer isolated SQLite tracker paths for tests.
-    monkeypatch.setenv("TRACKER_USE_DB", "1")
+    # Keep tracker files isolated, but do not force DB-vs-CSV mode.
     monkeypatch.setenv("TRACKER_DB_PATH", str(db_path))
     monkeypatch.delenv("TRACKER_DATABASE_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -26,8 +26,13 @@ def isolate_tracker_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from services import application_tracker, tracker_db
 
     tracker_db.close_tracker_pg_pool()
+    tracker_db.CSV_FILE = csv_path
     application_tracker.APPLICATION_FILE = csv_path
-    application_tracker.USE_DB = True
+    application_tracker.USE_DB = os.getenv("TRACKER_USE_DB", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     yield
 

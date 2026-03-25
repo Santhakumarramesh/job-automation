@@ -1,3 +1,5 @@
+import os
+
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
@@ -12,7 +14,10 @@ def tailor_resume(state: AgentState):
     if not state.get("is_eligible", True):
         return {"tailored_resume_text": ""}
         
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+    llm = ChatOpenAI(
+        model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"),
+        temperature=0.7,
+    )
     
     missing_skills = state.get("missing_skills", [])
     allowed_skills = state.get("allowed_skills")

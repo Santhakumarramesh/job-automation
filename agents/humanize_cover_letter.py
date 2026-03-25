@@ -1,4 +1,6 @@
 
+import os
+
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
@@ -10,9 +12,14 @@ def humanize_cover_letter(state: AgentState):
     """
     print("🤖 Self-humanizing cover letter text with GPT-4o...")
     
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.75) # Slightly higher temp for creativity
-    
+    fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
     cover_letter_text = state.get("cover_letter_text", "")
+    if fast:
+        # Speed mode: do not run LLM humanization.
+        return {"humanized_cover_letter_text": cover_letter_text}
+
+    llm = ChatOpenAI(model=os.getenv("CCP_OPENAI_MODEL", "gpt-4o"), temperature=0.75) # Slightly higher temp for creativity
+    
     if not cover_letter_text or len(cover_letter_text) < 100:
         print("⚠️ Cover letter text is too short to humanize. Skipping.")
         return {"humanized_cover_letter_text": cover_letter_text}

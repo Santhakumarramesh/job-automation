@@ -33,6 +33,17 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 - `JWT_JWKS_URL` or `JWT_ISSUER` without `JWT_AUDIENCE` in production (audience checks recommended).
 - Postgres / S3 / PyJWT mismatch (see `services/startup_checks.py`).
 
+## LLM performance tuning (Phase 5)
+
+These env vars apply mainly to **Celery worker** pipelines (resume tailoring + cover letter + optional project generation/humanization).
+
+| Variable | Meaning |
+|----------|---------|
+| `CCP_OPENAI_MODEL` | LLM model name used across pipeline steps that currently default to `gpt-4o`. Example: `gpt-4o-mini`. |
+| `CCP_FAST_PIPELINE=1` | Speed mode: skips expensive **project generation** and **self-humanization** passes (resume + cover letter). Also skips the “tone matching” company-info retrieval step for faster cover-letter generation. |
+
+If `CCP_FAST_PIPELINE` is enabled, the pipeline still produces `tailored_resume_text` and `cover_letter_text`, but may omit project/custom additions and runs fewer LLM calls.
+
 ## AWS Secrets Manager
 
 1. Create a secret (e.g. `career-co-pilot/prod`) whose value is **JSON**:
