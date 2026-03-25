@@ -485,7 +485,7 @@ def log_application_db(row: dict) -> str:
     return row["id"]
 
 
-def _cell(row: dict, c: str) -> str:
+def _cell(row: dict, c: str) -> Any:
     v = row.get(c, "")
     if c == "job_description":
         return str(v or "")[:2000]
@@ -498,7 +498,12 @@ def _cell(row: dict, c: str) -> str:
     if c == "application_decision":
         return _application_decision_cell_value(v)
     if c == "job_state":
-        return str(v or "").strip()[:64]
+        # Optional Postgres ENUM does not allow an empty string label.
+        # Write NULL for empty/unknown so Postgres ENUM casting stays safe.
+        sv = str(v or "").strip()
+        if _use_postgres() and not sv:
+            return None
+        return sv[:64]
     if c == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]

@@ -113,7 +113,7 @@
 
 - [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
 - [ ] **mypy** (optional) when the tree is ready — same spirit as Phase 1 checkbox; not blocking releases.
-- [ ] **Postgres ENUM** for `job_state` (optional) — design + Alembic only if ops want DB-enforced enums; SQLite/CSV trackers would keep strings.
+- [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
 
 ---
 
