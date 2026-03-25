@@ -1107,6 +1107,19 @@ def admin_celery_inspect(
     return celery_inspect_snapshot(timeout_sec=timeout)
 
 
+@api_router.get("/admin/apply-runner-metrics", tags=["admin"])
+def admin_apply_runner_metrics(admin=Depends(require_admin)):
+    """
+    Phase 3 — read apply-runner Redis counters (LinkedIn live submit attempt / success / blocked).
+
+    Does not require ``APPLY_RUNNER_METRICS_REDIS=1`` to call; response includes ``enabled``
+    and may report Redis connection errors when metrics are off or misconfigured.
+    """
+    from services.apply_runner_metrics_redis import read_apply_runner_metrics_summary
+
+    return read_apply_runner_metrics_summary()
+
+
 @api_router.get("/follow-ups", tags=["follow-ups"])
 def list_follow_ups(
     user=Depends(get_current_user),
