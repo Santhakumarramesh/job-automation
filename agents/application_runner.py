@@ -348,6 +348,8 @@ async def run_linkedin_application(
     linkedin_fill_screenshot_seconds: Optional[float] = None
     linkedin_live_submit_click_seconds: Optional[float] = None
 
+    playwright_timeout_detected: bool = False
+
     try:
         t_total_start = time.perf_counter()
 
@@ -547,6 +549,9 @@ async def run_linkedin_application(
 
     except Exception as e:
         err = str(e)[:200]
+        # Phase 7.4: Playwright timeout counter. (Timeout errors include "Timeout".)
+        if "timeout" in err.lower():
+            playwright_timeout_detected = True
         if screenshot_dir:
             try:
                 screenshot_dir.mkdir(parents=True, exist_ok=True)
@@ -617,6 +622,15 @@ async def run_linkedin_application(
                         "linkedin_live_submit_click",
                         linkedin_live_submit_click_seconds,
                     )
+                # Phase 7.4: unmapped fields proxy DOM drift / mapping issues.
+                from services.apply_runner_metrics_redis import (
+                    incr_apply_runner_event,
+                    incr_apply_runner_unmapped_fields,
+                )
+
+                incr_apply_runner_unmapped_fields(len(unmapped))
+                if playwright_timeout_detected:
+                    incr_apply_runner_event("linkedin_fill_playwright_timeout")
             except Exception:
                 pass
 

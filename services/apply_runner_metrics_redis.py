@@ -11,6 +11,11 @@ Events (fixed set — do not pass arbitrary strings from user input):
   - ``linkedin_live_submit_success`` — submit click path returned applied
   - ``linkedin_live_submit_blocked_autonomy`` — blocked by ``autonomy_submit_gate`` (kill switch / pilot-only / telemetry rollback)
 
+  - ``linkedin_fill_playwright_timeout`` — Playwright timeout encountered during fill/click path
+
+Samples (numeric sums + counts; derived from runner results):
+  - ``linkedin_fill_unmapped_fields_sum`` / ``..._count`` — average unmapped-field count per run
+
 ``read_linkedin_live_submit_totals()`` returns ``(attempt_total, success_total)`` from the hash for telemetry rollback (no ``APPLY_RUNNER_METRICS_REDIS`` gate on read).
 
 ``read_linkedin_nonsubmit_pattern_totals()`` returns ``(nonsubmit_total, denom_total)`` for pattern rollback:
@@ -44,6 +49,7 @@ _ALLOWED_EVENTS = frozenset(
         "linkedin_live_submit_attempt",
         "linkedin_live_submit_success",
         "linkedin_live_submit_blocked_autonomy",
+        "linkedin_fill_playwright_timeout",
     }
 )
 
@@ -132,6 +138,37 @@ _ATTEMPT_FIELD = "linkedin_live_submit_attempt_total"
 _SUCCESS_FIELD = "linkedin_live_submit_success_total"
 _CHECKPOINT_FIELD = "linkedin_login_checkpoint_pause_total"
 _CHALLENGE_ABORT_FIELD = "linkedin_login_challenge_abort_total"
+
+_PLAYWRIGHT_TIMEOUT_FIELD = "linkedin_fill_playwright_timeout_total"
+
+_UNMAPPED_SUM_FIELD = "linkedin_fill_unmapped_fields_sum"
+_UNMAPPED_COUNT_FIELD = "linkedin_fill_unmapped_fields_count"
+
+
+def incr_apply_runner_unmapped_fields(unmapped_count: int) -> None:
+    """Record an unmapped-field sample into Redis hash.
+
+    Uses fields ``{sum,count}`` so Prometheus can compute rates / averages.
+    """
+    if not apply_runner_metrics_enabled():
+        return
+    try:
+        n = int(unmapped_count)
+    except (TypeError, ValueError):
+        return
+    if n < 0:
+        n = 0
+    try:
+        r = _client()
+        if r is None:
+            return
+        pipe = r.pipeline()
+        pipe.hincrby(_KEY_HASH, _UNMAPPED_SUM_FIELD, n)
+        pipe.hincrby(_KEY_HASH, _UNMAPPED_COUNT_FIELD, 1)
+        pipe.hset(_KEY_HASH, "updated_at", str(int(time.time())))
+        pipe.execute()
+    except Exception:
+        pass
 
 
 def _int_field(h: Dict[str, str], key: str) -> int:

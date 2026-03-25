@@ -78,6 +78,33 @@ def _apply_runner_duration_gauge_specs() -> Tuple[Tuple[str, str, str], ...]:
 
 _APPLY_RUNNER_GAUGE_SPECS: Tuple[Tuple[str, str, str], ...] = _apply_runner_duration_gauge_specs()
 
+# Redis apply-runner event counters (export as gauges mirroring cumulative Redis totals).
+_APPLY_RUNNER_EVENT_FIELDS: Tuple[str, ...] = (
+    "linkedin_login_checkpoint_pause_total",
+    "linkedin_login_challenge_abort_total",
+    "linkedin_live_submit_attempt_total",
+    "linkedin_live_submit_success_total",
+    "linkedin_live_submit_blocked_autonomy_total",
+    "linkedin_fill_playwright_timeout_total",
+)
+
+_APPLY_RUNNER_UNMAPPED_FIELDS: Tuple[str, ...] = (
+    "linkedin_fill_unmapped_fields_sum",
+    "linkedin_fill_unmapped_fields_count",
+)
+
+
+def _apply_runner_event_gauge_specs() -> Tuple[Tuple[str, str, str], ...]:
+    out: list[Tuple[str, str, str]] = []
+    for field in _APPLY_RUNNER_EVENT_FIELDS:
+        out.append((field, f"ccp_apply_runner_{field}", f"Apply-runner event counter mirrored from Redis: {field}"))
+    for field in _APPLY_RUNNER_UNMAPPED_FIELDS:
+        out.append((field, f"ccp_apply_runner_{field}", f"Apply-runner numeric sample mirrored from Redis: {field}"))
+    return tuple(out)
+
+
+_APPLY_RUNNER_EVENT_GAUGE_SPECS: Tuple[Tuple[str, str, str], ...] = _apply_runner_event_gauge_specs()
+
 _gauges: Dict[str, Any] = {}
 _registered: bool = False
 
@@ -124,6 +151,8 @@ def register_celery_redis_gauges(registry: Any) -> bool:
         _gauges[field] = Gauge(name, doc, registry=registry)
     if apply_runner_redis_bridge_enabled():
         for field, name, doc in _APPLY_RUNNER_GAUGE_SPECS:
+            _gauges[field] = Gauge(name, doc, registry=registry)
+        for field, name, doc in _APPLY_RUNNER_EVENT_GAUGE_SPECS:
             _gauges[field] = Gauge(name, doc, registry=registry)
     _registered = True
     return True
@@ -174,7 +203,7 @@ def refresh_celery_redis_gauges() -> None:
 
 def registered_gauge_fields() -> List[str]:
     """Test helper: Redis hash fields that have a matching Gauge."""
-    return [s[0] for s in (_CELERY_GAUGE_SPECS + _APPLY_RUNNER_GAUGE_SPECS)]
+    return [s[0] for s in (_CELERY_GAUGE_SPECS + _APPLY_RUNNER_GAUGE_SPECS + _APPLY_RUNNER_EVENT_GAUGE_SPECS)]
 
 
 def reset_celery_bridge_state_for_tests() -> None:

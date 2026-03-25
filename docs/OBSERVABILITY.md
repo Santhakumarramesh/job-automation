@@ -79,6 +79,14 @@ Raise alerts on spikes in `tasks_error_*` or `tasks_rejected_total` / sustained 
 
 **Starter rules (Phase 4.3.2):** copy [prometheus/alert_rules.example.yml](prometheus/alert_rules.example.yml) into your Prometheus `rule_files`, `PrometheusRule` CRD, or ruler. Helm / recording rules remain operator-owned.
 
+**Phase 7.4 apply-runner alerts (optional):** the same starter rules file can also include alerts for:
+- elevated LinkedIn Easy Apply fill latency (avg wall time from Prometheus: `ccp_apply_runner_linkedin_fill_*_seconds_*`)
+- Playwright timeout spikes (from Redis → Prometheus: `ccp_apply_runner_linkedin_fill_playwright_timeout_total`)
+- DOM drift / mapping gaps proxy via unmapped-field average (avg from `ccp_apply_runner_linkedin_fill_unmapped_fields_*`)
+- truth/submission gate blocks share (from Prometheus counters: `ccp_apply_runner_linkedin_live_submit_blocked_autonomy_total` and `..._attempt_total`)
+
+When these fire, start with the corresponding sections in [APPLY_RECOVERY_PLAYBOOKS.md](APPLY_RECOVERY_PLAYBOOKS.md).
+
 **Optional webhook (Phase 4.3.3):** cron `scripts/metrics_webhook_alert.py` with `CELERY_METRICS_REDIS=1`, thresholds like `METRICS_ALERT_ERROR_TOTAL_MIN`, and `METRICS_ALERT_WEBHOOK_URL` — see `services/metrics_alert_webhook.py`.
 
 **Example PromQL** (after Celery Redis bridge is enabled on `/metrics`; tune windows for your scrape interval):
@@ -94,4 +102,12 @@ increase(ccp_celery_tasks_error_permanent_total[1h]) > 3
 # Avg duration from sum/count mirrors
   (ccp_celery_task_duration_seconds_sum - ccp_celery_task_duration_seconds_sum offset 1h)
 / (ccp_celery_task_duration_count - ccp_celery_task_duration_count offset 1h) > 120
+
+ # LinkedIn Easy Apply: avg fill latency from apply-runner sum/count
+  rate(ccp_apply_runner_linkedin_fill_total_seconds_sum[5m])
+ / clamp_min(rate(ccp_apply_runner_linkedin_fill_total_seconds_count[5m]), 1e-9) > 240
+
+ # LinkedIn Easy Apply: truth/submission gate blocked share
+  rate(ccp_apply_runner_linkedin_live_submit_blocked_autonomy_total[5m])
+ / clamp_min(rate(ccp_apply_runner_linkedin_live_submit_attempt_total[5m]), 1e-9) > 0.25
 ```

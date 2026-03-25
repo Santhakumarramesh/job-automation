@@ -55,7 +55,37 @@ Operational steps when LinkedIn Easy Apply automation stalls: **login challenges
 
 ---
 
-## 5. Related paths
+## 5. Metrics-driven triage (Phase 7.4)
+
+When the Phase 7.4 apply-runner alerts fire in Prometheus, use these starting points to choose the correct recovery lane:
+
+1. `ApplyRunnerAvgFillLatencyHigh` / `ApplyRunnerAvgDomScanHigh`
+   - Symptoms: slow Easy Apply modal fill (goto vs DOM scan vs value resolution vs field fill).
+   - Actions:
+     - Reduce batch size / increase `rate_limit_seconds` temporarily.
+     - Run a small sample with `dry_run=True` (or `scripts/apply_linkedin_jobs.py --dry-run`) to see where the time is spent before submitting.
+
+2. `ApplyRunnerPlaywrightTimeoutSpike`
+   - Symptoms: browser automation timed out (often DOM drift, throttling, or large/slow pages).
+   - Actions:
+     - Switch to visible mode: run with `scripts/apply_linkedin_jobs.py --no-headless`.
+     - If timeouts correlate with frequent checkpoints/challenges, follow Section 1 playbook (complete prompts in a real browser).
+
+3. `ApplyRunnerAvgUnmappedFieldsHigh`
+   - Symptoms: unmapped-field count per run is high (DOM structure drift and mapping gaps).
+   - Actions:
+     - Treat as Lane 2 (manual assist) and route to Section 3 playbook.
+     - Capture unmapped field labels and extend the answerer mappings for those fields.
+
+4. `TruthGateBlockedShareHigh`
+   - Symptoms: a high share of live submit attempts were blocked by `autonomy_submit_gate`.
+   - Actions:
+     - Inspect tracker outcomes and critical question failures; fix data quality or gate thresholds.
+     - Stay in supervised/manual-assist until the blocked share returns to normal.
+
+---
+
+## 6. Related paths
 
 - Setup: [docs/setup/job-apply-autofill-mcp.md](setup/job-apply-autofill-mcp.md)  
 - Worker / jobs API: [WORKER_ORCHESTRATION.md](WORKER_ORCHESTRATION.md)  

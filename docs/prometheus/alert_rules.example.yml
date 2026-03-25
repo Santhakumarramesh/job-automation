@@ -72,3 +72,75 @@ groups:
         annotations:
           summary: "API 5xx response rate elevated"
           description: "Check API process health, DB, and upstream dependencies."
+
+  - name: career_co_pilot_apply_runner
+    rules:
+      - alert: ApplyRunnerAvgFillLatencyHigh
+        expr: |
+          rate(ccp_apply_runner_linkedin_fill_total_seconds_sum[5m])
+          /
+          clamp_min(rate(ccp_apply_runner_linkedin_fill_total_seconds_count[5m]), 1e-9)
+          > 240
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Apply-runner avg fill latency high (LinkedIn Easy Apply)"
+          description: |
+            Average wall time for the LinkedIn Easy Apply fill pipeline is > 240s over the last ~5m.
+            Use dashboards/REDIS timings to identify the slow stage (goto / DOM scan / value resolution / field fill).
+
+      - alert: ApplyRunnerAvgDomScanHigh
+        expr: |
+          rate(ccp_apply_runner_linkedin_fill_dom_scan_seconds_sum[5m])
+          /
+          clamp_min(rate(ccp_apply_runner_linkedin_fill_dom_scan_seconds_count[5m]), 1e-9)
+          > 40
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Apply-runner DOM scan avg high"
+          description: |
+            DOM scanning / modal scanning is taking > 40s on average. Often indicates page structure drift or larger forms.
+
+      - alert: TruthGateBlockedShareHigh
+        expr: |
+          rate(ccp_apply_runner_linkedin_live_submit_blocked_autonomy_total[5m])
+          /
+          clamp_min(rate(ccp_apply_runner_linkedin_live_submit_attempt_total[5m]), 1e-9)
+          > 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Truth/Submission gate blocked a high share of submit attempts"
+          description: |
+            >25% of LinkedIn live submit attempts were blocked by `autonomy_submit_gate` (truth/safety policy).
+            Review critical question failures and update gates/data quality before widening autonomy.
+
+      - alert: ApplyRunnerPlaywrightTimeoutSpike
+        expr: increase(ccp_apply_runner_linkedin_fill_playwright_timeout_total[15m]) >= 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Playwright timeouts spiking in apply-runner"
+          description: |
+            At least 3 Playwright timeouts detected in 15m.
+            Switch to manual mode / run with visible browser, and adjust browser wait multipliers if applicable.
+
+      - alert: ApplyRunnerAvgUnmappedFieldsHigh
+        expr: |
+          rate(ccp_apply_runner_linkedin_fill_unmapped_fields_sum[5m])
+          /
+          clamp_min(rate(ccp_apply_runner_linkedin_fill_unmapped_fields_count[5m]), 1e-9)
+          > 8
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Unmapped field count per run is high"
+          description: |
+            Average unmapped-field count per run is > 8 over the last ~5m.
+            Treat this as DOM drift / mapping gaps: route to manual-assist lane, capture unmapped field labels, then extend mappings.
