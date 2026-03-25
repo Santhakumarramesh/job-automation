@@ -13,7 +13,8 @@ from typing import Optional
 from providers.common_schema import JobListing, normalize_to_schema
 from providers.base_provider import JobProvider, SearchFilters
 
-LINKEDIN_MCP_URL = os.getenv("LINKEDIN_MCP_URL", "http://127.0.0.1:8000/mcp")
+# Default to 8001 to avoid colliding with the FastAPI API (commonly on 8000).
+LINKEDIN_MCP_URL = os.getenv("LINKEDIN_MCP_URL", "http://127.0.0.1:8001/mcp")
 
 
 def _extract_from_sections(sections: dict, key: str) -> str:

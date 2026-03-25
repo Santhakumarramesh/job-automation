@@ -30,10 +30,10 @@ A browser window opens. Log in to LinkedIn. The session is saved at `~/.linkedin
 ### 3. Run the MCP server (HTTP mode)
 
 ```bash
-uv run linkedin-mcp-server --transport streamable-http --host 0.0.0.0 --port 8000
+uv run linkedin-mcp-server --transport streamable-http --host 0.0.0.0 --port 8001
 ```
 
-Keep this running in a terminal. Default URL: `http://127.0.0.1:8000/mcp`.
+Keep this running in a terminal. Default URL: `http://127.0.0.1:8001/mcp`.
 
 ### 4. Optional: Python MCP client
 
@@ -53,7 +53,7 @@ pip install mcp
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LINKEDIN_MCP_URL` | MCP server URL | `http://127.0.0.1:8000/mcp` |
+| `LINKEDIN_MCP_URL` | MCP server URL | `http://127.0.0.1:8001/mcp` |
 
 ## Architecture
 
@@ -89,7 +89,7 @@ For HTTP mode (remote or inspector):
 {
   "mcpServers": {
     "linkedin": {
-      "url": "http://127.0.0.1:8000/mcp"
+      "url": "http://127.0.0.1:8001/mcp"
     }
   }
 }
