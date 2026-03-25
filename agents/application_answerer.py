@@ -285,6 +285,9 @@ _CANONICAL_EXPORT_KEYS: list[tuple[str, str]] = [
     ("portfolio_url", "Please provide your portfolio or personal website URL."),
 ]
 
+# Keys only (for application decision contract / policy export loops).
+CANONICAL_SCREENING_FIELD_KEYS: list[str] = [pair[0] for pair in _CANONICAL_EXPORT_KEYS]
+
 
 def build_answerer_preview_for_export(
     profile: Optional[dict],
@@ -321,6 +324,7 @@ def build_answerer_preview_for_export(
             "manual_review_required": res["manual_review_required"],
             "reason_codes": res["reason_codes"],
             "classified_type": res["classified_type"],
+            "answer": res["answer"],
         }
         if res["manual_review_required"]:
             pending = True

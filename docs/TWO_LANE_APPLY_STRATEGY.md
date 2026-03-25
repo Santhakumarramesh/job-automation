@@ -1,5 +1,7 @@
 # Two-Lane Apply Strategy
 
+**Workday & Greenhouse:** Always **manual_assist** (assisted autofill + human submit). They are **never** `safe_auto_apply` in v1 — see [EXTERNAL_ATS_MANUAL_ASSIST.md](EXTERNAL_ATS_MANUAL_ASSIST.md).
+
 The pipeline uses two lanes to balance automation speed with application quality.
 **Easy Apply only is enforced in code** (not just UI): `apply_to_jobs` and `run_application` reject external ATS by default.
 

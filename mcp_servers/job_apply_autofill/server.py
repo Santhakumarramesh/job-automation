@@ -158,6 +158,43 @@ def decide_apply_mode(
 
 
 @mcp.tool()
+def get_application_decision(
+    job_json: str,
+    profile_path: str = "",
+    master_resume_text: str = "",
+    blocked_reason: str = "",
+) -> dict:
+    """
+    Unified v0.1 decision: job_state (skip | manual_assist | safe_auto_apply | blocked),
+    safe_to_submit, apply_mode_legacy, policy_reason, fit_decision, per-field answer_state,
+    truth_safe, submit_safe, critical_unsatisfied. Runs canonical answerer preview + policy
+    (same as Streamlit export). blocked_reason: optional runner hard-stop (forces blocked).
+    """
+    try:
+        from services.application_decision import build_application_decision
+        from services.profile_service import load_profile
+
+        job = json.loads(job_json) if isinstance(job_json, str) else (job_json or {})
+        prof = load_profile(profile_path.strip() or None)
+        br = (blocked_reason or "").strip() or None
+        return build_application_decision(
+            job,
+            profile=prof,
+            master_resume_text=master_resume_text or "",
+            use_llm_preview=False,
+            blocked_reason=br,
+        )
+    except Exception as e:
+        return {
+            "schema_version": "0.1",
+            "job_state": "blocked",
+            "safe_to_submit": False,
+            "status": "error",
+            "message": str(e)[:200],
+        }
+
+
+@mcp.tool()
 def validate_candidate_profile(profile_path: str = "") -> dict:
     """
     Validate candidate profile. Checks full_name, email, phone, linkedin_url,

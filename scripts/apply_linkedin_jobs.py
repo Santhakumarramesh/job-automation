@@ -127,26 +127,19 @@ async def run_apply(
                 pending = [k for k, v in ar.items() if v.get("manual_review_required")]
                 if pending:
                     print(f"  Answerer manual review: {pending[:5]}")
+            try:
+                from services.application_tracker import log_runner_result_to_tracker
+
+                log_runner_result_to_tracker(
+                    job,
+                    result,
+                    resume_path=config.resume_path or "",
+                    user_id=(os.getenv("TRACKER_DEFAULT_USER_ID") or "cli-linkedin-apply").strip(),
+                )
+            except ImportError:
+                pass
             if result.status == "applied":
                 applied += 1
-                try:
-                    from services.application_tracker import log_application_from_result
-                    from services.policy_service import policy_from_exported_job
-
-                    mode, reason = policy_from_exported_job(job)
-                    meta = {
-                        "job_id": job.get("job_id", ""),
-                        "fit_decision": job.get("fit_decision", ""),
-                        "ats_score": job.get("ats_score", job.get("final_ats_score")),
-                        "apply_mode": mode,
-                        "policy_reason": reason,
-                        "easy_apply_confirmed": job.get("easy_apply_confirmed"),
-                        "description": (job.get("description", "") or "")[:2000],
-                        "user_id": (os.getenv("TRACKER_DEFAULT_USER_ID") or "cli-linkedin-apply").strip(),
-                    }
-                    log_application_from_result(result, resume_path=config.resume_path or "", job_metadata=meta)
-                except ImportError:
-                    pass
 
         await browser.close()
 

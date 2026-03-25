@@ -10,7 +10,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -57,10 +57,69 @@ TRACKER_COLUMNS = [
     "truth_safe_ats_ceiling",
     "selected_address_label",
     "package_field_stats",
+    "application_decision",  # JSON: v0.1 decision payload (see application_decision.py)
 ]
 
 # Legacy columns for backward compat
 LEGACY_COLUMNS = ["Date Applied", "Company", "Position", "Status", "Resume Path", "Cover Letter Path", "Job Description"]
+
+
+def _application_decision_cell_for_state(state: dict) -> str:
+    try:
+        from services.application_decision import application_decision_json_for_tracker_job
+
+        job = {
+            "url": str(state.get("job_url") or ""),
+            "apply_url": str(state.get("apply_url") or ""),
+            "company": str(state.get("target_company") or ""),
+            "title": str(state.get("target_position") or ""),
+            "description": str(state.get("job_description") or ""),
+            "easy_apply_confirmed": bool(state.get("easy_apply_confirmed", False)),
+            "fit_decision": str(state.get("fit_decision") or ""),
+            "ats_score": state.get("final_ats_score", state.get("initial_ats_score")),
+            "unsupported_requirements": state.get("unsupported_requirements") or [],
+        }
+        br = state.get("blocked_reason")
+        br_s = str(br).strip()[:500] if br else None
+        return application_decision_json_for_tracker_job(
+            job,
+            master_resume_text=str(state.get("master_resume_text") or ""),
+            blocked_reason=br_s,
+        )
+    except Exception:
+        return ""
+
+
+def _application_decision_cell_from_run(run_result, job_metadata: dict) -> str:
+    try:
+        from services.application_decision import application_decision_json_for_tracker_job
+
+        meta = dict(job_metadata or {})
+        job = {
+            "url": str(run_result.job_url or meta.get("job_url") or ""),
+            "apply_url": str(meta.get("apply_url") or run_result.job_url or ""),
+            "company": str(run_result.company or meta.get("company") or ""),
+            "title": str(
+                run_result.position or meta.get("title") or meta.get("position") or ""
+            ),
+            "description": str(meta.get("description") or meta.get("job_description") or ""),
+            "easy_apply_confirmed": bool(meta.get("easy_apply_confirmed", False)),
+            "fit_decision": str(meta.get("fit_decision") or ""),
+            "ats_score": meta.get("ats_score", meta.get("final_ats_score")),
+            "unsupported_requirements": meta.get("unsupported_requirements") or [],
+        }
+        br = meta.get("blocked_reason")
+        if br:
+            br_s = str(br).strip()[:500]
+        elif getattr(run_result, "status", "") == "failed" and getattr(
+            run_result, "error", None
+        ):
+            br_s = str(run_result.error).strip()[:500]
+        else:
+            br_s = None
+        return application_decision_json_for_tracker_job(job, blocked_reason=br_s)
+    except Exception:
+        return ""
 
 
 def _artifacts_manifest_cell(value) -> str:
@@ -159,6 +218,7 @@ def log_application(state: dict):
         "follow_up_note": str(state.get("follow_up_note", "") or ""),
         "interview_stage": str(state.get("interview_stage", "") or ""),
         "offer_outcome": str(state.get("offer_outcome", "") or ""),
+        "application_decision": _application_decision_cell_for_state(state),
     }
     row.update(build_tracker_row_extras(state))
     if USE_DB:
@@ -179,6 +239,89 @@ def log_application(state: dict):
     return state
 
 
+def _submission_status_for_run_result(run_result) -> str:
+    """Human-readable submission_status from runner status + error text."""
+    st = str(getattr(run_result, "status", "") or "")
+    err = str(getattr(run_result, "error", "") or "")
+    el = err.lower()
+    if st == "applied":
+        return "Applied"
+    if st == "manual_assist_ready":
+        return "Manual Assist Ready"
+    if st == "dry_run":
+        return "Dry Run Complete"
+    if st == "failed":
+        if "checkpoint" in el or "challenge" in el or "verification" in el:
+            return "Failed – Login Challenge"
+        return "Failed – Form Unmapped"
+    if st == "skipped":
+        if el.strip() == "no_url" or el.startswith("no_url"):
+            return "Skipped – No URL"
+        if "easy_apply_only" in el or (
+            "external ats" in el and "not processed" in el
+        ):
+            return "Skipped – External ATS"
+        if el.startswith("policy_blocked") or "policy_blocked" in el:
+            if "unsupported_requirements" in el:
+                return "Skipped – Unsupported Requirements"
+            if "ats_score" in el:
+                return "Skipped – Low ATS"
+            if "fit_decision" in el:
+                return "Skipped – Low Fit"
+            return "Skipped – Policy"
+        return "Skipped – Low Fit"
+    return st if st else "Unknown"
+
+
+def build_runner_tracker_metadata(job: dict, **extra: Any) -> dict:
+    """
+    Policy + job fields for ``log_application_from_result`` (MCP batch apply, CLI).
+    Pass optional overrides via keyword args (e.g. ``user_id``, ``workspace_id``).
+    """
+    from services.policy_service import policy_from_exported_job
+
+    j = job if isinstance(job, dict) else {}
+    mode, reason = policy_from_exported_job(j)
+    meta = {
+        "job_id": j.get("job_id", ""),
+        "fit_decision": j.get("fit_decision", ""),
+        "ats_score": j.get("ats_score", j.get("final_ats_score")),
+        "apply_mode": mode,
+        "policy_reason": reason,
+        "easy_apply_confirmed": j.get("easy_apply_confirmed"),
+        "description": (j.get("description", "") or "")[:2000],
+        "unsupported_requirements": j.get("unsupported_requirements") or [],
+        "apply_url": j.get("apply_url") or j.get("applyUrl") or "",
+    }
+    for k, v in extra.items():
+        if v is not None:
+            meta[k] = v
+    return meta
+
+
+def log_runner_result_to_tracker(
+    job: dict,
+    run_result,
+    resume_path: str = "",
+    cover_path: str = "",
+    **metadata_overrides: Any,
+) -> Optional[str]:
+    """
+    Log any ApplicationRunner outcome (applied, skipped, failed, dry_run, manual_assist_ready).
+    Swallows errors so automation never fails on tracker I/O.
+    """
+    try:
+        meta = build_runner_tracker_metadata(job, **metadata_overrides)
+        return log_application_from_result(
+            run_result,
+            resume_path=resume_path,
+            cover_path=cover_path,
+            job_metadata=meta,
+        )
+    except Exception:
+        return None
+
+
 def log_application_from_result(run_result, resume_path: str = "", cover_path: str = "", job_metadata: dict = None):
     """
     Log from ApplicationRunner RunResult. Used by scripts/apply_linkedin_jobs.py.
@@ -194,13 +337,6 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     if ar:
         qa_combined["_answerer_review"] = ar
     qa_json = json.dumps(qa_combined) if qa_combined else ""
-    status_map = {
-        "applied": "Applied",
-        "manual_assist_ready": "Manual Assist Ready",
-        "skipped": "Skipped – Low Fit",
-        "dry_run": "Dry Run Complete",
-        "failed": "Failed – Form Unmapped",
-    }
 
     row = {
         "id": str(uuid.uuid4()),
@@ -211,7 +347,7 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "company": run_result.company,
         "position": run_result.position,
         "status": "Applied" if run_result.status == "applied" else ("Interviewing" if run_result.status == "manual_assist_ready" else "Rejected"),
-        "submission_status": status_map.get(run_result.status, run_result.status),
+        "submission_status": _submission_status_for_run_result(run_result),
         "easy_apply_confirmed": job_metadata.get("easy_apply_confirmed", ""),
         "apply_mode": job_metadata.get("apply_mode", ""),
         "policy_reason": str(job_metadata.get("policy_reason", "") or ""),
@@ -235,6 +371,9 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "follow_up_note": "",
         "interview_stage": "",
         "offer_outcome": "",
+        "application_decision": _application_decision_cell_from_run(
+            run_result, job_metadata
+        ),
     }
     merge_state = {
         "job_url": run_result.job_url,

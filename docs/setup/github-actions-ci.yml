@@ -1,4 +1,5 @@
-# Copy to .github/workflows/ci.yml to enable GitHub Actions.
+# Canonical CI lives at ../../.github/workflows/ci.yml in this repo.
+# Copy this file to .github/workflows/ci.yml only if your fork removed the default workflow.
 # Pushing files under .github/workflows/ requires a PAT with the **workflow** scope.
 # Pytest + profile/startup smoke (no Redis required for API job test — mocked enqueue).
 name: CI

@@ -358,6 +358,23 @@ class DecideApplyModeRequest(BaseModel):
     unsupported_requirements: List[str] = Field(default_factory=list)
 
 
+class ApplicationDecisionRequest(BaseModel):
+    """Full v0.1 decision (MCP ``get_application_decision`` parity): job_state, safe_to_submit, answers."""
+
+    job: Dict[str, Any] = Field(default_factory=dict)
+    profile_path: str = Field(
+        default="",
+        max_length=2000,
+        description="Optional project-relative path to candidate_profile.json; empty uses default",
+    )
+    master_resume_text: str = Field(default="", max_length=600_000)
+    blocked_reason: str = Field(
+        default="",
+        max_length=2000,
+        description="Optional runner hard-stop reason (forces job_state=blocked)",
+    )
+
+
 class ValidateProfileRequest(BaseModel):
     """Optional ``profile_path`` (project-relative only); empty uses default/env profile."""
 
@@ -549,6 +566,36 @@ def ats_decide_apply_mode(body: DecideApplyModeRequest):
         fit_decision=raw.get("fit_decision") or "",
         ats_score=raw.get("ats_score"),
         unsupported_requirements=raw.get("unsupported_requirements") or [],
+    )
+
+
+@api_router.post("/ats/application-decision", tags=["ats"])
+def ats_application_decision(body: ApplicationDecisionRequest):
+    """Return v0.1 application decision: ``job_state``, ``safe_to_submit``, per-field answer states (MCP parity)."""
+    from services.application_decision import build_application_decision
+    from services.profile_service import load_profile, resolve_profile_path_for_api
+
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
+    job = raw.get("job") or {}
+    pp = (raw.get("profile_path") or "").strip()
+    if pp:
+        try:
+            resolved = resolve_profile_path_for_api(pp)
+            prof = load_profile(resolved)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    else:
+        prof = load_profile()
+
+    return build_application_decision(
+        job,
+        profile=prof,
+        master_resume_text=raw.get("master_resume_text") or "",
+        use_llm_preview=False,
+        blocked_reason=(raw.get("blocked_reason") or "").strip() or None,
     )
 
 

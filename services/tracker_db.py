@@ -37,6 +37,7 @@ TRACKER_COLUMNS = [
     "truth_safe_ats_ceiling",
     "selected_address_label",
     "package_field_stats",
+    "application_decision",
 ]
 
 FOLLOW_UP_COLUMN_SET = frozenset({"follow_up_at", "follow_up_status", "follow_up_note"})
@@ -198,6 +199,7 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             truth_safe_ats_ceiling TEXT DEFAULT '',
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
+            application_decision TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -250,6 +252,11 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
     if "workspace_id" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN workspace_id TEXT DEFAULT ''")
         conn.commit()
+    if "application_decision" not in cols:
+        conn.execute(
+            "ALTER TABLE applications ADD COLUMN application_decision TEXT DEFAULT ''"
+        )
+        conn.commit()
 
 
 def _init_schema_postgres(conn) -> None:
@@ -291,6 +298,7 @@ def _init_schema_postgres(conn) -> None:
             truth_safe_ats_ceiling TEXT DEFAULT '',
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
+            application_decision TEXT DEFAULT '',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -309,6 +317,7 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "selected_address_label", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
     _pg_ensure_column(conn, "workspace_id", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "application_decision", "TEXT DEFAULT ''")
 
 
 def migrate_from_csv_sqlite(conn: sqlite3.Connection) -> int:
@@ -402,6 +411,8 @@ def _row_vals(row, col: str) -> str:
         if not s:
             return "{}"
         return s[:8000]
+    if col == "application_decision":
+        return str(v or "")[:31000]
     if col == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]
@@ -465,6 +476,8 @@ def _cell(row: dict, c: str) -> str:
         return str(v or "")[:2000]
     if c in ("interview_stage", "offer_outcome"):
         return str(v or "").strip()[:120]
+    if c == "application_decision":
+        return str(v or "")[:31000]
     if c == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]

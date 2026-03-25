@@ -1,0 +1,119 @@
+# Production readiness audit & phased roadmap (to 100% supervised + narrow autonomy)
+
+**Purpose:** Honest snapshot of **this repo today** plus a **week-by-week style plan**. Scores are directional (not a formal certification).
+
+**North-star docs:** [SYSTEM_VISION.md](SYSTEM_VISION.md), [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md), [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md), [MARKET_PRODUCTION_ROADMAP.md](MARKET_PRODUCTION_ROADMAP.md), [MARKET_PRODUCTION_AUDIT_CHECKLIST.md](MARKET_PRODUCTION_AUDIT_CHECKLIST.md).
+
+---
+
+## Scorecard (working)
+
+| Dimension | Score | Note |
+|-----------|-------|------|
+| **Supervised / hosted platform** | **~7.5–8 / 10** | FastAPI, Celery, Redis, Postgres tracker path, Docker, auth, migrations, metrics hooks |
+| **Autonomous apply (market claim)** | **~4.5 / 10** | Easy Apply path exists; checkpoints, DOM drift, and policy evidence limit “hands-off” claims |
+| **Policy in product surface** | **~5 / 10** | Decision payload exists (MCP + REST); **not** yet first-class in DB + Streamlit UX |
+
+---
+
+## Current strengths (accurate for this repo)
+
+- **Platform:** FastAPI + Celery + Redis; Postgres tracker via Alembic; `APP_ENV=production` / strict startup gates; [DEPLOY.md](DEPLOY.md), Docker Compose.
+- **Truth & fit:** Master resume guard, truth inventory, fit gate, internal ATS + iterative optimizer (truth-safe ceiling); profile service + validation.
+- **Execution:** Playwright apply runner, screenshots, policy in `application_runner` / `policy_service`.
+- **Tracking:** Application tracker (CSV / SQLite / Postgres) with rich columns; admin/insights APIs.
+- **Policy v0.1:** `services/application_decision.build_application_decision`, MCP `get_application_decision`, `POST /api/ats/application-decision` — structured `job_state`, per-field `answer_state`, `truth_safe`, `submit_safe`, `safe_to_submit` ([MCP_APPLICATION_DECISION_CONTRACT.md](MCP_APPLICATION_DECISION_CONTRACT.md)).
+- **Docs & positioning:** README production scope; CI badge; vision/scope/autonomy/roadmap/external ATS strategy docs.
+- **CI:** [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — pytest, example profile validation, `check_startup.py app` (extend with ruff/mypy when ready).
+
+---
+
+## Real gaps (what still blocks “100% supervised story”)
+
+| Gap | Detail |
+|-----|--------|
+| **Persistence** | `job_state` / decision JSON **not** stored on tracker rows by default; replay and audits rely on exports/logs. |
+| **DB enums** | No Alembic migration adding dedicated `job_state` / `answer_state` columns; tracker uses strings (`apply_mode`, `policy_reason`, etc.). |
+| **Streamlit supervision UX** | No prominent **job_state** + **answer_state** grid, “approve submit” gate, or shadow-mode toggle wired to `build_application_decision`. |
+| **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
+| **Shadow mode** | Not implemented as a first-class run mode (log “would have applied” vs human). |
+| **CI depth** | Ruff/mypy not required in CI yet; coverage targets not enforced. |
+
+---
+
+## Phase 1 — 10/10 supervised product (order of work)
+
+**Goal:** Credible **supervised, policy-gated** positioning with **visible** policy in UI and durable audit.
+
+### Policy & API (partially done)
+
+- [x] Structured **job_state** / **apply_mode_legacy** / **safe_to_submit** in service + MCP + REST.
+- [x] Per canonical screening field: **answer_state**, **truth_safe**, **submit_safe** (heuristic from answerer `reason_codes`).
+- [ ] **Persist** last decision snapshot on tracker write paths (apply export, API optional `application_id`).
+- [ ] **Optional:** SQLAlchemy/Alembic columns or JSONB for `application_decision` + indexed `job_state`.
+
+### UI supervision
+
+- [ ] Streamlit: show **job_state** and **critical_unsatisfied** from `build_application_decision` (or API).
+- [ ] **manual_assist:** table of fields with safe/review/missing + autofill preview.
+- [ ] **safe_auto_apply:** show preconditions checklist + link to dry-run / screenshots (when available).
+- [ ] Explicit **“I approve submit”** logging (audit trail) before live submit in UI flows.
+
+### Truth validation
+
+- [x] Truth inventory + profile validation paths (MCP + scripts).
+- [ ] **Hard gate:** block or downgrade apply when critical profile/truth missing (single function called from runner + UI).
+
+### CI & observability
+
+- [x] **CI:** pytest + startup smoke on `main`/PRs.
+- [ ] Add **ruff** (and optionally **mypy**) to CI when the tree is clean enough.
+- [ ] Document or ship example **dashboard queries** (job_state, apply outcomes) using existing metrics/tracker exports.
+
+**Phase 1 exit:** Supervised story is **demonstrable** in UI + DB, not only in MCP/REST payloads.
+
+---
+
+## Phase 2 — Shadow autonomy (4–6 weeks)
+
+- [ ] Compute `safe_auto_apply` + `safe_to_submit` but **do not** click submit; log intent vs human outcome.
+- [ ] Metrics: alignment rate, false positive/negative estimates, DOM failure rate.
+- [ ] Tune fit/ATS thresholds from shadow data.
+- [ ] UI toggle: shadow vs live supervised.
+
+---
+
+## Phase 3 — Narrow production autonomy (6–8 weeks)
+
+- [ ] Pilot cohort; enable real auto-submit only for filtered LinkedIn Easy Apply + telemetry rollback.
+- [ ] Auto-downgrade patterns that spike failures.
+- [ ] Public readiness subsection (evidence, scope, limits) in docs + release notes.
+
+---
+
+## Phase 4 — Scale & polish (ongoing)
+
+- Multi-tenant hardening, mobile/PWA approvals, role templates, analytics on response rates by state — **roadmap only** until Phase 1–3 are stable.
+
+---
+
+## “Next 48 hours” checklist (reconciled with repo)
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | Enums / DB columns for `job_state` | **Open** — design migration + tracker write path |
+| 2 | MCP decision structured states | **Done** — `get_application_decision` + `build_application_decision` |
+| 3 | README “Current production scope” + doc links | **Done** |
+| 4 | `.github/workflows/ci.yml` | **Done** (pytest + profile + startup; extend later) |
+| 5 | Vision docs committed | **Done** — `SYSTEM_VISION`, `PRODUCT_SCOPE`, `AUTONOMY_MODEL`, `MARKET_PRODUCTION_ROADMAP`, plus audit checklist, external ATS, decision contract |
+
+**Actual immediate priorities:** tracker **persistence** for decision JSON, Streamlit **policy panel**, then **ruff in CI**.
+
+---
+
+## External references (background)
+
+- FastAPI + Celery patterns: [TestDriven.io — FastAPI and Celery](https://testdriven.io/blog/fastapi-and-celery/)
+- General production mindset (video): [YouTube — Ct6-2x_F-Og](https://www.youtube.com/watch?v=Ct6-2x_F-Og)
+
+These are **context**, not requirements of this codebase.

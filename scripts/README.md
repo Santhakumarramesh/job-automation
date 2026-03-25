@@ -70,6 +70,11 @@ curl -sS -X POST http://127.0.0.1:8000/api/ats/decide-apply-mode \
   -H "Content-Type: application/json" \
   -d '{"job":{"url":"https://www.linkedin.com/jobs/view/1/","easy_apply_confirmed":true},"fit_decision":"apply","ats_score":90,"unsupported_requirements":[]}' | python -m json.tool
 
+# Full v0.1 decision: job_state, safe_to_submit, per-field answer_state (MCP ``get_application_decision`` parity)
+curl -sS -X POST http://127.0.0.1:8000/api/ats/application-decision \
+  -H "Content-Type: application/json" \
+  -d '{"job":{"url":"https://www.linkedin.com/jobs/view/1/","easy_apply_confirmed":true,"fit_decision":"apply","ats_score":90,"unsupported_requirements":[]},"profile_path":"config/candidate_profile.example.json","master_resume_text":"","blocked_reason":""}' | python -m json.tool
+
 # Form type from URL (linkedin | greenhouse | lever | workday | generic)
 curl -sS "http://127.0.0.1:8000/api/ats/form-type?url=https://www.linkedin.com/jobs/view/1/" | python -m json.tool
 
@@ -237,4 +242,4 @@ curl -sS -X POST http://127.0.0.1:8000/api/ats/apply-to-jobs/dry-run \
 
 Optional: `API_RATE_LIMIT_LINKEDIN_BROWSER_PER_MINUTE` caps **confirm-easy-apply**, **apply-to-jobs**, and **apply-to-jobs/dry-run** in one shared bucket (works even when the global API limiter is off).
 
-**CI (GitHub Actions):** copy [`docs/setup/github-actions-ci.yml`](../docs/setup/github-actions-ci.yml) to `.github/workflows/ci.yml`. Pushing workflow files needs a GitHub PAT with the **workflow** scope.
+**CI (GitHub Actions):** workflow is [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) (pytest, example profile, startup check). [`docs/setup/github-actions-ci.yml`](../docs/setup/github-actions-ci.yml) is a sync template for forks. Pushing new workflow files needs a GitHub PAT with the **workflow** scope.

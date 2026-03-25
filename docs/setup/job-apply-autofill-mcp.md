@@ -13,7 +13,7 @@ Resumes are **renamed per job**: `{Name}_{Position}_at_{Company}_Resume.pdf`
 
   **Discovery:** `prepare_resume_for_job`, `get_autofill_values` (REST: ``POST /api/ats/autofill-values``), `detect_form_type` (REST: ``GET /api/ats/form-type``), `confirm_easy_apply`
 
-  **Decision:** `decide_apply_mode`, `get_address_for_job`, `validate_candidate_profile` (REST: ``POST /api/ats/validate-profile``), `score_job_fit`, `batch_prioritize_jobs` (REST: ``POST /api/ats/batch-prioritize-jobs``)
+  **Decision:** `decide_apply_mode`, `get_application_decision` (v0.1: `job_state`, `safe_to_submit`, per-field `answer_state` / `truth_safe` / `submit_safe`; REST: ``POST /api/ats/application-decision``), `get_address_for_job`, `validate_candidate_profile` (REST: ``POST /api/ats/validate-profile``), `score_job_fit`, `batch_prioritize_jobs` (REST: ``POST /api/ats/batch-prioritize-jobs``)
 
   **Execution:** `apply_to_jobs`, `dry_run_apply_to_jobs`, `prepare_application_package`
 
@@ -121,6 +121,7 @@ Replace `/path/to/Career Copilot MCP` with your project root.
 | Tool | Purpose |
 |------|---------|
 | `decide_apply_mode` | Central policy: auto_easy_apply \| manual_assist \| skip; REST: ``POST /api/ats/decide-apply-mode`` |
+| `get_application_decision` | Full v0.1 decision: `job_state`, `safe_to_submit`, `answers` with `answer_state` / truth & submit flags |
 | `validate_candidate_profile` | Check profile completeness, auto_apply_ready; REST: ``POST /api/ats/validate-profile`` |
 | `score_job_fit` | Fit score, ATS score, missing keywords, unsupported requirements; REST: ``POST /api/ats/score-job-fit`` |
 | `confirm_easy_apply` | Open job page, verify Easy Apply button exists |

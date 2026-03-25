@@ -505,6 +505,35 @@ def test_post_ats_decide_apply_mode_skip_on_reject_fit():
     assert data.get("apply_mode") == "skip"
 
 
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_application_decision_skip():
+    r = client.post(
+        "/api/ats/application-decision",
+        json={
+            "job": {
+                "url": "https://www.linkedin.com/jobs/view/123/",
+                "easy_apply_confirmed": True,
+                "fit_decision": "reject",
+            },
+            "profile_path": "config/candidate_profile.example.json",
+        },
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("schema_version") == "0.1"
+    assert data.get("job_state") == "skip"
+    assert data.get("safe_to_submit") is False
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_application_decision_profile_path_traversal():
+    r = client.post(
+        "/api/ats/application-decision",
+        json={"job": {}, "profile_path": "../.env"},
+    )
+    assert r.status_code == 400
+
+
 def test_decide_apply_mode_payload_skip_without_app():
     from services.policy_service import decide_apply_mode_payload
 
@@ -575,6 +604,7 @@ def test_openapi_schema_grouped_by_tags():
     assert "/api/ats/score-job-fit" in paths
     assert "/api/ats/address-for-job" in paths
     assert "/api/ats/decide-apply-mode" in paths
+    assert "/api/ats/application-decision" in paths
     assert "/api/ats/form-type" in paths
     assert "/api/ats/validate-profile" in paths
     assert "/api/ats/autofill-values" in paths

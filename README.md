@@ -1,10 +1,32 @@
 # Career Co-Pilot Pro: Job Application Automation
 
-AI-powered system to automate job discovery, resume tailoring, and interview preparation with ATS-oriented matching.
+[![CI](https://github.com/Santhakumarramesh/career-co-pilot-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/Santhakumarramesh/career-co-pilot-pro/actions/workflows/ci.yml)
+
+**Production-minded candidate-ops platform** with **supervised, policy-gated** automation: job discovery, truthful resume tailoring, and application workflows. Auto-submit is **narrow and gated** (LinkedIn Easy Apply only, when policy allows); treat browser automation as **operator-supervised**, not hands-off production.
+
+### Current production scope
+
+**Start here:** [docs/SYSTEM_VISION.md](docs/SYSTEM_VISION.md) — full blueprint (MCP vs OpenClaw vs Claude layers, control model, workflow phases, north star).
+
+| Doc | Role |
+|-----|------|
+| [docs/SYSTEM_VISION.md](docs/SYSTEM_VISION.md) | Single entry‑point blueprint for contributors and operators |
+| [docs/PRODUCT_SCOPE.md](docs/PRODUCT_SCOPE.md) | What the product is / is not; in‑scope vs out‑of‑scope; autonomy levels |
+| [docs/AUTONOMY_MODEL.md](docs/AUTONOMY_MODEL.md) | Job & answer states; truth vs submission safety; `safe_to_submit` |
+| [docs/MARKET_PRODUCTION_ROADMAP.md](docs/MARKET_PRODUCTION_ROADMAP.md) | Phased ladder: supervised product → shadow autonomy → narrow production autonomy |
+| [docs/EXTERNAL_ATS_MANUAL_ASSIST.md](docs/EXTERNAL_ATS_MANUAL_ASSIST.md) | Workday / Greenhouse = **manual_assist** assisted autofill only, never `safe_auto_apply` in v1 |
+
+Implementation checklist and scores: [docs/MARKET_PRODUCTION_AUDIT_CHECKLIST.md](docs/MARKET_PRODUCTION_AUDIT_CHECKLIST.md). **Audit vs reality + phased roadmap:** [docs/PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](docs/PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md). Technical decision payload (v0): [docs/MCP_APPLICATION_DECISION_CONTRACT.md](docs/MCP_APPLICATION_DECISION_CONTRACT.md).
 
 ## 🚀 Overview
 
 This repository provides a **prototype / early automation platform** for AI/ML professionals: Streamlit UI, job discovery (Apify, LinkedIn MCP), ATS-oriented resume tailoring, and document generation.
+
+### What this is not
+
+- **Not** a fully autonomous “apply bot” — external ATS is **manual-assist**; LinkedIn auto-apply is **Easy Apply + policy checks** and still benefits from human oversight.
+- **Not** guaranteed zero-error browser automation — logins, checkpoints, and site changes can break flows.
+- **Not** a guarantee of employer ATS outcomes — internal scores are optimization hints, not vendor ATS promises.
 
 ### Key Features
 - **ATS-Oriented Scorer**: Rule-based + LLM semantic analysis; maximizes truthful keyword match (not a guarantee of passing real employer ATS).
@@ -13,8 +35,8 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Job Discovery**: Apify actors and LinkedIn MCP. See [docs/setup/linkedin-mcp.md](docs/setup/linkedin-mcp.md).
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
-- **Career Copilot MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md).
-- **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), and [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md).
+- **Career Copilot MCP**: LinkedIn Easy Apply (policy-gated auto lane when enabled) and **assisted autofill** for Workday/Greenhouse/Lever — external ATS stay **manual_assist** (you submit). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md) and [docs/EXTERNAL_ATS_MANUAL_ASSIST.md](docs/EXTERNAL_ATS_MANUAL_ASSIST.md).
+- **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md). **CI:** `.github/workflows/ci.yml` (pytest, example profile, startup check).
 
 ### Automation Rules (explicit)
 

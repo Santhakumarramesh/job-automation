@@ -131,7 +131,7 @@ def apply_to_jobs_payload(
             save_run_results,
         )
 
-        from services.application_tracker import log_application_from_result
+        from services.application_tracker import log_runner_result_to_tracker
         from services.profile_service import load_profile
     except ImportError as e:
         return {"status": "error", "message": f"Import failed: {e}. Install: pip install playwright mcp && playwright install chromium"}
@@ -279,6 +279,7 @@ def apply_to_jobs_payload(
                     )
                     run_results.append(rr)
                     results.append({"company": j.get("company", ""), "status": "skipped", "reason": "no_url"})
+                    log_runner_result_to_tracker(j, rr, resume_path=config.resume_path or "")
                     continue
                 result = await run_application(page, j, config, screenshot_dir=screenshot_dir)
                 run_results.append(result)
@@ -292,24 +293,9 @@ def apply_to_jobs_payload(
                         "answerer_review_field_keys": list((result.answerer_review or {}).keys())[:12],
                     }
                 )
+                log_runner_result_to_tracker(j, result, resume_path=config.resume_path or "")
                 if result.status == "applied":
                     applied += 1
-                    try:
-                        from services.policy_service import policy_from_exported_job
-
-                        mode, reason = policy_from_exported_job(j)
-                        meta = {
-                            "job_id": j.get("job_id", ""),
-                            "fit_decision": j.get("fit_decision", ""),
-                            "ats_score": j.get("ats_score", j.get("final_ats_score")),
-                            "apply_mode": mode,
-                            "policy_reason": reason,
-                            "easy_apply_confirmed": j.get("easy_apply_confirmed"),
-                            "description": j.get("description", "")[:2000],
-                        }
-                        log_application_from_result(result, resume_path=config.resume_path or "", job_metadata=meta)
-                    except Exception:
-                        pass
 
             await browser.close()
 

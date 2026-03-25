@@ -1,5 +1,9 @@
 # Production Readiness
 
+**Scope & autonomy (product narrative):** [SYSTEM_VISION.md](SYSTEM_VISION.md), [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md), [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md), [MARKET_PRODUCTION_ROADMAP.md](MARKET_PRODUCTION_ROADMAP.md).
+
+**Audit & phased roadmap (scores, gaps, 48h checklist reconciled):** [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md).
+
 ## Current status: **API + workers deployable with discipline; auto-apply remains higher risk**
 
 | Aspect | Status | Notes |
@@ -9,6 +13,8 @@
 | Hosted API / tracker / workers | ✅ Good | Auth (API key, JWT HS256 or OIDC JWKS, M2M), startup gates, metrics hooks — see [PHASE_5_PLAN.md](PHASE_5_PLAN.md), [DEPLOY.md](DEPLOY.md) |
 | Reliability for live auto-apply | ⚠️ Medium | LinkedIn Easy Apply works; external ATS fragile; login checkpoints |
 | “Hands-off” production for browser apply | ❌ Not guaranteed | Treat as operator-supervised; see Known gaps |
+
+For **positioning, MCP-first policy contract, and supervised v1 vs narrow v2 automation**, see [MARKET_PRODUCTION_AUDIT_CHECKLIST.md](MARKET_PRODUCTION_AUDIT_CHECKLIST.md).
 
 ## Enforced at startup (`APP_ENV=production` or `STRICT_STARTUP=1`)
 

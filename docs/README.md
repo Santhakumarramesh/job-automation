@@ -20,6 +20,14 @@
 | [DATA_RETENTION.md](DATA_RETENTION.md) | On-disk artifacts, TTLs, operator cleanup (Phase 4.4) |
 | [FOLLOW_UPS.md](FOLLOW_UPS.md) | Tracker follow-up queue & API (Phase 12) |
 | [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Prototype status and rules |
+| [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md) | Audit vs repo reality + phased plan to 100% supervised / narrow autonomy |
+| [SYSTEM_VISION.md](SYSTEM_VISION.md) | **Entry point** — full system blueprint (layers, control model, phases) |
+| [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) | Product guarantees, autonomy levels, in/out of scope |
+| [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md) | Job/answer states, truth vs submit safety, auto‑submit eligibility |
+| [MARKET_PRODUCTION_ROADMAP.md](MARKET_PRODUCTION_ROADMAP.md) | Phases: supervised → shadow autonomy → narrow production autonomy |
+| [MARKET_PRODUCTION_AUDIT_CHECKLIST.md](MARKET_PRODUCTION_AUDIT_CHECKLIST.md) | Market positioning, MCP policy roadmap, v1 vs v2 automation |
+| [MCP_APPLICATION_DECISION_CONTRACT.md](MCP_APPLICATION_DECISION_CONTRACT.md) | Unified `job_state` / `answer_state` / `safe_to_submit` design (roadmap) |
 | [FIX_ROADMAP.md](FIX_ROADMAP.md) | Checklist reconciliation |
 | [TWO_LANE_APPLY_STRATEGY.md](TWO_LANE_APPLY_STRATEGY.md) | Auto-apply vs manual-assist lanes |
+| [EXTERNAL_ATS_MANUAL_ASSIST.md](EXTERNAL_ATS_MANUAL_ASSIST.md) | Workday / Greenhouse: manual_assist, adapters, messaging |
 | [setup/](setup/README.md) | LinkedIn MCP & Career Copilot MCP setup |
