@@ -130,9 +130,9 @@ OpenClaw **should:**
 
 **Goal:** Correct risk expectations.
 
-- [ ] Label browser apply: **supervised**; **dry-run first** for new environments.
-- [ ] Document: LinkedIn checkpoints; external ATS fragility; manual-assist default off LinkedIn.
-- [ ] Operating modes: human-in-the-loop for all non–`safe_auto_apply`; dry-run before hands-off.
+- [x] Label browser apply: **supervised**; **dry-run first** for new environments.
+- [x] Document: LinkedIn checkpoints; external ATS fragility; manual-assist default off LinkedIn.
+- [x] Operating modes: human-in-the-loop for all non–`safe_auto_apply`; dry-run before hands-off.
 
 **Status:** Docs **green** in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md); marketing must stay aligned **yellow**.
 

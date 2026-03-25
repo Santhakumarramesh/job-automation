@@ -53,6 +53,15 @@ Set `API_RATE_LIMIT_ENABLED=1` for a per-client sliding window on the FastAPI pr
 3. **Login automation risk** — LinkedIn checkpoint/challenge pages can break the flow.
 4. **Dry run first** — Recommended: run with `dry_run=True` before live submit.
 
+## Browser apply stance (explicit)
+
+Treat any browser automation (LinkedIn Easy Apply modal fill, checkpoint handling, screenshots) as **operator-supervised**, not hands-off production.
+
+- **Supervised by default:** live submit is only allowed when all policy gates pass and the operator has an evidence trail (dry-run/shadow first for new environments).
+- **Dry-run first:** for any new job class, credentials, or Easy Apply template pattern, run at least one `dry_run=True` pass before enabling live submit.
+- **Human-in-the-loop:** for any non-`safe_auto_apply` lane (or when answerer-filled fields require review), pause and require human confirmation/edit before submit.
+- **External ATS is manual-assist:** Greenhouse/Lever/Workday autofill is best-effort and should be treated as operator-assisted; use the manual-assist workflow rather than hands-off claims.
+
 ## Before trusting for live applying
 
 - Run at least one `dry_run=True` pass
