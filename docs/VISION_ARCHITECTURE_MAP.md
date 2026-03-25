@@ -121,7 +121,7 @@ Legend: **✅** in place · **⚠️** partial / needs hardening · **📋** pla
 | 9 | Address by job location (truthful) | `mailing_address`, **`alternate_mailing_addresses`**, `services/address_for_job.py`, `job_location_match` haystack helpers, MCP `get_address_for_job`, package `address_selection` | **✅** selector; optional Streamlit row wiring **📋** |
 | 10 | Humanized answer engine | `agents/application_answerer.py` | Manual-review flags; feed exports / policy **⚠️** |
 | 11 | Central policy engine | `services/policy_service.py`, `providers/job_source.py` | `decide_apply_mode()` + LinkedIn **`/jobs/`** + apply-target gate + **answerer** `manual_review` → `manual_assist` **✅** |
-| 12 | MCP tool layer | `mcp_servers/job_apply_autofill/server.py` | Map wish-list tools to existing + gaps **⚠️** |
+| 12 | MCP tool layer (Career Copilot MCP) | `mcp_servers/job_apply_autofill/server.py` | Map wish-list tools to existing + gaps **⚠️** |
 | 13 | Auto-apply execution | `agents/application_runner.py` | Easy Apply–only auto path; external ATS not auto-submit |
 | 14 | Manual-assist lane | UI export, MCP package, runner `manual_assist` | External ATS heuristics **⚠️** |
 | 15 | Tracking & audit | `services/application_tracker.py`, `services/tracker_db.py`, `services/tracker_context.py`, `services/observability.py` | CSV / SQLite / Postgres + API + audit columns (`ats_*`, ceiling, address label, package stats) |

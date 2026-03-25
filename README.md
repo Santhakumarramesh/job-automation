@@ -13,7 +13,7 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Job Discovery**: Apify actors and LinkedIn MCP. See [docs/setup/linkedin-mcp.md](docs/setup/linkedin-mcp.md).
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
-- **Job Apply Autofill MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md).
+- **Career Copilot MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md).
 - **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), and [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md).
 
 ### Automation Rules (explicit)
@@ -36,7 +36,7 @@ No guarantees: ATS pass, shortlist, or job placement. This is a prototype.
 | `scripts/` | CLI tools (LinkedIn apply, PDF regen) |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md), [target workflow](docs/TARGET_OPERATING_MODEL.md), [module map](docs/WORKFLOW_MODULE_MAP.md), [DB migrations](docs/MIGRATIONS.md), [object storage](docs/OBJECT_STORAGE.md), [secrets & config](docs/SECRETS_AND_CONFIG.md), [observability](docs/OBSERVABILITY.md), [setup guides](docs/setup/README.md) |
 | `alembic/` | Postgres tracker schema revisions (see [MIGRATIONS.md](docs/MIGRATIONS.md)) |
-| `mcp_servers/` | Job Apply Autofill MCP |
+| `mcp_servers/` | Career Copilot MCP |
 | `run_streamlit.py` | Streamlit entrypoint |
 
 ## 🏗️ Architecture
@@ -66,7 +66,7 @@ graph TD
 
 2. **Configure** (optional): Copy `.env.example` to `.env` and add `OPENAI_API_KEY`, `APIFY_API_TOKEN` (or enter in sidebar).
 
-3. **MCP/Apply** (optional): For Job Apply Autofill and LinkedIn apply flows:
+3. **MCP/Apply** (optional): For Career Copilot MCP and LinkedIn apply flows:
    ```bash
    pip install -r requirements-mcp.txt
    playwright install chromium

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Job Apply Autofill MCP Server
+Career Copilot MCP — job application automation server.
 
 Exposes tools for quick job application autofill (JobRight-style):
 - LinkedIn Easy Apply (primary)
@@ -28,17 +28,17 @@ except ImportError:
     sys.exit(1)
 
 _MCP_INSTRUCTIONS = (
-    "Autofill job applications on LinkedIn Easy Apply and external ATS "
+    "Career Copilot MCP — autofill job applications on LinkedIn Easy Apply and external ATS "
     "(Greenhouse, Lever, Workday). Resume renamed per job."
 )
 try:
-    mcp = FastMCP("job_apply_autofill", description=_MCP_INSTRUCTIONS)
+    mcp = FastMCP("Career Copilot MCP", description=_MCP_INSTRUCTIONS)
 except TypeError:
     # fastmcp >=2: ``description`` removed; optional ``instructions`` on some versions
     try:
-        mcp = FastMCP("job_apply_autofill", instructions=_MCP_INSTRUCTIONS)
+        mcp = FastMCP("Career Copilot MCP", instructions=_MCP_INSTRUCTIONS)
     except TypeError:
-        mcp = FastMCP("job_apply_autofill")
+        mcp = FastMCP("Career Copilot MCP")
 
 
 @mcp.tool()

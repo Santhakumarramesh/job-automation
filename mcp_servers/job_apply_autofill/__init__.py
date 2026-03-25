@@ -1,1 +1,1 @@
-"""Job Apply Autofill MCP Server - LinkedIn Easy Apply + Greenhouse/Lever/Workday."""
+"""Career Copilot MCP — LinkedIn Easy Apply + Greenhouse/Lever/Workday."""

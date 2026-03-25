@@ -22,4 +22,4 @@
 | [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Prototype status and rules |
 | [FIX_ROADMAP.md](FIX_ROADMAP.md) | Checklist reconciliation |
 | [TWO_LANE_APPLY_STRATEGY.md](TWO_LANE_APPLY_STRATEGY.md) | Auto-apply vs manual-assist lanes |
-| [setup/](setup/README.md) | LinkedIn MCP & Job Apply MCP setup |
+| [setup/](setup/README.md) | LinkedIn MCP & Career Copilot MCP setup |

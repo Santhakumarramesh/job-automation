@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "career-copilot-mcp": {
+      "command": "bash",
+      "args": ["/ABSOLUTE/PATH/TO/Career Copilot MCP/start.sh"],
+      "env": {
+        "PYTHONPATH": "/ABSOLUTE/PATH/TO/Career Copilot MCP",
+        "TRACKER_USE_DB": "1",
+        "TRACKER_DB_PATH": "/ABSOLUTE/PATH/TO/career-copilot-output/job_applications.db",
+        "OPENAI_API_KEY": "sk-...",
+        "APIFY_API_TOKEN": "apify_api_...",
+        "LINKEDIN_EMAIL": "you@example.com",
+        "LINKEDIN_PASSWORD": "your_linkedin_password"
+      }
+    }
+  }
+}

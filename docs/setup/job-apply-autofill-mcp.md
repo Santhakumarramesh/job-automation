@@ -1,4 +1,4 @@
-# Job Apply Autofill MCP Server
+# Career Copilot MCP
 
 Quick autofill for job applications (JobRight-style). Works with **LinkedIn Easy Apply** and external ATS when LinkedIn redirects: **Greenhouse**, **Lever**, **Workday**, and other official career sites.
 
@@ -25,7 +25,28 @@ Resumes are **renamed per job**: `{Name}_{Position}_at_{Company}_Resume.pdf`
 
 ## Setup
 
-### 1. Install dependencies
+### 0. Production-style install (system Python, repo root)
+
+From the project root (path may contain spaces — use quotes):
+
+```bash
+bash setup.sh
+bash start.sh
+```
+
+- **`setup.sh`** — `pip install -e ".[mcp]"`, seeds `.env` from `.env.example` if missing.
+- **`start.sh`** — **stdio** MCP (Claude Desktop). Use **`bash start.sh --sse`** for HTTP/SSE (e.g. `curl -sL -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/sse`). Override host/port with `MCP_SSE_HOST` / `MCP_SSE_PORT`.
+
+Claude Desktop: merge **[claude_desktop_config.example.json](claude_desktop_config.example.json)** into your app config (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`), replacing `/ABSOLUTE/PATH/TO/...` with your real repo path.
+
+**Config notes**
+
+- **`start.sh`** (default, no args) runs **`python3 -m mcp_servers.job_apply_autofill.server`** — same module as `mcp_servers/job_apply_autofill/server.py`. Cowork mounts may use `src/career_copilot/`; this Mac layout keeps MCP at `mcp_servers/job_apply_autofill/`.
+- **LLM keys:** In-repo tools (e.g. recruiter follow-up, ATS) expect **`OPENAI_API_KEY`** (see `.env.example`). **`ANTHROPIC_API_KEY`** is for Claude itself, not automatically used by this Python stack unless you wire it.
+- **Tracker:** Optional **`TRACKER_USE_DB=1`** and **`TRACKER_DB_PATH`** (absolute path to SQLite file) match `.env.example`. There is no standard **`OUTPUT_DIR`** env in this repo; omit it or map outputs via documented paths (`generated_resumes/`, etc.).
+- **Secrets:** Prefer a project **`.env`** (not committed) and keep Claude’s `env` block minimal (e.g. `PYTHONPATH` only), *or* use Claude’s `env` only if you accept secrets sitting in `claude_desktop_config.json`. Never paste real passwords into shared chats.
+
+### 1. Install dependencies (manual)
 
 ```bash
 pip install fastmcp playwright mcp
@@ -70,10 +91,10 @@ Edit `~/.cursor/mcp.json` (or Cursor Settings → MCP):
 ```json
 {
   "mcpServers": {
-    "job-apply-autofill": {
+    "career-copilot-mcp": {
       "command": "fastmcp",
       "args": ["run", "mcp_servers/job_apply_autofill/server.py"],
-      "cwd": "/path/to/career-co-pilot-pro"
+      "cwd": "/path/to/Career Copilot MCP"
     }
   }
 }
@@ -84,16 +105,16 @@ Or using Python directly:
 ```json
 {
   "mcpServers": {
-    "job-apply-autofill": {
+    "career-copilot-mcp": {
       "command": "python",
       "args": ["-m", "mcp_servers.job_apply_autofill.server"],
-      "cwd": "/path/to/career-co-pilot-pro"
+      "cwd": "/path/to/Career Copilot MCP"
     }
   }
 }
 ```
 
-Replace `/path/to/career-co-pilot-pro` with your project root.
+Replace `/path/to/Career Copilot MCP` with your project root.
 
 ## Tool reference
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "career-co-pilot-pro"
 version = "0.1.0"
-description = "AI-powered job application automation system"
+description = "Career Copilot — AI-powered job application automation (API, UI, MCP)"
 requires-python = ">=3.10"
 dependencies = [
     # 0.135+ required for Starlette 0.46+ (Router no longer accepts on_startup/on_shutdown)
