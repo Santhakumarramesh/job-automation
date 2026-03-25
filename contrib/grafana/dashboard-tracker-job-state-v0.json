@@ -179,6 +179,35 @@
       ],
       "title": "Applied (safe_to_submit=true) by week",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 41 },
+      "id": 11,
+      "options": { "footer": { "show": false }, "showHeader": true },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(NULLIF(job_state, ''), '(empty)') AS job_state, COUNT(*)::bigint AS total_rows, SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'applied' THEN 1 ELSE 0 END)::bigint AS applied_rows FROM applications WHERE COALESCE(application_decision->>'safe_to_submit', 'false') = 'true' GROUP BY 1 ORDER BY total_rows DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "safe_to_submit by job_state (rows + applied rows)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 41 },
+      "id": 12,
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(NULLIF(job_state, ''), '(empty)') AS job_state, ROUND(100.0 * SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'applied' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS applied_rate_pct FROM applications WHERE COALESCE(application_decision->>'safe_to_submit', 'false') = 'true' GROUP BY 1 ORDER BY applied_rate_pct DESC NULLS LAST;",
+          "refId": "A"
+        }
+      ],
+      "title": "safe_to_submit applied rate by job_state (%)",
+      "type": "bargauge"
     }
   ],
   "refresh": "1m",
