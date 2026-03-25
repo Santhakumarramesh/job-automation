@@ -290,6 +290,61 @@ def test_post_ats_apply_to_jobs_enabled_mocked(mock_payload, monkeypatch):
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_apply_to_jobs_strict_auth_401(monkeypatch):
+    monkeypatch.setenv("API_ATS_LINKEDIN_REQUIRE_AUTH", "1")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.delenv("M2M_API_KEY", raising=False)
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": True,
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.apply_to_jobs_payload")
+def test_post_ats_apply_to_jobs_workspace_mismatch_403(mock_payload, monkeypatch):
+    from app.auth import User, get_current_user
+    from app.main import app
+
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    monkeypatch.setenv("API_ENFORCE_USER_WORKSPACE_ON_WRITES", "1")
+    monkeypatch.delenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", raising=False)
+    app.dependency_overrides[get_current_user] = lambda: User("alice", [], workspace_id="ws-a")
+    try:
+        r = client.post(
+            "/api/ats/apply-to-jobs",
+            json={
+                "jobs": [
+                    {
+                        "title": "Eng",
+                        "company": "Co",
+                        "url": "https://www.linkedin.com/jobs/view/1",
+                        "easy_apply_confirmed": True,
+                        "workspace_id": "ws-other",
+                    }
+                ],
+                "dry_run": True,
+            },
+        )
+        assert r.status_code == 403
+        mock_payload.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 @patch("services.linkedin_browser_automation.confirm_easy_apply_payload")
 def test_post_ats_confirm_easy_apply_enabled_mocked(mock_confirm, monkeypatch):
     monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")

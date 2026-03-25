@@ -98,8 +98,9 @@
 ## Phase 4 — Scale & polish (ongoing)
 
 - [x] **Admin tracker analytics (v0):** `GET /api/admin/tracker-analytics/summary` — rollups by `status`, `submission_status`, `recruiter_response`, cross-tab `status_by_recruiter_response`, `applied_by_recruiter_response`; optional `user_id` / `workspace_id` filters and `max_rows` cap (`services/tracker_analytics.py`).
-- [x] **Workspace on enqueue (v0):** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` + `API_WORKSPACE_ENFORCE_FOR_ADMIN` — `services/workspace_write_guard.py` on `POST /api/jobs` (see [DEPLOY.md](DEPLOY.md)).
-- [ ] Broader multi-tenant hardening (ATS write paths with auth, org-level RBAC beyond workspace string).
+- [x] **Workspace on enqueue (v0):** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` + `API_WORKSPACE_ENFORCE_FOR_ADMIN` — `services/workspace_write_guard.py` on `POST /api/jobs` and LinkedIn batch apply (see [DEPLOY.md](DEPLOY.md)).
+- [x] **LinkedIn ATS auth (v0):** optional `API_ATS_LINKEDIN_REQUIRE_AUTH` — rejects `demo-user` on confirm/apply routes; batch apply stamps `user_id` when missing.
+- [ ] Broader multi-tenant hardening (org-level RBAC beyond workspace string, fine-grained roles).
 - [ ] Mobile/PWA approvals, role templates — roadmap.
 - [ ] Deeper analytics (time series, exports to BI, Grafana panels) — roadmap.
 

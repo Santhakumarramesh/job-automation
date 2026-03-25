@@ -299,6 +299,12 @@ def build_runner_tracker_metadata(job: dict, **extra: Any) -> dict:
         "unsupported_requirements": j.get("unsupported_requirements") or [],
         "apply_url": j.get("apply_url") or j.get("applyUrl") or "",
     }
+    u_row = str(j.get("user_id") or j.get("authenticated_user_id") or "").strip()
+    if u_row:
+        meta["user_id"] = u_row[:240]
+    w_row = str(j.get("workspace_id") or j.get("organization_id") or "").strip()
+    if w_row:
+        meta["workspace_id"] = w_row[:200]
     for k, v in extra.items():
         if v is not None:
             meta[k] = v

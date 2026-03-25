@@ -465,6 +465,14 @@ class ApplyToJobsRequest(BaseModel):
     rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
     manual_assist: bool = False
     require_safeguards: bool = True
+    workspace_id: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "Default workspace_id for jobs that omit it; logged on tracker rows when present. "
+            "With API_ENFORCE_USER_WORKSPACE_ON_WRITES, must match the authenticated tenant."
+        ),
+    )
 
 
 class DryRunApplyToJobsRequest(BaseModel):
@@ -480,6 +488,11 @@ class DryRunApplyToJobsRequest(BaseModel):
     rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
     manual_assist: bool = False
     require_safeguards: bool = True
+    workspace_id: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Same as ApplyToJobsRequest.workspace_id (batch default for per-job tracker metadata).",
+    )
 
 
 _RUN_RESULTS_REPORT_MAX = 2000
@@ -758,7 +771,7 @@ def ats_prepare_resume_for_job(body: PrepareResumeForJobRequest):
     tags=["ats"],
     responses={403: {"description": "LinkedIn browser automation disabled on API."}},
 )
-def ats_confirm_easy_apply(body: ConfirmEasyApplyRequest):
+def ats_confirm_easy_apply(body: ConfirmEasyApplyRequest, user: User = Depends(get_current_user)):
     """
     Headless LinkedIn login + job page probe for Easy Apply (MCP parity).
     Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1``, Playwright, and ``LINKEDIN_EMAIL`` / ``LINKEDIN_PASSWORD``.
@@ -768,6 +781,9 @@ def ats_confirm_easy_apply(body: ConfirmEasyApplyRequest):
         linkedin_browser_automation_disabled_response,
         linkedin_browser_automation_enabled,
     )
+    from services.workspace_write_guard import assert_ats_linkedin_caller_allowed
+
+    assert_ats_linkedin_caller_allowed(user)
 
     if not linkedin_browser_automation_enabled():
         return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
@@ -779,7 +795,7 @@ def ats_confirm_easy_apply(body: ConfirmEasyApplyRequest):
     tags=["ats"],
     responses={403: {"description": "LinkedIn browser automation disabled on API."}},
 )
-def ats_apply_to_jobs(body: ApplyToJobsRequest):
+def ats_apply_to_jobs(body: ApplyToJobsRequest, user: User = Depends(get_current_user)):
     """
     Run the LinkedIn apply loop (or dry-run) for up to 50 jobs (MCP parity).
     Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1``, Playwright, credentials, and (for default mode) Easy Apply–confirmed rows.
@@ -789,6 +805,12 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest):
         linkedin_browser_automation_disabled_response,
         linkedin_browser_automation_enabled,
     )
+    from services.workspace_write_guard import (
+        assert_ats_linkedin_caller_allowed,
+        enforce_user_workspace_on_apply_jobs,
+    )
+
+    assert_ats_linkedin_caller_allowed(user)
 
     if not linkedin_browser_automation_enabled():
         return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
@@ -796,8 +818,14 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest):
         raw = body.model_dump()
     except AttributeError:
         raw = body.dict()
+    jobs = raw.get("jobs") or []
+    enforce_user_workspace_on_apply_jobs(
+        user=user,
+        jobs=jobs,
+        default_workspace_id=raw.get("workspace_id"),
+    )
     return apply_to_jobs_payload(
-        body.jobs,
+        jobs,
         dry_run=raw.get("dry_run", False),
         shadow_mode=raw.get("shadow_mode", False),
         rate_limit_seconds=body.rate_limit_seconds,
@@ -811,7 +839,7 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest):
     tags=["ats"],
     responses={403: {"description": "LinkedIn browser automation disabled on API."}},
 )
-def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest):
+def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest, user: User = Depends(get_current_user)):
     """
     Fill application flows without submitting (MCP ``dry_run_apply_to_jobs`` parity).
     Same gate and limits as ``POST /ats/apply-to-jobs`` with ``dry_run`` forced on.
@@ -821,6 +849,12 @@ def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest):
         linkedin_browser_automation_disabled_response,
         linkedin_browser_automation_enabled,
     )
+    from services.workspace_write_guard import (
+        assert_ats_linkedin_caller_allowed,
+        enforce_user_workspace_on_apply_jobs,
+    )
+
+    assert_ats_linkedin_caller_allowed(user)
 
     if not linkedin_browser_automation_enabled():
         return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
@@ -828,8 +862,14 @@ def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest):
         raw = body.model_dump()
     except AttributeError:
         raw = body.dict()
+    jobs = raw.get("jobs") or []
+    enforce_user_workspace_on_apply_jobs(
+        user=user,
+        jobs=jobs,
+        default_workspace_id=raw.get("workspace_id"),
+    )
     return apply_to_jobs_payload(
-        body.jobs,
+        jobs,
         dry_run=True,
         shadow_mode=raw.get("shadow_mode", False),
         rate_limit_seconds=body.rate_limit_seconds,

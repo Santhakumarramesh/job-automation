@@ -4,13 +4,19 @@ import pytest
 from fastapi import HTTPException
 
 from app.auth import User
-from services.workspace_write_guard import enforce_user_workspace_on_job_payload
+from services.application_tracker import build_runner_tracker_metadata
+from services.workspace_write_guard import (
+    assert_ats_linkedin_caller_allowed,
+    enforce_user_workspace_on_apply_jobs,
+    enforce_user_workspace_on_job_payload,
+)
 
 
 @pytest.fixture(autouse=True)
 def _clear_guard_env(monkeypatch):
     monkeypatch.delenv("API_ENFORCE_USER_WORKSPACE_ON_WRITES", raising=False)
     monkeypatch.delenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", raising=False)
+    monkeypatch.delenv("API_ATS_LINKEDIN_REQUIRE_AUTH", raising=False)
 
 
 def test_noop_when_disabled(monkeypatch):
@@ -73,3 +79,46 @@ def test_admin_enforced_when_env(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         enforce_user_workspace_on_job_payload(user=adm, payload=p)
     assert ei.value.status_code == 403
+
+
+def test_assert_ats_rejects_demo_when_env(monkeypatch):
+    monkeypatch.setenv("API_ATS_LINKEDIN_REQUIRE_AUTH", "1")
+    with pytest.raises(HTTPException) as ei:
+        assert_ats_linkedin_caller_allowed(User("demo-user", []))
+    assert ei.value.status_code == 401
+
+
+def test_enforce_apply_jobs_injects_user_and_workspace(monkeypatch):
+    monkeypatch.setenv("API_ENFORCE_USER_WORKSPACE_ON_WRITES", "1")
+    jobs = [{}]
+    enforce_user_workspace_on_apply_jobs(
+        user=User("alice", [], workspace_id="ws-1"),
+        jobs=jobs,
+        default_workspace_id=None,
+    )
+    assert jobs[0]["user_id"] == "alice"
+    assert jobs[0]["workspace_id"] == "ws-1"
+
+
+def test_enforce_apply_jobs_batch_default_workspace(monkeypatch):
+    monkeypatch.setenv("API_ENFORCE_USER_WORKSPACE_ON_WRITES", "1")
+    jobs = [{}]
+    enforce_user_workspace_on_apply_jobs(
+        user=User("alice", [], workspace_id="ws-1"),
+        jobs=jobs,
+        default_workspace_id="ws-1",
+    )
+    assert jobs[0]["workspace_id"] == "ws-1"
+
+
+def test_build_runner_metadata_passes_identity_from_job():
+    meta = build_runner_tracker_metadata(
+        {
+            "job_id": "j",
+            "user_id": "u1",
+            "workspace_id": "w9",
+            "fit_decision": "apply",
+        }
+    )
+    assert meta.get("user_id") == "u1"
+    assert meta.get("workspace_id") == "w9"

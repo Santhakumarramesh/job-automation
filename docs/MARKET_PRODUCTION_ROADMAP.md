@@ -132,7 +132,8 @@ At the end of Phase 3, the system can truthfully claim **narrow, well‑governed
 **Started (v0):**
 
 - **Admin tracker analytics:** `GET /api/admin/tracker-analytics/summary` (admin API key) — pipeline and outcome counts, recruiter-response breakdown for applied rows, optional `user_id` / `workspace_id` filters. See [PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md) Phase 4.
-- **Enqueue workspace guard:** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` so tenants cannot stamp another `workspace_id` on `POST /api/jobs` ([DEPLOY.md](DEPLOY.md)).
+- **Enqueue / batch apply workspace guard:** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` so tenants cannot stamp another `workspace_id` on `POST /api/jobs` or LinkedIn `apply-to-jobs` (batch default or per-job) ([DEPLOY.md](DEPLOY.md)).
+- **LinkedIn ATS auth:** optional `API_ATS_LINKEDIN_REQUIRE_AUTH` so headless apply / confirm routes require a real API key or JWT (not open `demo-user`).
 
 **Still roadmap:** multi-tenant RBAC hardening, mobile/PWA approvals, role templates, time-series / BI exports.
 
