@@ -69,6 +69,12 @@ def confirm_easy_apply_payload(job_url: str) -> dict:
             await page.click('button[type="submit"]')
             await page.wait_for_load_state("networkidle", timeout=15000)
             if "checkpoint" in page.url or "challenge" in page.url:
+                try:
+                    from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+                    incr_apply_runner_event("linkedin_login_challenge_abort")
+                except ImportError:
+                    pass
                 await browser.close()
                 return False, "login_challenge", None, []
             await page.wait_for_timeout(1500)
@@ -246,6 +252,12 @@ def apply_to_jobs_payload(
             await page.click('button[type="submit"]')
             await page.wait_for_load_state("networkidle", timeout=15000)
             if "checkpoint" in page.url or "challenge" in page.url:
+                try:
+                    from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+                    incr_apply_runner_event("linkedin_login_challenge_abort")
+                except ImportError:
+                    pass
                 await browser.close()
                 return {
                     "status": "error",

@@ -79,24 +79,34 @@ def read_celery_metrics_hash() -> Dict[str, Any]:
 def get_celery_metrics_summary() -> Dict[str, Any]:
     """Read aggregated hash; empty if disabled or Redis unavailable."""
     if not _enabled():
-        return {"enabled": False, "reason": "CELERY_METRICS_REDIS not enabled"}
+        out: Dict[str, Any] = {"enabled": False, "reason": "CELERY_METRICS_REDIS not enabled"}
+    else:
+        try:
+            r = _client()
+            if r is None:
+                out = {"enabled": True, "error": "no Redis URL (REDIS_METRICS_URL / REDIS_BROKER)"}
+            else:
+                data = r.hgetall(_KEY_HASH)
+                out = {"enabled": True, "hash": _KEY_HASH, "fields": data}
+                if data.get("task_duration_count"):
+                    try:
+                        cnt = int(data["task_duration_count"])
+                        s = float(data.get("task_duration_seconds_sum") or 0)
+                        out["avg_duration_seconds"] = round(s / cnt, 4) if cnt else None
+                    except (ValueError, TypeError):
+                        pass
+        except Exception as e:
+            out = {"enabled": True, "error": str(e)[:500]}
+
     try:
-        r = _client()
-        if r is None:
-            return {"enabled": True, "error": "no Redis URL (REDIS_METRICS_URL / REDIS_BROKER)"}
-        data = r.hgetall(_KEY_HASH)
-        out: Dict[str, Any] = {"enabled": True, "hash": _KEY_HASH, "fields": data}
-        # Parse numeric strings for convenience
-        if data.get("task_duration_count"):
-            try:
-                cnt = int(data["task_duration_count"])
-                s = float(data.get("task_duration_seconds_sum") or 0)
-                out["avg_duration_seconds"] = round(s / cnt, 4) if cnt else None
-            except (ValueError, TypeError):
-                pass
-        return out
-    except Exception as e:
-        return {"enabled": True, "error": str(e)[:500]}
+        from services.apply_runner_metrics_redis import read_apply_runner_metrics_summary
+
+        ar = read_apply_runner_metrics_summary()
+        if ar.get("fields"):
+            out["apply_runner"] = ar
+    except Exception:
+        pass
+    return out
 
 
 def reset_celery_metrics() -> bool:

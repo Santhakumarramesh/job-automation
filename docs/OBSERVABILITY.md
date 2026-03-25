@@ -43,6 +43,8 @@ Counters live in Redis hash **`ccp:metrics:celery`**, including:
 
 Returns JSON with `fields` from Redis or `enabled: false` if not configured.
 
+**Apply runner (Phase 4.5.1):** when `APPLY_RUNNER_METRICS_REDIS=1`, Playwright paths increment counters in hash **`ccp:metrics:apply_runner`** (e.g. `linkedin_login_checkpoint_pause_total`, `linkedin_login_challenge_abort_total`). Non-empty hash is merged into the same summary as **`apply_runner`**. Playbooks: [APPLY_RECOVERY_PLAYBOOKS.md](APPLY_RECOVERY_PLAYBOOKS.md).
+
 > **Prefork:** each worker process updates the same Redis keys — aggregation is correct. Intermediate **retries** do not increment terminal counters until the final outcome.
 
 ## Prometheus (API process)
@@ -56,6 +58,15 @@ export PROMETHEUS_METRICS=1
 - **Celery counters (Phase 4.3):** when workers use `CELERY_METRICS_REDIS=1`, set the same on the API **or** `PROMETHEUS_CELERY_REDIS=1` so `/metrics` exposes **`ccp_celery_*`** Gauges mirrored from Redis hash `ccp:metrics:celery` on each scrape. Use `increase()` / `rate()` in PromQL (Gauges reflect cumulative Redis values). Set `PROMETHEUS_CELERY_REDIS=0` to omit the bridge while keeping `CELERY_METRICS_REDIS=1` for the admin JSON API.
 - Restrict access at the load balancer / mesh in production.
 
+## Operator checklist (Phase 5.3)
+
+1. **Scrape** each API instance’s `GET /metrics` (or one SD target set) with `PROMETHEUS_METRICS=1`.
+2. **Enable the Celery bridge** on the API when workers publish to Redis: `PROMETHEUS_CELERY_REDIS=1` or `CELERY_METRICS_REDIS=1` on the API (see above).
+3. **Load** [prometheus/alert_rules.example.yml](prometheus/alert_rules.example.yml) into your ruler; tune windows to your scrape interval.
+4. **Optional:** cron [scripts/metrics_webhook_alert.py](../scripts/metrics_webhook_alert.py) for Redis-threshold webhooks.
+
+Grafana dashboard JSON is not shipped; build panels from the scraped metrics and team SLOs.
+
 ## Alerting
 
 Not built-in. Point your stack at:
@@ -65,6 +76,10 @@ Not built-in. Point your stack at:
 - Prometheus scrape of `/metrics`
 
 Raise alerts on spikes in `tasks_error_*` or `tasks_rejected_total` / sustained latency via `avg_duration_seconds`.
+
+**Starter rules (Phase 4.3.2):** copy [prometheus/alert_rules.example.yml](prometheus/alert_rules.example.yml) into your Prometheus `rule_files`, `PrometheusRule` CRD, or ruler. Helm / recording rules remain operator-owned.
+
+**Optional webhook (Phase 4.3.3):** cron `scripts/metrics_webhook_alert.py` with `CELERY_METRICS_REDIS=1`, thresholds like `METRICS_ALERT_ERROR_TOTAL_MIN`, and `METRICS_ALERT_WEBHOOK_URL` — see `services/metrics_alert_webhook.py`.
 
 **Example PromQL** (after Celery Redis bridge is enabled on `/metrics`; tune windows for your scrape interval):
 

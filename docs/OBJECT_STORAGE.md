@@ -39,4 +39,47 @@ Native GCS is not implemented. For **S3-compatible** APIs (MinIO, etc.), configu
 
 ## Retention
 
-Lifecycle rules (expiration, Intelligent-Tiering) are configured on the bucket — not in this repo.
+Lifecycle rules (expiration, Intelligent-Tiering) are configured on the **bucket** — not in this application. See also [DATA_RETENTION.md](DATA_RETENTION.md).
+
+### Example: expire old artifact objects (AWS S3)
+
+Artifacts use keys like `{ARTIFACTS_S3_PREFIX}/{user_id}/{job_id}/resume.pdf`. A common pattern is to delete or transition objects under that prefix after **N** days.
+
+**AWS CLI** (`lifecycle.json`):
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "expire-artifacts-after-400d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "artifacts/" },
+      "Expiration": { "Days": 400 }
+    }
+  ]
+}
+```
+
+Apply (replace `your-bucket`):
+
+```bash
+aws s3api put-bucket-lifecycle-configuration --bucket your-bucket --lifecycle-configuration file://lifecycle.json
+```
+
+Adjust the prefix to match `ARTIFACTS_S3_PREFIX` (default `artifacts/`). For **versioned** buckets, add `NoncurrentVersionExpiration` if you enable versioning.
+
+**Terraform** (illustrative):
+
+```hcl
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  bucket = aws_s3_bucket.app.id
+  rule {
+    id     = "expire-artifacts"
+    status = "Enabled"
+    filter { prefix = "artifacts/" }
+    expiration { days = 400 }
+  }
+}
+```
+
+**MinIO / S3-compatible:** use the vendor’s lifecycle or ILM API; semantics mirror S3-style rules when the backend supports them.

@@ -118,6 +118,20 @@ def _check_career_api_helpers() -> None:
         ph = mock_patch.call_args.kwargs.get("headers") or {}
         assert ph.get("Content-Type") == "application/json"
         assert ph.get("X-API-Key") == "k2"
+    with patch("ui.streamlit_app.requests.delete") as mock_delete:
+        mock_delete.return_value.status_code = 200
+        mock_delete.return_value.json.return_value = {"deleted": 1}
+        _career_api_call(
+            "http://test",
+            "DELETE",
+            "/api/admin/applications/by-user",
+            api_key="k3",
+            params={"user_id": "alice", "confirm_user_id": "alice"},
+            timeout=5.0,
+        )
+        dh = mock_delete.call_args.kwargs.get("headers") or {}
+        assert dh.get("X-API-Key") == "k3"
+        assert mock_delete.call_args.kwargs.get("params", {}).get("user_id") == "alice"
 
 
 def _check_load_applications() -> None:

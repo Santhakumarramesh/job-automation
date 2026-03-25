@@ -114,6 +114,8 @@ def _career_api_call(
         return requests.post(url, headers=headers, params=params or {}, json=json_body, timeout=timeout)
     if m == "PATCH":
         return requests.patch(url, headers=headers, params=params or {}, json=json_body, timeout=timeout)
+    if m == "DELETE":
+        return requests.delete(url, headers=headers, params=params or {}, timeout=timeout)
     raise ValueError(f"Unsupported method {method}")
 
 
@@ -1715,6 +1717,49 @@ def run():
                         _show_api_response(r)
                     except requests.RequestException as ex:
                         st.error(f"Connection error: {ex}")
+
+                st.divider()
+                st.caption(
+                    "PII export / delete (Phase 4.4.2) — **destructive** delete requires matching confirm field."
+                )
+                adm_pii_uid = st.text_input("admin PII: user_id to export or delete", value="", key="api_adm_pii_uid")
+                adm_pii_lim = st.number_input("admin export: limit", 1, 20000, 5000, key="api_adm_pii_lim")
+                if st.button("GET /api/admin/applications/export", key="api_adm_pii_exp"):
+                    if not (adm_pii_uid or "").strip():
+                        st.error("Enter user_id")
+                    else:
+                        try:
+                            r = _call(
+                                "GET",
+                                "/api/admin/applications/export",
+                                params={"user_id": adm_pii_uid.strip(), "limit": int(adm_pii_lim)},
+                                timeout=120.0,
+                            )
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
+                adm_pii_confirm = st.text_input(
+                    "admin delete: type same user_id to confirm",
+                    value="",
+                    key="api_adm_pii_conf",
+                )
+                if st.button("DELETE /api/admin/applications/by-user", key="api_adm_pii_del"):
+                    uid = (adm_pii_uid or "").strip()
+                    if not uid:
+                        st.error("Enter user_id above")
+                    elif (adm_pii_confirm or "").strip() != uid:
+                        st.error("Confirm field must match user_id exactly")
+                    else:
+                        try:
+                            r = _call(
+                                "DELETE",
+                                "/api/admin/applications/by-user",
+                                params={"user_id": uid, "confirm_user_id": uid},
+                                timeout=60.0,
+                            )
+                            _show_api_response(r)
+                        except requests.RequestException as ex:
+                            st.error(f"Connection error: {ex}")
 
                 adm_fu_due = st.checkbox("admin follow-ups: due_only", value=True, key="api_adm_fu_due")
                 adm_fu_sn = st.checkbox("admin follow-ups: include_snoozed", value=True, key="api_adm_fu_sn")

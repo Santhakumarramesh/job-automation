@@ -18,7 +18,7 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 
 ### Production / strict rules (API `context=app`)
 
-- **Error** if both `API_KEY` and `JWT_SECRET` are unset (fully open gateway).
+- **Error** if `API_KEY`, all JWT modes (`JWT_SECRET`, `JWT_JWKS_URL`, `JWT_ISSUER`), and `M2M_API_KEY` are unset (fully open gateway).
 - **Error** if `DEMO_USER_IS_ADMIN` is enabled.
 
 ### Worker (`context=worker`)
@@ -30,6 +30,7 @@ On fatal validation failure the process calls **`sys.exit(1)`** after printing `
 
 - Localhost Redis URLs when `APP_ENV=production`.
 - Short `JWT_SECRET` in production (< 32 chars).
+- `JWT_JWKS_URL` or `JWT_ISSUER` without `JWT_AUDIENCE` in production (audience checks recommended).
 - Postgres / S3 / PyJWT mismatch (see `services/startup_checks.py`).
 
 ## AWS Secrets Manager

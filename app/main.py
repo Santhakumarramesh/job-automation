@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from .auth import get_current_user, require_admin
+from .auth import User, get_current_user, require_admin
 from .tasks import enqueue_job
 
 _OPENAPI_TAGS = [
@@ -48,7 +48,9 @@ app = FastAPI(
     description=(
         "REST API for job pipelines, application tracking, follow-ups, and operations. "
         "Base URLs: **`/api`** (stable) and **`/api/v1`** (duplicate alias unless `API_V1_DUPLICATE_ROUTES=0`). "
-        "Authenticate with **X-API-Key**, **Authorization: Bearer** (JWT when `JWT_SECRET` is set), "
+        "Authenticate with **X-API-Key**, **Authorization: Bearer** "
+        "(JWT: `JWT_SECRET` for HS256, or `JWT_JWKS_URL` / `JWT_ISSUER` for OIDC), "
+        "optional **X-M2M-API-Key** when `M2M_API_KEY` is set (service / worker identity), "
         "or the open **demo-user** when `API_KEY` is unset (development only)."
     ),
     version="0.1.0",
@@ -71,6 +73,11 @@ api_router = APIRouter()
 class JobRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     payload: Dict[str, Any] = Field(default_factory=dict)
+    workspace_id: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Stored on tracker rows for jobs from this enqueue (also accepts organization_id in payload).",
+    )
     idempotency_key: Optional[str] = Field(
         default=None,
         max_length=200,
@@ -166,6 +173,19 @@ def _tracker_list_scope(user_id: str) -> Optional[str]:
     return user_id
 
 
+def _workspace_filter(query_workspace_id: Optional[str], user: User) -> Optional[str]:
+    from services.application_tracker import resolve_workspace_list_filter
+
+    return resolve_workspace_list_filter(query_workspace_id, getattr(user, "workspace_id", None))
+
+
+def _admin_workspace_filter(query_workspace_id: Optional[str]) -> Optional[str]:
+    if query_workspace_id is None:
+        return None
+    q = (query_workspace_id or "").strip()
+    return q if q else None
+
+
 def _artifacts_with_optional_signed_urls(artifacts: dict, signed_urls: bool) -> dict:
     """Phase 3.4 — add presigned GET URLs when ?signed_urls=true and S3 manifest + boto3 exist."""
     if not signed_urls:
@@ -212,6 +232,14 @@ def submit_job(
 ):
     idem = _resolve_job_idempotency_key(idempotency_key_header, req.idempotency_key)
     payload = {**req.payload, "user_id": user.id}
+    if req.workspace_id is not None:
+        w = str(req.workspace_id).strip()
+        if w:
+            payload["workspace_id"] = w[:200]
+    else:
+        wid = str(payload.get("workspace_id") or payload.get("organization_id") or "").strip()
+        if wid:
+            payload["workspace_id"] = wid[:200]
     job_id = enqueue_job(
         req.name,
         payload,
@@ -227,20 +255,36 @@ def submit_job(
             job_id=job_id,
             status="accepted",
             correlation_id=cid,
-            extra={"name": req.name, "user_id": user.id},
+            extra={
+                "name": req.name,
+                "user_id": user.id,
+                "workspace_id": (payload.get("workspace_id") or "") or None,
+                "run_id": job_id,
+            },
         )
     except Exception:
         pass
-    return {"job_id": job_id, "status": "accepted"}
+    return {"job_id": job_id, "run_id": job_id, "status": "accepted"}
 
 
 @api_router.get("/applications", tags=["applications"])
-def list_applications(user=Depends(get_current_user)):
+def list_applications(
+    user=Depends(get_current_user),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description=(
+            "Filter to this workspace_id. Omit to use JWT workspace_id/org_id or X-Workspace-Id; "
+            "send an empty value to list all workspaces for the user."
+        ),
+    ),
+):
     """List tracker rows for the authenticated user (all rows for demo-user)."""
     from services.application_tracker import load_applications
 
     scope = _tracker_list_scope(user.id)
-    df = load_applications(for_user_id=scope)
+    wf = _workspace_filter(workspace_id, user)
+    df = load_applications(for_user_id=scope, workspace_id=wf)
     records = df.fillna("").to_dict(orient="records")
     return {"count": len(records), "items": records[:500]}
 
@@ -770,6 +814,11 @@ def ats_analyze_form_live(body: AnalyzeFormLiveRequest):
 @api_router.get("/insights", tags=["insights"])
 def application_insights(
     user=Depends(get_current_user),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Same semantics as GET /api/applications?workspace_id=…",
+    ),
     include_audit: bool = Query(
         True,
         description="Include tail summary of application_audit.jsonl (same user scope when not demo).",
@@ -780,8 +829,10 @@ def application_insights(
     from services.application_insights import build_application_insights
 
     scope = _tracker_list_scope(user.id)
+    wf = _workspace_filter(workspace_id, user)
     return build_application_insights(
         scope,
+        workspace_id=wf,
         include_audit=include_audit,
         audit_max_lines=audit_max_lines,
     )
@@ -807,6 +858,11 @@ def admin_application_insights(
 def get_application_by_job_id(
     job_id: str,
     user=Depends(get_current_user),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Same semantics as GET /api/applications?workspace_id=…",
+    ),
     signed_urls: bool = Query(
         False,
         description="If true, include short-lived S3 presigned URLs (requires ARTIFACTS_S3_BUCKET + boto3).",
@@ -820,7 +876,8 @@ def get_application_by_job_id(
     from services.artifact_metadata import build_artifact_metadata
 
     scope = _tracker_list_scope(user.id)
-    row = get_application_row_by_job_id(job_id, for_user_id=scope)
+    wf = _workspace_filter(workspace_id, user)
+    row = get_application_row_by_job_id(job_id, for_user_id=scope, workspace_id=wf)
     if row is None:
         raise HTTPException(status_code=404, detail="Application not found")
     artifacts = _artifacts_with_optional_signed_urls(
@@ -854,13 +911,21 @@ def admin_get_application_by_job_id(
 
 
 @api_router.get("/admin/applications", tags=["admin"])
-def admin_list_applications(admin=Depends(require_admin)):
+def admin_list_applications(
+    admin=Depends(require_admin),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="When non-empty, only rows with this workspace_id.",
+    ),
+):
     """
     List all tracker rows (no user_id filter). Phase 3.1.4 — requires admin role.
     """
     from services.application_tracker import load_applications
 
-    df = load_applications(for_user_id=None)
+    wf = _admin_workspace_filter(workspace_id)
+    df = load_applications(for_user_id=None, workspace_id=wf)
     records = df.fillna("").to_dict(orient="records")
     return {"count": len(records), "items": records[:2000], "scoped": False}
 
@@ -873,6 +938,76 @@ def admin_metrics_summary(admin=Depends(require_admin)):
     from services.metrics_redis import get_celery_metrics_summary
 
     return get_celery_metrics_summary()
+
+
+@api_router.get("/admin/applications/export", tags=["admin"])
+def admin_export_tracker_for_user(
+    admin=Depends(require_admin),
+    user_id: str = Query(..., min_length=1, max_length=240, description="Tracker user_id to export"),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="When non-empty, further restrict export to this workspace_id.",
+    ),
+    limit: int = Query(5000, ge=1, le=20000),
+):
+    """
+    Phase 4.4.2 — JSON export of tracker rows for one user (contains PII / job text).
+
+    Requires admin. Use for data-access requests; treat the response as sensitive.
+    """
+    from services.application_tracker import load_applications
+
+    uid = user_id.strip()
+    wf = _admin_workspace_filter(workspace_id)
+    df = load_applications(for_user_id=uid, workspace_id=wf)
+    total = len(df)
+    df = df.head(limit)
+    records = df.fillna("").to_dict(orient="records")
+    return {
+        "user_id": uid,
+        "workspace_id_filter": wf,
+        "count": len(records),
+        "total_matching": total,
+        "truncated": total > limit,
+        "items": records,
+    }
+
+
+@api_router.delete("/admin/applications/by-user", tags=["admin"])
+def admin_delete_tracker_rows_for_user(
+    admin=Depends(require_admin),
+    user_id: str = Query(..., min_length=1, max_length=240),
+    confirm_user_id: str = Query(
+        ...,
+        min_length=1,
+        max_length=240,
+        description="Must match user_id exactly (double-check before destructive delete)",
+    ),
+):
+    """
+    Phase 4.4.2 — delete all tracker rows for ``user_id``. Also removes matching
+    ``job_idempotency`` rows when ``IDEMPOTENCY_USE_DB=1``.
+
+    Irreversible. ``confirm_user_id`` must equal ``user_id``.
+    """
+    uid = user_id.strip()
+    if confirm_user_id.strip() != uid:
+        raise HTTPException(
+            status_code=400,
+            detail="confirm_user_id must match user_id exactly",
+        )
+    from services.application_tracker import delete_applications_for_user
+
+    deleted = delete_applications_for_user(uid)
+    idem_deleted = 0
+    try:
+        from services.idempotency_db import delete_idempotency_rows_for_user
+
+        idem_deleted = delete_idempotency_rows_for_user(uid)
+    except Exception:
+        pass
+    return {"deleted": deleted, "idempotency_deleted": idem_deleted, "user_id": uid}
 
 
 @api_router.get("/admin/celery/inspect", tags=["admin"])
@@ -904,6 +1039,11 @@ def admin_celery_inspect(
 @api_router.get("/follow-ups", tags=["follow-ups"])
 def list_follow_ups(
     user=Depends(get_current_user),
+    workspace_id: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Same semantics as GET /api/applications?workspace_id=…",
+    ),
     due_only: bool = Query(True, description="Only rows with follow_up_at <= now (UTC)"),
     include_snoozed: bool = Query(True),
     limit: int = Query(50, ge=1, le=200),
@@ -916,8 +1056,10 @@ def list_follow_ups(
     from services.follow_up_service import list_follow_ups as _list
 
     scope = _tracker_list_scope(user.id)
+    wf = _workspace_filter(workspace_id, user)
     items = _list(
         scope,
+        workspace_id=wf,
         due_only=due_only,
         include_snoozed=include_snoozed,
         limit=limit,
@@ -929,6 +1071,7 @@ def list_follow_ups(
 @api_router.get("/follow-ups/digest", tags=["follow-ups"])
 def follow_ups_digest(
     user=Depends(get_current_user),
+    workspace_id: Optional[str] = Query(None, max_length=200),
     include_snoozed: bool = Query(True),
     limit: int = Query(30, ge=1, le=100),
     sort_by_priority: bool = Query(True),
@@ -937,8 +1080,10 @@ def follow_ups_digest(
     from services.follow_up_service import format_follow_up_digest, list_follow_ups as _list
 
     scope = _tracker_list_scope(user.id)
+    wf = _workspace_filter(workspace_id, user)
     items = _list(
         scope,
+        workspace_id=wf,
         due_only=True,
         include_snoozed=include_snoozed,
         limit=limit,
@@ -1071,10 +1216,10 @@ def get_job_status(
     ),
     include_task_state: bool = Query(
         False,
-        description="When true, include last filesystem snapshot from services/task_state_store.",
+        description="When true, include last task_state_store snapshot (file / DB / S3 per TASK_STATE_BACKEND).",
     ),
 ):
-    """Job status (Celery). Optional result + trimmed task_state snapshot (Phase 3.3)."""
+    """Job status (Celery). ``run_id`` equals ``job_id`` (pipeline correlation, Phase 4.5.2)."""
     try:
         from .tasks import get_job_public_view
 
@@ -1112,7 +1257,10 @@ def _build_openapi_schema():
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT when `JWT_SECRET` is set (`sub` or `user_id`; optional role claims for admin).",
+        "description": (
+            "JWT: HS256 with `JWT_SECRET`, or RS256/ES* via `JWT_JWKS_URL` or `JWT_ISSUER` discovery; "
+            "optional `JWT_AUDIENCE`. Claims `sub` or `user_id`; optional roles for admin."
+        ),
     }
     schemes["ApiKeyAuth"] = {
         "type": "apiKey",
@@ -1120,7 +1268,18 @@ def _build_openapi_schema():
         "name": "X-API-Key",
         "description": "Must match server `API_KEY` when that env var is set.",
     }
-    optional_auth = [{}, {"BearerAuth": []}, {"ApiKeyAuth": []}]
+    m2m_header = (os.getenv("M2M_API_KEY_HEADER") or "X-M2M-API-Key").strip()
+    schemes["M2MApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": m2m_header,
+        "description": (
+            "Optional worker / automation key when `M2M_API_KEY` is set "
+            f"(default header name `X-M2M-API-Key`; override with `M2M_API_KEY_HEADER`). "
+            "User id from `M2M_USER_ID` (default `m2m-service`); roles from `M2M_SERVICE_ROLES`."
+        ),
+    }
+    optional_auth = [{}, {"BearerAuth": []}, {"ApiKeyAuth": []}, {"M2MApiKeyAuth": []}]
     for _path, path_item in openapi_schema.get("paths", {}).items():
         if not isinstance(path_item, dict):
             continue

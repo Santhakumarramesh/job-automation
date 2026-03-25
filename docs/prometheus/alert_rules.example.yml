@@ -1,0 +1,74 @@
+# Starter Prometheus alerting rules — Phase 4.3.2
+#
+# Not loaded automatically. Copy into your Prometheus `rule_files`, a
+# PrometheusOperator `PrometheusRule` manifest, or Grafana Mimir / ruler.
+#
+# Prerequisites:
+#   - Scrape the FastAPI app `GET /metrics` with `PROMETHEUS_METRICS=1`
+#   - Celery Redis bridge: `PROMETHEUS_CELERY_REDIS=1` (or `CELERY_METRICS_REDIS=1` on the API)
+#   - Workers: `CELERY_METRICS_REDIS=1` so Redis hash `ccp:metrics:celery` updates
+#
+# Tune `for:` and range vectors for your scrape interval (30s–1m typical).
+
+groups:
+  - name: career_co_pilot_celery
+    interval: 30s
+    rules:
+      - alert: CeleryTaskErrorShareHigh
+        expr: |
+          increase(ccp_celery_tasks_total[30m]) >= 5
+          and
+          (
+            increase(ccp_celery_tasks_error_total[30m])
+            / increase(ccp_celery_tasks_total[30m])
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery error share above 25% (30m)"
+          description: "Check workers, Redis broker, and audit JSONL / task_state for failure_class."
+
+      - alert: CeleryPermanentErrorsAccumulating
+        expr: increase(ccp_celery_tasks_error_permanent_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Several permanent Celery failures in 1h"
+          description: "Permanent errors do not self-heal; inspect logs and graph state."
+
+      - alert: CeleryTransientErrorsSpike
+        expr: increase(ccp_celery_tasks_error_transient_total[15m]) > 8
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Transient Celery errors spiking"
+          description: "May indicate broker blips, rate limits, or dependency timeouts."
+
+      - alert: CeleryAvgDurationHigh
+        expr: |
+          (ccp_celery_task_duration_count - ccp_celery_task_duration_count offset 1h) >= 3
+          and
+          (
+            (ccp_celery_task_duration_seconds_sum - ccp_celery_task_duration_seconds_sum offset 1h)
+            / (ccp_celery_task_duration_count - ccp_celery_task_duration_count offset 1h)
+          ) > 120
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Rolling average Celery task duration over 120s"
+          description: "May indicate slow LLM calls, large artifacts, or worker load."
+
+  - name: career_co_pilot_http
+    rules:
+      - alert: APIHTTP5xxRate
+        expr: sum(rate(ccp_http_requests_total{status_code=~"5.."}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx response rate elevated"
+          description: "Check API process health, DB, and upstream dependencies."

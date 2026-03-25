@@ -29,6 +29,7 @@ TRACKER_COLUMNS = [
     "fit_decision", "ats_score", "resume_path", "cover_letter_path",
     "job_description", "applied_at", "recruiter_response", "screenshots_path",
     "qa_audit", "artifacts_manifest", "retry_state", "user_id",
+    "workspace_id",
     "follow_up_at", "follow_up_status", "follow_up_note",
     "interview_stage", "offer_outcome",
     "ats_provider",
@@ -186,6 +187,7 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             artifacts_manifest TEXT DEFAULT '{}',
             retry_state TEXT,
             user_id TEXT DEFAULT '',
+            workspace_id TEXT DEFAULT '',
             follow_up_at TEXT DEFAULT '',
             follow_up_status TEXT DEFAULT '',
             follow_up_note TEXT DEFAULT '',
@@ -245,6 +247,9 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
     if "package_field_stats" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN package_field_stats TEXT DEFAULT '{}'")
         conn.commit()
+    if "workspace_id" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN workspace_id TEXT DEFAULT ''")
+        conn.commit()
 
 
 def _init_schema_postgres(conn) -> None:
@@ -275,6 +280,7 @@ def _init_schema_postgres(conn) -> None:
             artifacts_manifest TEXT DEFAULT '{}',
             retry_state TEXT,
             user_id TEXT DEFAULT '',
+            workspace_id TEXT DEFAULT '',
             follow_up_at TEXT DEFAULT '',
             follow_up_status TEXT DEFAULT '',
             follow_up_note TEXT DEFAULT '',
@@ -302,6 +308,7 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "truth_safe_ats_ceiling", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "selected_address_label", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
+    _pg_ensure_column(conn, "workspace_id", "TEXT DEFAULT ''")
 
 
 def migrate_from_csv_sqlite(conn: sqlite3.Connection) -> int:
@@ -395,6 +402,8 @@ def _row_vals(row, col: str) -> str:
         if not s:
             return "{}"
         return s[:8000]
+    if col == "workspace_id":
+        return str(v or "").strip()[:200]
     return str(v or "")[:500]
 
 
@@ -419,6 +428,7 @@ def log_application_db(row: dict) -> str:
     row.setdefault("id", str(uuid.uuid4()))
     row.setdefault("applied_at", datetime.now().isoformat())
     row.setdefault("user_id", "")
+    row.setdefault("workspace_id", "")
     row.setdefault("policy_reason", "")
     row.setdefault("artifacts_manifest", "{}")
     cols = [c for c in TRACKER_COLUMNS if c in row]
@@ -455,6 +465,8 @@ def _cell(row: dict, c: str) -> str:
         return str(v or "")[:2000]
     if c in ("interview_stage", "offer_outcome"):
         return str(v or "").strip()[:120]
+    if c == "workspace_id":
+        return str(v or "").strip()[:200]
     return str(v or "")[:500]
 
 
@@ -566,6 +578,29 @@ def update_application_pipeline_partial(
         cur = conn.cursor()
         cur.execute(sql, vals)
         return cur.rowcount > 0
+
+
+def delete_applications_by_user_id(user_id: str) -> int:
+    """
+    Delete all ``applications`` rows where ``user_id`` matches (exact string).
+
+    Returns number of rows deleted. Requires non-empty ``user_id``.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return 0
+    if _use_postgres():
+        with _pg_connection() as conn:
+            _init_schema_postgres(conn)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM applications WHERE user_id = %s", (uid,))
+            return int(cur.rowcount or 0)
+
+    with _sqlite_connection() as conn:
+        _init_schema_sqlite(conn)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM applications WHERE user_id = ?", (uid,))
+        return int(cur.rowcount or 0)
 
 
 def load_applications_db() -> pd.DataFrame:

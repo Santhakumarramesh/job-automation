@@ -1,23 +1,24 @@
 # Production Readiness
 
-## Current status: **Strong prototype, not production-ready**
+## Current status: **API + workers deployable with discipline; auto-apply remains higher risk**
 
 | Aspect | Status | Notes |
 |--------|--------|------|
 | Architecture | ✅ Good | Modular UI, `services/`, FastAPI `app/`, agents |
 | Prototype completeness | ✅ Good | Real MCP, fit gate, ATS, autofill engine |
-| Reliability for live auto-apply | ⚠️ Medium | LinkedIn Easy Apply works; external ATS fragile |
-| Production readiness | ❌ Not yet | See [FIX_ROADMAP.md](FIX_ROADMAP.md) and [PHASE_3_PLAN.md](PHASE_3_PLAN.md) |
+| Hosted API / tracker / workers | ✅ Good | Auth (API key, JWT HS256 or OIDC JWKS, M2M), startup gates, metrics hooks — see [PHASE_5_PLAN.md](PHASE_5_PLAN.md), [DEPLOY.md](DEPLOY.md) |
+| Reliability for live auto-apply | ⚠️ Medium | LinkedIn Easy Apply works; external ATS fragile; login checkpoints |
+| “Hands-off” production for browser apply | ❌ Not guaranteed | Treat as operator-supervised; see Known gaps |
 
 ## Enforced at startup (`APP_ENV=production` or `STRICT_STARTUP=1`)
 
 | Check | Behavior |
 |--------|----------|
-| Auth | `API_KEY` and/or `JWT_SECRET` required in production so the API is not demo-open (`services/startup_checks.py`). |
+| Auth | At least one of `API_KEY`, JWT (`JWT_SECRET` / `JWT_JWKS_URL` / `JWT_ISSUER`), or `M2M_API_KEY` in production so the API is not demo-open (`services/startup_checks.py`). |
 | Tracker | **`TRACKER_USE_DB=1`** required for `app`, `worker`, and `streamlit` contexts in production or strict mode — use SQLite (`DATABASE_URL=sqlite:///./job_applications.db`) or Postgres. |
 | Demo admin | `DEMO_USER_IS_ADMIN` forbidden when `APP_ENV=production`. |
 
-Install common production extras: `pip install -e ".[production]"` (Postgres driver, JWT, Alembic/SQLAlchemy, boto3, Prometheus client). For MCP + Playwright apply flows: `pip install -e ".[apply]"`.
+Install common production extras: `pip install -e ".[production]"` (Postgres driver, JWT, Alembic/SQLAlchemy, boto3, Prometheus client). For MCP + Playwright apply flows: `pip install -e ".[apply]"`. **Containers:** root `Dockerfile` + `docker-compose.yml` — [DEPLOY.md](DEPLOY.md#docker), [PHASE_6_PLAN.md](PHASE_6_PLAN.md).
 
 Packages shipped in the wheel/sdist include `app`, `agents`, `services`, `providers`, `ui`, `mcp_servers`, `dashboard`, `config` (`pyproject.toml` `[tool.setuptools.packages.find]`).
 

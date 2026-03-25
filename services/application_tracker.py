@@ -46,6 +46,7 @@ TRACKER_COLUMNS = [
     "artifacts_manifest",  # Phase 3.2.3 — JSON: S3 URIs, run ids, extra paths
     "retry_state",        # For failed
     "user_id",            # Phase 3.1.2 — scope rows per authenticated user
+    "workspace_id",       # Phase 4.1.2 — org / workspace (optional filter)
     "follow_up_at",       # Phase 12 — ISO 8601 when to follow up (empty = none)
     "follow_up_status",   # pending | done | snoozed | dismissed | empty
     "follow_up_note",     # free text reminder
@@ -150,6 +151,9 @@ def log_application(state: dict):
             or state.get("authenticated_user_id")
             or ""
         ).strip(),
+        "workspace_id": str(
+            state.get("workspace_id") or state.get("organization_id") or ""
+        ).strip()[:200],
         "follow_up_at": str(state.get("follow_up_at", "") or ""),
         "follow_up_status": str(state.get("follow_up_status", "") or ""),
         "follow_up_note": str(state.get("follow_up_note", "") or ""),
@@ -223,6 +227,9 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "artifacts_manifest": _artifacts_manifest_cell(job_metadata.get("artifacts_manifest")),
         "retry_state": "",
         "user_id": str(job_metadata.get("user_id", "") or "").strip(),
+        "workspace_id": str(
+            job_metadata.get("workspace_id") or job_metadata.get("organization_id") or ""
+        ).strip()[:200],
         "follow_up_at": "",
         "follow_up_status": "",
         "follow_up_note": "",
@@ -252,10 +259,30 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     return row["id"]
 
 
-def load_applications(for_user_id: Optional[str] = None) -> pd.DataFrame:
+def resolve_workspace_list_filter(
+    query_workspace_id: Optional[str],
+    user_default_workspace_id: Optional[str],
+) -> Optional[str]:
+    """
+    If ``query_workspace_id`` is not None (query param was sent), use stripped value
+    or None when empty (no workspace filter). If the param was omitted (None), fall
+    back to the authenticated user's default workspace (JWT claim / header).
+    """
+    if query_workspace_id is not None:
+        q = str(query_workspace_id).strip()
+        return q if q else None
+    u = (user_default_workspace_id or "").strip()
+    return u if u else None
+
+
+def load_applications(
+    for_user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Load logged applications. If for_user_id is set, return only rows for that user
     (empty user_id rows are excluded — use for_user_id=None for admin / Streamlit local).
+    If workspace_id is set, keep only rows with that exact workspace_id column value.
     """
     initialize_tracker()
     if USE_DB:
@@ -265,11 +292,13 @@ def load_applications(for_user_id: Optional[str] = None) -> pd.DataFrame:
         except ImportError:
             df = None
         if df is not None:
-            return _filter_by_user_id(df, for_user_id)
+            out = _filter_by_user_id(df, for_user_id)
+            return _filter_by_workspace_id(out, workspace_id)
     try:
         df = pd.read_csv(APPLICATION_FILE)
         df = _ensure_columns(df)
-        return _filter_by_user_id(df, for_user_id)
+        out = _filter_by_user_id(df, for_user_id)
+        return _filter_by_workspace_id(out, workspace_id)
     except (pd.errors.EmptyDataError, Exception):
         return pd.DataFrame(columns=TRACKER_COLUMNS)
 
@@ -284,9 +313,20 @@ def _filter_by_user_id(df: pd.DataFrame, for_user_id: Optional[str]) -> pd.DataF
     return df[col == uid].copy()
 
 
+def _filter_by_workspace_id(df: pd.DataFrame, workspace_id: Optional[str]) -> pd.DataFrame:
+    if not workspace_id or not str(workspace_id).strip():
+        return df
+    if df.empty or "workspace_id" not in df.columns:
+        return df.iloc[0:0].copy()
+    w = str(workspace_id).strip()
+    col = df["workspace_id"].fillna("").astype(str)
+    return df[col == w].copy()
+
+
 def get_application_row_by_job_id(
     job_id: str,
     for_user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Return one tracker row as dict for the given job_id, scoped by for_user_id
@@ -294,7 +334,7 @@ def get_application_row_by_job_id(
     """
     if not str(job_id).strip():
         return None
-    df = load_applications(for_user_id=for_user_id)
+    df = load_applications(for_user_id=for_user_id, workspace_id=workspace_id)
     if df.empty or "job_id" not in df.columns:
         return None
     j = str(job_id).strip()
@@ -383,3 +423,33 @@ def update_pipeline_for_row(
             df.at[idx, k] = str(v).strip() if isinstance(v, str) else v
     df.to_csv(APPLICATION_FILE, index=False)
     return True
+
+
+def delete_applications_for_user(user_id: str) -> int:
+    """
+    Remove all tracker rows for ``user_id`` (exact match on ``user_id`` column).
+
+    Returns the number of rows removed. Phase 4.4.2 — admin / compliance hook.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return 0
+    initialize_tracker()
+    if USE_DB:
+        try:
+            from services.tracker_db import delete_applications_by_user_id
+
+            return int(delete_applications_by_user_id(uid))
+        except ImportError:
+            pass
+    df = load_applications(for_user_id=None)
+    df = _ensure_columns(df)
+    if df.empty or "user_id" not in df.columns:
+        return 0
+    col = df["user_id"].fillna("").astype(str)
+    before = len(df)
+    df2 = df[col != uid].copy()
+    removed = before - len(df2)
+    if removed:
+        df2.to_csv(APPLICATION_FILE, index=False)
+    return int(removed)

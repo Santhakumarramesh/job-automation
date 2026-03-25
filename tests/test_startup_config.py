@@ -14,13 +14,78 @@ def test_production_requires_auth_credentials():
             "STRICT_STARTUP": "0",
             "API_KEY": "",
             "JWT_SECRET": "",
+            "JWT_JWKS_URL": "",
+            "JWT_ISSUER": "",
+            "M2M_API_KEY": "",
             "TRACKER_USE_DB": "1",
             "DATABASE_URL": "sqlite:///./job_applications.db",
         },
         clear=False,
     ):
         errors, _ = collect_startup_report("app")
-    assert any("API_KEY" in e or "JWT_SECRET" in e for e in errors)
+    assert any("demo-user" in e and ("API_KEY" in e or "JWT" in e or "M2M" in e) for e in errors)
+
+
+def test_production_jwks_url_satisfies_auth_gate():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "",
+            "JWT_SECRET": "",
+            "JWT_JWKS_URL": "https://issuer.example.com/.well-known/jwks.json",
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+        },
+        clear=False,
+    ):
+        errors, _ = collect_startup_report("app")
+    assert not any("demo-user" in e for e in errors)
+
+
+def test_production_m2m_only_satisfies_auth_gate():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "",
+            "JWT_SECRET": "",
+            "JWT_JWKS_URL": "",
+            "JWT_ISSUER": "",
+            "M2M_API_KEY": "machine-to-machine-secret-key-12345",
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+        },
+        clear=False,
+    ):
+        errors, _ = collect_startup_report("app")
+    assert not any("demo-user" in e for e in errors)
+
+
+def test_production_warns_when_jwks_without_audience():
+    from services.startup_checks import collect_startup_report
+
+    with patch.dict(
+        os.environ,
+        {
+            "APP_ENV": "production",
+            "STRICT_STARTUP": "0",
+            "API_KEY": "k",
+            "JWT_JWKS_URL": "https://issuer.example.com/jwks",
+            "TRACKER_USE_DB": "1",
+            "DATABASE_URL": "sqlite:///./job_applications.db",
+        },
+        clear=False,
+    ):
+        os.environ.pop("JWT_AUDIENCE", None)
+        _, warnings = collect_startup_report("app")
+    assert any("JWT_AUDIENCE" in w for w in warnings)
 
 
 def test_demo_admin_forbidden_in_production():

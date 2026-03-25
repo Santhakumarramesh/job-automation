@@ -48,6 +48,78 @@ def test_read_celery_metrics_hash_requires_url():
     assert out["ok"] is False
 
 
+def test_apply_runner_incr_noop_when_disabled():
+    from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+    with patch.dict(os.environ, {"APPLY_RUNNER_METRICS_REDIS": "0"}, clear=False):
+        incr_apply_runner_event("linkedin_login_challenge_abort")
+
+
+def test_apply_runner_incr_ignores_unknown_event():
+    from services import apply_runner_metrics_redis as ar
+
+    mock_r = MagicMock()
+    mock_pipe = MagicMock()
+    mock_r.pipeline.return_value = mock_pipe
+
+    with patch.dict(
+        os.environ,
+        {"APPLY_RUNNER_METRICS_REDIS": "1", "REDIS_BROKER": "redis://localhost:6379/0"},
+        clear=False,
+    ):
+        with patch.object(ar, "_client", return_value=mock_r):
+            ar.incr_apply_runner_event("not_a_real_event")
+    mock_r.pipeline.assert_not_called()
+
+
+def test_apply_runner_incr_calls_redis():
+    from services import apply_runner_metrics_redis as ar
+
+    mock_r = MagicMock()
+    mock_pipe = MagicMock()
+    mock_r.pipeline.return_value = mock_pipe
+
+    with patch.dict(
+        os.environ,
+        {"APPLY_RUNNER_METRICS_REDIS": "1", "REDIS_BROKER": "redis://localhost:6379/0"},
+        clear=False,
+    ):
+        with patch.object(ar, "_client", return_value=mock_r):
+            ar.incr_apply_runner_event("linkedin_login_checkpoint_pause")
+
+    mock_pipe.hincrby.assert_called()
+    mock_pipe.execute.assert_called_once()
+
+
+def test_celery_summary_merges_apply_runner_fields():
+    from services import metrics_redis as mr
+
+    mock_r = MagicMock()
+    mock_r.hgetall.return_value = {"tasks_total": "1"}
+
+    def fake_read():
+        return {
+            "enabled": True,
+            "hash": "ccp:metrics:apply_runner",
+            "fields": {"linkedin_login_challenge_abort_total": "2"},
+        }
+
+    with patch.dict(
+        os.environ,
+        {"CELERY_METRICS_REDIS": "1", "REDIS_BROKER": "redis://localhost:6379/0"},
+        clear=False,
+    ):
+        with patch.object(mr, "_client", return_value=mock_r):
+            with patch(
+                "services.apply_runner_metrics_redis.read_apply_runner_metrics_summary",
+                fake_read,
+            ):
+                s = mr.get_celery_metrics_summary()
+
+    assert s.get("enabled") is True
+    assert s.get("apply_runner", {}).get("fields", {}).get("linkedin_login_challenge_abort_total") == "2"
+
+
 def test_path_group_limits_cardinality():
     from services.prometheus_setup import _path_group
 

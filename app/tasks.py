@@ -14,6 +14,28 @@ REDIS_BACKEND = os.getenv("REDIS_BACKEND", "redis://localhost:6379/1")
 _MAX_RETRIES = int(os.getenv("CELERY_TASK_MAX_RETRIES", "3"))
 
 
+def _stamp_run_id_on_artifacts_manifest(state: Dict[str, Any], run_id: str) -> None:
+    """Phase 4.5.2 — top-level ``run_id`` on tracker JSON (same as Celery task id)."""
+    import json
+
+    if not run_id:
+        return
+    raw = state.get("artifacts_manifest")
+    d: Dict[str, Any] = {}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError:
+            d = {}
+    elif isinstance(raw, dict):
+        d = dict(raw)
+    d["run_id"] = run_id
+    try:
+        state["artifacts_manifest"] = json.dumps(d, default=str)[:8000]
+    except Exception:
+        state["artifacts_manifest"] = json.dumps({"run_id": run_id})[:8000]
+
+
 def _transient_exc(exc: BaseException) -> bool:
     """Phase 3.3.4 — coarse transient vs permanent hint for workers / ops."""
     if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
@@ -52,7 +74,7 @@ def _celery_task_started(task_id: str, job_name: str, user_id: str) -> None:
             "celery_task_started",
             job_id=task_id,
             status="started",
-            extra={"job_name": job_name, "user_id": user_id},
+            extra={"job_name": job_name, "user_id": user_id, "run_id": task_id},
         )
     except Exception:
         pass
@@ -88,6 +110,7 @@ def _celery_task_finished(
             extra={
                 "job_name": job_name,
                 "user_id": user_id,
+                "run_id": task_id,
                 "duration_sec": round(duration, 4),
                 "failure_class": failure_class or None,
             },
@@ -132,6 +155,9 @@ def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):
     state: AgentState = dict(payload) if isinstance(payload, dict) else payload
     if isinstance(state, dict):
         state.setdefault("user_id", user_id)
+        if task_id:
+            state.setdefault("run_id", task_id)
+            _stamp_run_id_on_artifacts_manifest(state, task_id)
 
     use_graph = os.getenv("CELERY_USE_LANGGRAPH", "1").lower() not in ("0", "false", "no")
 
@@ -156,6 +182,7 @@ def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):
             _celery_task_finished(task_id, job_name, user_id, t0, "rejected", "")
             return {
                 "status": "rejected",
+                "run_id": task_id,
                 "reason": state.get("eligibility_reason", "Ineligible"),
             }
 
@@ -179,6 +206,7 @@ def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):
         return {
             "status": "success",
             "job_name": job_name,
+            "run_id": task_id,
             "final_pdf_path": state.get("final_pdf_path"),
             "cover_letter_pdf_path": state.get("cover_letter_pdf_path"),
             "artifacts_manifest": state.get("artifacts_manifest"),
@@ -189,7 +217,12 @@ def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):
         print(f"❌ Job error (network, exhausted retries): {e}")
         _save_fail(task_id, str(e), "transient", self.request.retries)
         _celery_task_finished(task_id, job_name, user_id, t0, "error", "transient")
-        return {"status": "error", "failure_class": "transient", "message": str(e)[:2000]}
+        return {
+            "status": "error",
+            "run_id": task_id,
+            "failure_class": "transient",
+            "message": str(e)[:2000],
+        }
     except Exception as e:
         print(f"❌ Job error: {e}")
         fclass = "transient" if _transient_exc(e) else "permanent"
@@ -199,6 +232,7 @@ def run_job(self, job_name: str, payload: Dict[str, Any], user_id: str):
         _celery_task_finished(task_id, job_name, user_id, t0, "error", fclass)
         return {
             "status": "error",
+            "run_id": task_id,
             "failure_class": fclass,
             "message": str(e)[:2000],
         }
@@ -237,7 +271,12 @@ def enqueue_job(
     *,
     idempotency_key: Optional[str] = None,
 ) -> str:
-    """Enqueue a new job and return its UUID (Celery task id)."""
+    """Enqueue a new job and return its UUID (Celery task id).
+
+    Phase 4.5.2: ``run_id`` in the worker payload is always the Celery task id so tracker,
+    audit JSONL, and ``GET /api/jobs/{id}`` share one correlation id (including idempotent replays).
+    """
+    base = dict(payload) if isinstance(payload, dict) else {}
     if idempotency_key:
         from services.idempotency_keys import (
             resolve_idempotent_enqueue,
@@ -251,7 +290,9 @@ def enqueue_job(
     else:
         job_id = str(uuid.uuid4())
 
-    run_job.apply_async(args=(name, payload, user_id), task_id=job_id)
+    send_payload = dict(base)
+    send_payload["run_id"] = job_id
+    run_job.apply_async(args=(name, send_payload, user_id), task_id=job_id)
 
     if idempotency_key and not uses_db_for_idempotency():
         from services.idempotency_keys import store_idempotent_job
@@ -276,7 +317,7 @@ def get_job_public_view(
     include_task_state: bool = False,
 ) -> Dict[str, Any]:
     """API-friendly job status + optional result / filesystem snapshot."""
-    out: Dict[str, Any] = {"job_id": job_id, "status": get_job_status(job_id)}
+    out: Dict[str, Any] = {"job_id": job_id, "run_id": job_id, "status": get_job_status(job_id)}
     try:
         r = run_job.AsyncResult(job_id)
         if include_result and r.ready():

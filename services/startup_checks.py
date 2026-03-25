@@ -58,15 +58,22 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
 
     api_key = (os.getenv("API_KEY") or "").strip()
     jwt_secret = (os.getenv("JWT_SECRET") or "").strip()
+    jwt_jwks = (os.getenv("JWT_JWKS_URL") or "").strip()
+    jwt_issuer = (os.getenv("JWT_ISSUER") or "").strip()
+    m2m_key = (os.getenv("M2M_API_KEY") or "").strip()
+    jwt_any = bool(jwt_secret or jwt_jwks or jwt_issuer)
 
     if context == "app":
-        if not api_key and not jwt_secret:
-            msg = "API_KEY and JWT_SECRET are both unset — API is open (demo-user only)."
+        if not api_key and not jwt_any and not m2m_key:
+            msg = (
+                "API_KEY, JWT (JWT_SECRET / JWT_JWKS_URL / JWT_ISSUER), and M2M_API_KEY are all unset — "
+                "API is open (demo-user only)."
+            )
             if strict or prod:
                 errors.append(msg)
             else:
                 warnings.append(msg)
-        elif not api_key and jwt_secret:
+        elif not api_key and jwt_any:
             warnings.append("API_KEY not set — clients must use JWT (Authorization: Bearer).")
 
     if prod and (os.getenv("DEMO_USER_IS_ADMIN") or "").lower() in ("1", "true", "yes"):
@@ -145,11 +152,16 @@ def collect_startup_report(context: str = "app") -> Tuple[List[str], List[str]]:
                 "ARTIFACTS_S3_BUCKET set but boto3 missing — install: pip install .[s3]"
             )
 
-    if jwt_secret:
+    if jwt_any:
         try:
             import jwt  # noqa: F401
         except ImportError:
-            warnings.append("JWT_SECRET set but PyJWT missing — pip install .[auth]")
+            warnings.append("JWT auth configured but PyJWT missing — pip install .[auth]")
+
+    if prod and (jwt_jwks or jwt_issuer) and not (os.getenv("JWT_AUDIENCE") or "").strip():
+        warnings.append(
+            "JWT_JWKS_URL or JWT_ISSUER is set without JWT_AUDIENCE — set JWT_AUDIENCE for strict audience checks."
+        )
 
     if os.getenv("PROMETHEUS_METRICS", "").lower() in ("1", "true", "yes"):
         try:

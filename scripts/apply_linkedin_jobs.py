@@ -98,6 +98,12 @@ async def run_apply(
         await page.click('button[type="submit"]')
         await page.wait_for_load_state("networkidle", timeout=15000)
         if "checkpoint" in page.url or "challenge" in page.url:
+            try:
+                from services.apply_runner_metrics_redis import incr_apply_runner_event
+
+                incr_apply_runner_event("linkedin_login_checkpoint_pause")
+            except ImportError:
+                pass
             print("LinkedIn verification required. Complete in browser, then press Enter...")
             input()
         await page.wait_for_timeout(2000)

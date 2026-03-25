@@ -14,7 +14,7 @@ This repository provides a **prototype / early automation platform** for AI/ML p
 - **Master Resume Guard**: Filters jobs by fit, blocks unsupported requirements.
 - **Interview Coach**: Generates personalized STAR method prep guides.
 - **Job Apply Autofill MCP**: Quick autofill for LinkedIn Easy Apply and external ATS (Greenhouse, Lever, Workday). See [docs/setup/job-apply-autofill-mcp.md](docs/setup/job-apply-autofill-mcp.md).
-- **Production status**: Strong prototype, not production-ready. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) and one-page [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md).
+- **Production status**: API/workers are deployable with discipline; unattended browser apply remains higher risk. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md), [docs/DEPLOY.md](docs/DEPLOY.md), [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md), and [docs/REPO_HEALTH.md](docs/REPO_HEALTH.md).
 
 ### Automation Rules (explicit)
 
@@ -89,24 +89,26 @@ Optional installs: `pip install -e ".[apply]"` (MCP + Playwright for apply tools
 
 2. **Run Worker**:
    ```bash
-   celery -A app.tasks worker --loglevel=info
+   celery -A app.tasks:celery worker --loglevel=info
    ```
 
-3. **List applications (scoped)** — `GET /api/applications` returns tracker rows for the authenticated user (`demo-user` sees all; JWT / `api-key-user` see only their `user_id` rows).
+3. **Docker (optional)** — image + Redis + API + worker: see [docs/DEPLOY.md](docs/DEPLOY.md#docker) and root `docker-compose.yml` (`docker compose up --build`).
 
-4. **Postgres tracker (optional)** — `TRACKER_USE_DB=1` and `TRACKER_DATABASE_URL=postgresql://…` (or `DATABASE_URL`). Install driver: `pip install .[postgres]`. Pool: `TRACKER_PG_POOL_MAX` (set `TRACKER_PG_POOL=0` for one connection per request).
+4. **List applications (scoped)** — `GET /api/applications` returns tracker rows for the authenticated user (`demo-user` sees all; JWT / `api-key-user` see only their `user_id` rows).
 
-5. **Postgres migrations (optional)** — `pip install .[migrations]` then from repo root: `alembic upgrade head`. See [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
+5. **Postgres tracker (optional)** — `TRACKER_USE_DB=1` and `TRACKER_DATABASE_URL=postgresql://…` (or `DATABASE_URL`). Install driver: `pip install .[postgres]`. Pool: `TRACKER_PG_POOL_MAX` (set `TRACKER_PG_POOL=0` for one connection per request).
 
-6. **S3 artifacts (optional)** — `pip install .[s3]`, set `ARTIFACTS_S3_BUCKET`. Celery uploads PDFs after `save_documents`; API: `GET /api/applications/by-job/{job_id}?signed_urls=true`. See [docs/OBJECT_STORAGE.md](docs/OBJECT_STORAGE.md).
+6. **Postgres migrations (optional)** — `pip install .[migrations]` then from repo root: `alembic upgrade head`. See [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
 
-7. **Celery + LangGraph (Phase 3.3)** — Workers use `agents/celery_workflow.py` by default (`CELERY_USE_LANGGRAPH=0` for legacy). Idempotency: `POST /api/jobs` body `idempotency_key`. Job status: `GET /api/jobs/{id}?include_result=true&include_task_state=true`. See [docs/WORKER_ORCHESTRATION.md](docs/WORKER_ORCHESTRATION.md).
+7. **S3 artifacts (optional)** — `pip install .[s3]`, set `ARTIFACTS_S3_BUCKET`. Celery uploads PDFs after `save_documents`; API: `GET /api/applications/by-job/{job_id}?signed_urls=true`. See [docs/OBJECT_STORAGE.md](docs/OBJECT_STORAGE.md).
 
-8. **Admin API** — `GET /api/admin/applications` lists all tracker rows (no `user_id` filter). Requires admin: JWT claims `role` / `roles` / `realm_access.roles` matching `JWT_ADMIN_ROLES`, or `API_KEY_IS_ADMIN=1` with `X-API-Key`.
+8. **Celery + LangGraph (Phase 3.3)** — Workers use `agents/celery_workflow.py` by default (`CELERY_USE_LANGGRAPH=0` for legacy). Idempotency: `POST /api/jobs` body `idempotency_key`. Job status: `GET /api/jobs/{id}?include_result=true&include_task_state=true`. See [docs/WORKER_ORCHESTRATION.md](docs/WORKER_ORCHESTRATION.md).
 
-9. **Insights (Phase 13 / 43)** — `GET /api/insights` returns tracker rollups, optional audit JSONL tail, heuristic suggestions, and **`answerer_review`** aggregates (parsed from tracker `qa_audit._answerer_review` when apply runs log it). Admin: `GET /api/admin/insights`. Streamlit tracker tab shows the same (no audit file by default). CLI: `PYTHONPATH=. python scripts/print_insights.py` (`--json`, `--no-audit`, `--user-id`).
+9. **Admin API** — `GET /api/admin/applications` lists all tracker rows (no `user_id` filter). Requires admin: JWT claims `role` / `roles` / `realm_access.roles` matching `JWT_ADMIN_ROLES`, or `API_KEY_IS_ADMIN=1` with `X-API-Key`.
 
-10. **Follow-up digest** — `GET /api/follow-ups/digest` returns `{ text, items, count }` for due reminders (paste into email/Slack). Admin: `GET /api/admin/follow-ups/digest`. CLI: `PYTHONPATH=. python scripts/follow_up_digest.py`. Cron-friendly **multi-channel**: `scripts/notify_follow_up_digest.py` (webhook → Telegram → SMTP, each if configured). Single-channel scripts and env vars: [docs/FOLLOW_UPS.md](docs/FOLLOW_UPS.md).
+10. **Insights (Phase 13 / 43)** — `GET /api/insights` returns tracker rollups, optional audit JSONL tail, heuristic suggestions, and **`answerer_review`** aggregates (parsed from tracker `qa_audit._answerer_review` when apply runs log it). Admin: `GET /api/admin/insights`. Streamlit tracker tab shows the same (no audit file by default). CLI: `PYTHONPATH=. python scripts/print_insights.py` (`--json`, `--no-audit`, `--user-id`).
+
+11. **Follow-up digest** — `GET /api/follow-ups/digest` returns `{ text, items, count }` for due reminders (paste into email/Slack). Admin: `GET /api/admin/follow-ups/digest`. CLI: `PYTHONPATH=. python scripts/follow_up_digest.py`. Cron-friendly **multi-channel**: `scripts/notify_follow_up_digest.py` (webhook → Telegram → SMTP, each if configured). Single-channel scripts and env vars: [docs/FOLLOW_UPS.md](docs/FOLLOW_UPS.md).
 
 ## 🔒 Security
 
@@ -120,7 +122,7 @@ Security is a top priority for `career-co-pilot-pro`. Please follow these guidel
   - All job payloads are validated using Pydantic models in `app/main.py`.
   - Avoid using `shell=True` or any direct command execution with user-provided input in job handlers.
 - **Authentication**:
-  - API: `X-API-Key` when `API_KEY` is set; optional JWT with `JWT_SECRET` + `Authorization: Bearer` (`pip install .[auth]`). See [docs/PHASE_3_PLAN.md](docs/PHASE_3_PLAN.md).
+  - API: `X-API-Key` when `API_KEY` is set; optional JWT (`JWT_SECRET` and/or OIDC `JWT_JWKS_URL` / `JWT_ISSUER`) + `Authorization: Bearer` (`pip install .[auth]`). See [docs/PHASE_3_PLAN.md](docs/PHASE_3_PLAN.md) and [docs/PHASE_4_PLAN.md](docs/PHASE_4_PLAN.md).
 - **Production config**:
   - Set `APP_ENV=production` for stricter startup checks; optional AWS Secrets Manager via `AWS_SECRETS_MANAGER_SECRET_ID`. See [docs/SECRETS_AND_CONFIG.md](docs/SECRETS_AND_CONFIG.md).
 - **Observability**:

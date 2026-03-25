@@ -59,3 +59,5 @@ Do **not** auto-submit. Instead:
 | Low fit (score < 85) | **Skip** |
 
 This keeps applications focused on high-fit roles and avoids weak or risky submissions.
+
+When automation hits LinkedIn verification or form issues, see [APPLY_RECOVERY_PLAYBOOKS.md](APPLY_RECOVERY_PLAYBOOKS.md).

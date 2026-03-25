@@ -38,6 +38,63 @@ def test_task_state_roundtrip_file():
             os.environ.pop("TASK_STATE_DIR", None)
 
 
+def test_task_state_roundtrip_db_sqlite():
+    from services import task_state_store as tss
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        os.environ["DATABASE_URL"] = f"sqlite:///{path}"
+        os.environ["TASK_STATE_BACKEND"] = "db"
+        tss.save_task_snapshot("task-db-1", {"user_id": "db-user", "job_description": "j"})
+        loaded = tss.load_task_snapshot("task-db-1")
+        assert loaded is not None
+        assert loaded["state"]["user_id"] == "db-user"
+    finally:
+        os.environ.pop("TASK_STATE_BACKEND", None)
+        os.environ.pop("DATABASE_URL", None)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def test_task_state_roundtrip_s3_mock():
+    from unittest.mock import MagicMock
+
+    from services import task_state_store as tss
+
+    stored: dict = {}
+
+    def put_object(**kwargs):
+        stored["key"] = kwargs["Key"]
+        stored["body"] = kwargs["Body"]
+
+    def get_object(Bucket, Key):
+        assert Key == stored["key"]
+        body = MagicMock()
+        body.read.return_value = stored["body"]
+        return {"Body": body}
+
+    mock_cli = MagicMock()
+    mock_cli.put_object.side_effect = put_object
+    mock_cli.get_object.side_effect = get_object
+
+    try:
+        os.environ["TASK_STATE_BACKEND"] = "s3"
+        os.environ["TASK_STATE_S3_BUCKET"] = "test-bucket"
+        with patch.object(tss, "_s3_client", return_value=mock_cli):
+            tss.save_task_snapshot("celery-task-s3", {"role": "engineer"})
+            out = tss.load_task_snapshot("celery-task-s3")
+        assert out is not None
+        assert out["state"]["role"] == "engineer"
+        mock_cli.put_object.assert_called_once()
+        mock_cli.get_object.assert_called_once()
+    finally:
+        os.environ.pop("TASK_STATE_BACKEND", None)
+        os.environ.pop("TASK_STATE_S3_BUCKET", None)
+
+
 def test_idempotency_lookup_within_ttl():
     from services import idempotency_keys as ik
 
@@ -67,6 +124,7 @@ def test_get_job_public_view_success():
     with patch("app.tasks.run_job.AsyncResult", return_value=mock_r):
         out = get_job_public_view("jid-1", include_result=True)
     assert out["job_id"] == "jid-1"
+    assert out["run_id"] == "jid-1"
     assert out["status"] == "SUCCESS"
     assert out["result"]["status"] == "success"
 
@@ -84,5 +142,9 @@ def test_enqueue_idempotency_returns_same_id():
                 j2 = enqueue_job("n", {}, "u1", idempotency_key="k1")
                 assert j1 == j2
                 assert mock_apply.call_count == 1
+                call = mock_apply.call_args
+                args_tuple = call.kwargs.get("args") if call.kwargs else call[0]
+                send = args_tuple[1]
+                assert send["run_id"] == j1
         finally:
             os.environ.pop("IDEMPOTENCY_DIR", None)

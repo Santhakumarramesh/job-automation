@@ -314,10 +314,14 @@ def _failure_hint_from_crosstabs(crosstabs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def compute_tracker_insights(for_user_id: Optional[str]) -> Dict[str, Any]:
+def compute_tracker_insights(
+    for_user_id: Optional[str],
+    *,
+    workspace_id: Optional[str] = None,
+) -> Dict[str, Any]:
     from services.application_tracker import load_applications
 
-    df = load_applications(for_user_id=for_user_id)
+    df = load_applications(for_user_id=for_user_id, workspace_id=workspace_id)
     if df.empty:
         return {
             "total": 0,
@@ -435,13 +439,14 @@ def summarize_audit_log(
 def build_application_insights(
     for_user_id: Optional[str],
     *,
+    workspace_id: Optional[str] = None,
     include_audit: bool = True,
     audit_max_lines: int = 2500,
 ) -> Dict[str, Any]:
     from services.application_tracker import load_applications
 
-    tracker = compute_tracker_insights(for_user_id)
-    df = load_applications(for_user_id=for_user_id)
+    tracker = compute_tracker_insights(for_user_id, workspace_id=workspace_id)
+    df = load_applications(for_user_id=for_user_id, workspace_id=workspace_id)
     records = df.fillna("").to_dict(orient="records")
     answerer_stats = compute_answerer_review_insights(records)
 

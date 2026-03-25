@@ -96,7 +96,7 @@ def test_tracker_insights_includes_pipeline(monkeypatch):
         ]
     )
 
-    def fake_load(for_user_id=None):
+    def fake_load(for_user_id=None, workspace_id=None, **kwargs):
         return df
 
     monkeypatch.setattr("services.application_tracker.load_applications", fake_load)
@@ -138,7 +138,7 @@ def test_tracker_insights_audit_provider_and_ceiling(monkeypatch):
         ]
     )
 
-    def fake_load(for_user_id=None):
+    def fake_load(for_user_id=None, workspace_id=None, **kwargs):
         return df
 
     monkeypatch.setattr("services.application_tracker.load_applications", fake_load)

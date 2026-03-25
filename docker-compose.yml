@@ -1,0 +1,61 @@
+# Local / demo stack: API + Celery worker + Redis + shared SQLite volume.
+# Set OPENAI_API_KEY (and API_KEY or JWT/M2M for production-like startup) in `.env`.
+# See docs/DEPLOY.md and docs/PHASE_6_PLAN.md.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_BROKER: redis://redis:6379/0
+      REDIS_BACKEND: redis://redis:6379/1
+      DATABASE_URL: sqlite:////data/job_applications.db
+      TRACKER_USE_DB: "1"
+      # Compose loads `.env` for ${VAR} substitution; set OPENAI_API_KEY, API_KEY (or JWT/M2M) there.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      API_KEY: ${API_KEY:-}
+      # Avoid fatal prod startup on first boot unless you set real auth above and flip these:
+      APP_ENV: ${APP_ENV:-development}
+      STRICT_STARTUP: ${STRICT_STARTUP:-0}
+    volumes:
+      - ccp_data:/data
+    depends_on:
+      - redis
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  worker:
+    build: .
+    command: celery -A app.tasks:celery worker --loglevel=info
+    environment:
+      REDIS_BROKER: redis://redis:6379/0
+      REDIS_BACKEND: redis://redis:6379/1
+      DATABASE_URL: sqlite:////data/job_applications.db
+      TRACKER_USE_DB: "1"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      API_KEY: ${API_KEY:-}
+      APP_ENV: ${APP_ENV:-development}
+      STRICT_STARTUP: ${STRICT_STARTUP:-0}
+    volumes:
+      - ccp_data:/data
+    depends_on:
+      - redis
+
+volumes:
+  ccp_data:

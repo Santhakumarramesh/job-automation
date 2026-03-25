@@ -592,6 +592,8 @@ def test_openapi_schema_grouped_by_tags():
     assert schema["paths"]["/api/admin/applications"]["get"]["tags"] == ["admin"]
     assert "/api/admin/celery/inspect" in paths
     assert schema["paths"]["/api/admin/celery/inspect"]["get"]["tags"] == ["admin"]
+    assert "/api/admin/applications/export" in paths
+    assert "/api/admin/applications/by-user" in paths
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
@@ -602,10 +604,64 @@ def test_openapi_security_schemes_for_swagger_authorize():
     assert schemes["BearerAuth"]["scheme"] == "bearer"
     assert schemes["ApiKeyAuth"]["type"] == "apiKey"
     assert schemes["ApiKeyAuth"]["name"] == "X-API-Key"
+    assert schemes["M2MApiKeyAuth"]["type"] == "apiKey"
+    assert schemes["M2MApiKeyAuth"]["name"] == "X-M2M-API-Key"
     sec = schema["paths"]["/api/jobs"]["post"]["security"]
     assert {} in sec
     assert {"BearerAuth": []} in sec
     assert {"ApiKeyAuth": []} in sec
+    assert {"M2MApiKeyAuth": []} in sec
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_m2m_api_key_sets_user_on_enqueue(monkeypatch):
+    monkeypatch.setenv("M2M_API_KEY", "m2m-worker-secret-key-12345")
+    monkeypatch.setenv("M2M_USER_ID", "worker-pod-7")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    job_data = {"name": "W", "payload": {}}
+    with patch("app.main.enqueue_job") as mock_enqueue:
+        mock_enqueue.return_value = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        r = client.post(
+            "/api/jobs",
+            json=job_data,
+            headers={"X-M2M-API-Key": "m2m-worker-secret-key-12345"},
+        )
+    assert r.status_code == 202
+    assert mock_enqueue.call_args[0][2] == "worker-pod-7"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_m2m_api_key_wrong_returns_401(monkeypatch):
+    monkeypatch.setenv("M2M_API_KEY", "m2m-worker-secret-key-12345")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    job_data = {"name": "W", "payload": {}}
+    r = client.post(
+        "/api/jobs",
+        json=job_data,
+        headers={"X-M2M-API-Key": "not-the-right-secret-key-123"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_m2m_custom_header_name(monkeypatch):
+    monkeypatch.setenv("M2M_API_KEY", "shared-m2m-secret-key-123456")
+    monkeypatch.setenv("M2M_API_KEY_HEADER", "X-Worker-Key")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    job_data = {"name": "W", "payload": {}}
+    with patch("app.main.enqueue_job") as mock_enqueue:
+        mock_enqueue.return_value = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        r = client.post(
+            "/api/jobs",
+            json=job_data,
+            headers={"X-Worker-Key": "shared-m2m-secret-key-123456"},
+        )
+    assert r.status_code == 202
+    assert mock_enqueue.call_args[0][2] == "m2m-service"
+
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
 def test_get_application_by_job_id():
@@ -671,6 +727,7 @@ def test_submit_job():
     body = response.json()
     assert body["status"] == "accepted"
     assert body["job_id"] == "00000000-0000-0000-0000-000000000099"
+    assert body["run_id"] == body["job_id"]
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
@@ -723,6 +780,124 @@ def test_admin_celery_inspect_forbidden_when_disabled(monkeypatch):
     monkeypatch.setenv("CELERY_ADMIN_INSPECT", "0")
     r = client.get("/api/admin/celery/inspect", headers={"X-API-Key": "admkey"})
     assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_export_tracker_requires_admin(monkeypatch):
+    monkeypatch.setenv("API_KEY", "userkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "0")
+    r = client.get("/api/admin/applications/export", params={"user_id": "u1"}, headers={"X-API-Key": "userkey"})
+    assert r.status_code == 403
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_export_tracker_ok(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    with patch("services.application_tracker.load_applications") as la:
+        import pandas as pd
+
+        la.return_value = pd.DataFrame([{"id": "1", "user_id": "alice", "job_id": "j1"}])
+        r = client.get("/api/admin/applications/export", params={"user_id": "alice"}, headers={"X-API-Key": "admkey"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user_id"] == "alice"
+    assert body["count"] == 1
+    assert body.get("workspace_id_filter") is None
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_submit_job_workspace_id_in_payload(monkeypatch):
+    monkeypatch.setenv("API_KEY", "k")
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    job_data = {"name": "W", "payload": {}, "workspace_id": "acme-corp"}
+    with patch("app.main.enqueue_job") as mock_enqueue:
+        mock_enqueue.return_value = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        r = client.post("/api/jobs", json=job_data, headers={"X-API-Key": "k"})
+    assert r.status_code == 202
+    payload = mock_enqueue.call_args[0][1]
+    assert payload["workspace_id"] == "acme-corp"
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_list_applications_workspace_query_and_user_default():
+    import os
+    import tempfile
+    from pathlib import Path
+
+    import services.application_tracker as at
+    from app.auth import User, get_current_user
+    from app.main import app
+
+    with tempfile.TemporaryDirectory() as td:
+        csv_path = Path(td) / "job_applications.csv"
+        prev_csv = at.APPLICATION_FILE
+        prev_db = os.environ.get("TRACKER_USE_DB")
+        os.environ["TRACKER_USE_DB"] = "0"
+        at.APPLICATION_FILE = csv_path
+        try:
+            at.initialize_tracker()
+            base = {
+                "target_company": "Co",
+                "target_position": "Eng",
+                "user_id": "alice",
+                "job_description": "d",
+            }
+            at.log_application({**base, "job_id": "jw1", "workspace_id": "w1"})
+            at.log_application({**base, "job_id": "jw2", "workspace_id": "w2"})
+            c = TestClient(app)
+            app.dependency_overrides[get_current_user] = lambda: User("alice", [])
+            r = c.get("/api/applications", params={"workspace_id": "w1"})
+            assert r.status_code == 200
+            assert r.json()["count"] == 1
+            assert r.json()["items"][0]["job_id"] == "jw1"
+
+            app.dependency_overrides[get_current_user] = lambda: User("alice", [], workspace_id="w2")
+            r2 = c.get("/api/applications")
+            assert r2.status_code == 200
+            assert r2.json()["count"] == 1
+            assert r2.json()["items"][0]["job_id"] == "jw2"
+
+            r3 = c.get("/api/applications", params={"workspace_id": ""})
+            assert r3.status_code == 200
+            assert r3.json()["count"] == 2
+        finally:
+            at.APPLICATION_FILE = prev_csv
+            app.dependency_overrides.clear()
+            if prev_db is None:
+                os.environ.pop("TRACKER_USE_DB", None)
+            else:
+                os.environ["TRACKER_USE_DB"] = prev_db
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_delete_tracker_confirm_mismatch(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    r = client.delete(
+        "/api/admin/applications/by-user",
+        params={"user_id": "alice", "confirm_user_id": "bob"},
+        headers={"X-API-Key": "admkey"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_admin_delete_tracker_ok(monkeypatch):
+    monkeypatch.setenv("API_KEY", "admkey")
+    monkeypatch.setenv("API_KEY_IS_ADMIN", "1")
+    with patch("services.application_tracker.delete_applications_for_user", return_value=3) as d, patch(
+        "services.idempotency_db.delete_idempotency_rows_for_user", return_value=1,
+    ):
+        r = client.delete(
+            "/api/admin/applications/by-user",
+            params={"user_id": "alice", "confirm_user_id": "alice"},
+            headers={"X-API-Key": "admkey"},
+        )
+    assert r.status_code == 200
+    assert r.json()["deleted"] == 3
+    assert r.json()["idempotency_deleted"] == 1
+    d.assert_called_once_with("alice")
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")

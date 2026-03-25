@@ -235,3 +235,24 @@ def resolve_enqueue_with_db(user_id: str, idempotency_key: str) -> Tuple[str, bo
             if existing2:
                 return existing2, False
             raise RuntimeError("idempotency insert conflict but no row found") from e
+
+
+def delete_idempotency_rows_for_user(user_id: str) -> int:
+    """Remove ``job_idempotency`` rows for ``user_id`` (DB idempotency only)."""
+    uid = str(user_id or "").strip()
+    if not uid or not can_use_db_for_idempotency():
+        return 0
+    try:
+        if _use_postgres():
+            with _pg_connection() as conn:
+                _ensure_table_pg(conn)
+                cur = conn.cursor()
+                cur.execute("DELETE FROM job_idempotency WHERE user_id = %s", (uid,))
+                return int(cur.rowcount or 0)
+        with _sqlite_connection() as conn:
+            _ensure_table_sqlite(conn)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM job_idempotency WHERE user_id = ?", (uid,))
+            return int(cur.rowcount or 0)
+    except Exception:
+        return 0

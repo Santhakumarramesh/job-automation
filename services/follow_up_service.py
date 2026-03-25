@@ -112,6 +112,7 @@ def compute_follow_up_priority_score(
 def list_follow_ups(
     for_user_id: Optional[str],
     *,
+    workspace_id: Optional[str] = None,
     due_only: bool = True,
     include_snoozed: bool = True,
     limit: int = 100,
@@ -123,7 +124,7 @@ def list_follow_ups(
     """
     from services.application_tracker import load_applications
 
-    df = load_applications(for_user_id=for_user_id)
+    df = load_applications(for_user_id=for_user_id, workspace_id=workspace_id)
     if df.empty:
         return []
 

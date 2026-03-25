@@ -1,11 +1,14 @@
 # CLI scripts
 
+**Hosted deploy:** [docs/DEPLOY.md](../docs/DEPLOY.md), [docs/PHASE_5_PLAN.md](../docs/PHASE_5_PLAN.md), [docs/PHASE_6_PLAN.md](../docs/PHASE_6_PLAN.md) (Docker / Compose). Validate env: `PYTHONPATH=. python scripts/check_startup.py app` (and `worker` / `streamlit` as needed).
+
 | Script | Purpose |
 |--------|---------|
-| `apply_linkedin_jobs.py` | Playwright LinkedIn apply from exported JSON (`--allow-answerer-submit` optional) |
+| `apply_linkedin_jobs.py` | Playwright LinkedIn apply from exported JSON (`--allow-answerer-submit` optional). Checkpoint recovery: [docs/APPLY_RECOVERY_PLAYBOOKS.md](../docs/APPLY_RECOVERY_PLAYBOOKS.md). Optional `APPLY_RUNNER_METRICS_REDIS=1` for Redis counters on admin metrics summary. |
 | `follow_up_digest.py` | Print due follow-ups as plain text (cron / email paste) |
 | `email_follow_up_digest.py` | Email due follow-ups via SMTP (`FOLLOW_UP_SMTP_*` / `FOLLOW_UP_EMAIL_*`; `--dry-run`) |
 | `webhook_follow_up_digest.py` | POST due follow-ups to `FOLLOW_UP_WEBHOOK_URL` (Slack/Discord/raw; `--dry-run`) |
+| `metrics_webhook_alert.py` | POST when Redis Celery counters exceed `METRICS_ALERT_*_MIN` (`CELERY_METRICS_REDIS=1`; `--dry-run`) |
 | `telegram_follow_up_digest.py` | Telegram `sendMessage` (`FOLLOW_UP_TELEGRAM_BOT_TOKEN`, `FOLLOW_UP_TELEGRAM_CHAT_ID`; `--dry-run`) |
 | `notify_follow_up_digest.py` | One-shot: webhook + Telegram + SMTP for due items (each if configured; `--dry-run`) |
 | `print_insights.py` | Phase 13 tracker insights to stdout (`--json`, `--user-id`, `--no-audit`; no API) |
@@ -21,6 +24,7 @@ python scripts/apply_linkedin_jobs.py jobs.json --allow-answerer-submit
 PYTHONPATH=. python scripts/follow_up_digest.py --user-id streamlit-local
 PYTHONPATH=. python scripts/email_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/webhook_follow_up_digest.py --dry-run
+PYTHONPATH=. python scripts/metrics_webhook_alert.py --dry-run
 PYTHONPATH=. python scripts/telegram_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/notify_follow_up_digest.py --dry-run
 PYTHONPATH=. python scripts/print_insights.py --no-audit
@@ -33,7 +37,7 @@ python scripts/regenerate_resume_pdf.py input.md out.pdf "Your Name"
 
 ## ATS / REST (optional)
 
-With the API running (`uvicorn app.main:app` or your deploy), you can query ATS metadata and static form hints without the MCP client. The Streamlit **ATS / API** tab mirrors most `POST/GET /api/ats/*` flows (including score-job-fit, search-jobs, batch-prioritize, truth-inventory, prepare-package, run reports, live form probe, and more); set `STREAMLIT_CAREER_API_BASE` if the API is not on `http://127.0.0.1:8000`. For authenticated routes (applications, insights, follow-ups, digest, jobs, **PATCH** follow-up / pipeline, **admin** list/insights/metrics/**celery/inspect**/follow-ups/digest/by-job plus **admin PATCH** follow-up/pipeline, etc.), use **X-API-Key** or **Bearer JWT** in that tab (`STREAMLIT_CAREER_API_BEARER` / `CAREER_API_JWT` optional defaults). **Service health** includes **GET /**, **GET /health**, **GET /ready**, and **GET /metrics** (Prometheus text only when `PROMETHEUS_METRICS=1` and related settings — see `.env.example`); **Authenticated routes** has an **Admin** nested expander for ops (403 without admin).
+With the API running (`uvicorn app.main:app` or your deploy), you can query ATS metadata and static form hints without the MCP client. The Streamlit **ATS / API** tab mirrors most `POST/GET /api/ats/*` flows (including score-job-fit, search-jobs, batch-prioritize, truth-inventory, prepare-package, run reports, live form probe, and more); set `STREAMLIT_CAREER_API_BASE` if the API is not on `http://127.0.0.1:8000`. For authenticated routes (applications, insights, follow-ups, digest, jobs, **PATCH** follow-up / pipeline, **admin** list/insights/metrics/**celery/inspect**/applications **export** & **by-user delete**/follow-ups/digest/by-job plus **admin PATCH** follow-up/pipeline, etc.), use **X-API-Key** or **Bearer JWT** in that tab (`STREAMLIT_CAREER_API_BEARER` / `CAREER_API_JWT` optional defaults). **Service health** includes **GET /**, **GET /health**, **GET /ready**, and **GET /metrics** (Prometheus text only when `PROMETHEUS_METRICS=1` and related settings — see `.env.example`); **Authenticated routes** has an **Admin** nested expander for ops (403 without admin).
 
 ```bash
 # Platform summary (listing vs apply-target provider, v1 auto policy)
@@ -172,6 +176,12 @@ curl -sS -H "X-API-Key: $API_KEY" http://127.0.0.1:8000/api/admin/applications |
 curl -sS -H "X-API-Key: $API_KEY" \
   "http://127.0.0.1:8000/api/admin/insights?include_audit=true&audit_max_lines=1000" | python -m json.tool
 curl -sS -H "X-API-Key: $API_KEY" http://127.0.0.1:8000/api/admin/metrics/summary | python -m json.tool
+# PII export for one tracker user_id (Phase 4.4.2; JSON may be large)
+curl -sS -H "X-API-Key: $API_KEY" \
+  "http://127.0.0.1:8000/api/admin/applications/export?user_id=USER_ID&limit=5000" | python -m json.tool
+# Irreversible: delete all tracker rows (+ DB idempotency keys) for user_id — confirm_user_id must match
+curl -sS -X DELETE -H "X-API-Key: $API_KEY" \
+  "http://127.0.0.1:8000/api/admin/applications/by-user?user_id=USER_ID&confirm_user_id=USER_ID" | python -m json.tool
 # Live Celery workers: ping / active / reserved / scheduled / stats (None if no worker replied; optional ?timeout=2)
 curl -sS -H "X-API-Key: $API_KEY" \
   "http://127.0.0.1:8000/api/admin/celery/inspect?timeout=2" | python -m json.tool
