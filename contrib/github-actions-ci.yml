@@ -32,6 +32,15 @@ jobs:
       - name: Mypy (scoped)
         run: mypy --config-file mypy.ini
 
+      - name: Pytest tracker-isolation regression
+        run: >
+          python -m pytest
+          tests/test_api.py::test_list_applications_workspace_query_and_user_default
+          tests/test_follow_up.py::test_follow_up_priority_sorts_by_ats
+          tests/test_follow_up.py::test_list_follow_ups_due
+          tests/test_critical_flows.py::TestUserBinding::test_load_applications_filters_by_user_id
+          -q --tb=short
+
       - name: Pytest
         run: python -m pytest tests/ -q --tb=short
 

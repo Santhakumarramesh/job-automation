@@ -37,7 +37,7 @@
 | **Streamlit supervision UX** | **Done (v0):** decision preview + tracker snapshot + REST tab; batch-apply **operator_submit_approved** path + **shadow_mode** toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **v0** Grafana imports for API/Celery metrics ([`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json)) and tracker `job_state` outcomes ([`contrib/grafana/dashboard-tracker-job-state-v0.json`](../contrib/grafana/dashboard-tracker-job-state-v0.json)). **Still roadmap:** richer SLO/incident panel bundles. |
 | **Shadow mode** | **v0 done** (MCP/API/CLI + tracker labels); Job Finder toggle syncs **shadow_mode** to the batch-apply API tab. |
-| **CI depth** | **Scoped mypy** + Ruff in [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) (copy to `.github/workflows/` when PAT allows); pytest tracker-state isolation via `tests/conftest.py`; coverage targets not enforced. |
+| **CI depth** | **Scoped mypy** + Ruff in [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) (copy to `.github/workflows/` when PAT allows); pytest tracker-state isolation via `tests/conftest.py` + deterministic regression slice before full suite; coverage targets not enforced. |
 
 ---
 
@@ -112,7 +112,7 @@
 ## Phase 5 — Data quality & ops (ongoing)
 
 - [x] **`job_state` index hygiene (v0):** `normalize_job_state_for_tracker` + `CANONICAL_JOB_STATES` in `services/application_decision.py` — indexed tracker column only accepts contract values (`skip`, `manual_review`, `manual_assist`, `safe_auto_apply`, `blocked`); bad JWT/hand-edited JSON does not pollute `by_job_state` rollups.
-- [x] **mypy (v0 scoped+):** `mypy.ini` + CI step on stable API/policy/analytics modules (including policy + tracker + startup/profile + queue/context services); full-repo strict typing remains optional iterative hardening.
+- [x] **mypy (v0 scoped+):** `mypy.ini` + CI step on stable API/policy/analytics modules (including policy + tracker + startup/profile + queue/context + infra utility services); full-repo strict typing remains optional iterative hardening.
 - [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
 - [x] **Grafana samples (v0):** [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json) for API/Celery metrics + [`contrib/grafana/dashboard-tracker-job-state-v0.json`](../contrib/grafana/dashboard-tracker-job-state-v0.json) for tracker `job_state` outcomes.
 - [x] **Release notes cadence (v0):** [`docs/RELEASE_NOTES_CADENCE.md`](../docs/RELEASE_NOTES_CADENCE.md) + root [`CHANGELOG.md`](../CHANGELOG.md) — when to update for autonomy/public readiness; links to [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md#public-readiness-narrow-autonomy).
