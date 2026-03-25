@@ -251,6 +251,8 @@ With `APPLY_RUNNER_METRICS_REDIS=1`, counters include:
 
 ## Public readiness (narrow autonomy)
 
+**Release cadence:** When you tag a release or change live-submit gates, update [CHANGELOG.md](../CHANGELOG.md) and follow [RELEASE_NOTES_CADENCE.md](RELEASE_NOTES_CADENCE.md).
+
 Use this as an **operator / release** checklist before widening live auto-submit beyond a pilot.
 
 1. **Scope:** Document where live submit is allowed (e.g. LinkedIn Easy Apply only; external ATS remains `manual_assist`). Point to this file and [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md).

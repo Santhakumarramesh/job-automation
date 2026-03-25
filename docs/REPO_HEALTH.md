@@ -55,6 +55,7 @@ Single-page snapshot: **strong prototype**, **not production-ready** for unatten
 
 ## Related docs
 
+- [RELEASE_NOTES_CADENCE.md](RELEASE_NOTES_CADENCE.md) — autonomy/public-readiness release notes + [CHANGELOG.md](../CHANGELOG.md)  
 - [FIX_ROADMAP.md](FIX_ROADMAP.md) — pass/fail checklist vs code  
 - [PHASE_3_PLAN.md](PHASE_3_PLAN.md) — multi-user / DB / artifacts roadmap  
 - [SECRETS_AND_CONFIG.md](SECRETS_AND_CONFIG.md) — env and secrets  

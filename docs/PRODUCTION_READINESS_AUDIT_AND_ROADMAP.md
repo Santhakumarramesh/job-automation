@@ -115,6 +115,7 @@
 - [x] **mypy (v0 scoped):** `mypy.ini` + CI step on stable API/policy/analytics modules; full-repo strict typing remains optional iterative hardening.
 - [x] **Postgres ENUM** for `job_state` (optional) — `alembic/versions/tracker_0010_job_state_enum.py` + Postgres write-path stores empty job_state as SQL NULL (SQLite/CSV keep strings).
 - [x] **Grafana sample (v0):** [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json) — HTTP + Celery panels from scraped `/metrics` (import-time datasource binding).
+- [x] **Release notes cadence (v0):** [`docs/RELEASE_NOTES_CADENCE.md`](../docs/RELEASE_NOTES_CADENCE.md) + root [`CHANGELOG.md`](../CHANGELOG.md) — when to update for autonomy/public readiness; links to [AUTONOMY_MODEL.md](AUTONOMY_MODEL.md#public-readiness-narrow-autonomy).
 
 ---
 
@@ -128,7 +129,7 @@
 | 4 | GitHub Actions CI | **Sample in repo:** [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) — copy to `.github/workflows/ci.yml` when PAT has **workflow** scope (ruff, scoped mypy, pytest, profile, startup) |
 | 5 | Vision docs committed | **Done** — `SYSTEM_VISION`, `PRODUCT_SCOPE`, `AUTONOMY_MODEL`, `MARKET_PRODUCTION_ROADMAP`, plus audit checklist, external ATS, decision contract |
 
-**Actual immediate priorities:** expand mypy coverage beyond v0 scope; release-note cadence for autonomy/public-readiness updates (Grafana v0 sample: [`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json)).
+**Actual immediate priorities:** expand mypy coverage beyond v0 scope; deepen Grafana/tracker panels beyond the v0 sample ([`contrib/grafana/dashboard-career-co-pilot-v0.json`](../contrib/grafana/dashboard-career-co-pilot-v0.json)); keep [CHANGELOG.md](../CHANGELOG.md) current when autonomy gates or pilot posture changes ([`docs/RELEASE_NOTES_CADENCE.md`](../docs/RELEASE_NOTES_CADENCE.md)).
 
 ---
 

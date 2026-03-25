@@ -14,6 +14,7 @@
 | [docs/PRODUCT_SCOPE.md](docs/PRODUCT_SCOPE.md) | What the product is / is not; in‑scope vs out‑of‑scope; autonomy levels |
 | [docs/AUTONOMY_MODEL.md](docs/AUTONOMY_MODEL.md) | Job & answer states; truth vs submission safety; `safe_to_submit` |
 | [docs/MARKET_PRODUCTION_ROADMAP.md](docs/MARKET_PRODUCTION_ROADMAP.md) | Phased ladder: supervised product → shadow autonomy → narrow production autonomy |
+| [docs/RELEASE_NOTES_CADENCE.md](docs/RELEASE_NOTES_CADENCE.md) | When to update [CHANGELOG.md](CHANGELOG.md) with autonomy / public-readiness changes |
 | [docs/EXTERNAL_ATS_MANUAL_ASSIST.md](docs/EXTERNAL_ATS_MANUAL_ASSIST.md) | Workday / Greenhouse = **manual_assist** assisted autofill only, never `safe_auto_apply` in v1 |
 
 Implementation checklist and scores: [docs/MARKET_PRODUCTION_AUDIT_CHECKLIST.md](docs/MARKET_PRODUCTION_AUDIT_CHECKLIST.md). **Audit vs reality + phased roadmap:** [docs/PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md](docs/PRODUCTION_READINESS_AUDIT_AND_ROADMAP.md). Technical decision payload (v0): [docs/MCP_APPLICATION_DECISION_CONTRACT.md](docs/MCP_APPLICATION_DECISION_CONTRACT.md).
