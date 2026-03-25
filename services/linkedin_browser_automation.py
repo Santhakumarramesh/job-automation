@@ -111,6 +111,7 @@ def apply_to_jobs_payload(
     jobs: Union[str, List[Any]],
     *,
     dry_run: bool = False,
+    shadow_mode: bool = False,
     rate_limit_seconds: float = 90.0,
     manual_assist: bool = False,
     require_safeguards: bool = True,
@@ -215,8 +216,9 @@ def apply_to_jobs_payload(
         resume_path=resume_path or "",
         profile=profile,
         dry_run=dry_run,
+        shadow_mode=shadow_mode,
         rate_limit_sec=rate_limit_seconds,
-        confirm_before_submit=not dry_run,
+        confirm_before_submit=not dry_run and not shadow_mode,
         screenshots_dir=str(root / "application_runs" / "screenshots"),
         use_answerer=True,
         easy_apply_only=not manual_assist,
@@ -300,9 +302,14 @@ def apply_to_jobs_payload(
             await browser.close()
 
         save_path = save_run_results(run_results)
+        shadow_yes = sum(1 for r in run_results if getattr(r, "status", "") == "shadow_would_apply")
+        shadow_no = sum(1 for r in run_results if getattr(r, "status", "") == "shadow_would_not_apply")
         return {
             "status": "ok",
             "applied": applied,
+            "shadow_would_apply": shadow_yes,
+            "shadow_would_not_apply": shadow_no,
+            "shadow_mode": bool(shadow_mode),
             "total": len(jobs),
             "results": results,
             "results_file": save_path,

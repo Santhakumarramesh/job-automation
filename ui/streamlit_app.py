@@ -1048,7 +1048,8 @@ def run():
                 _of_opts = ["", "none", "pending", "extended", "accepted", "declined", "ghosted"]
                 col_cfg = {
                     status_col: st.column_config.SelectboxColumn(
-                        "Status", options=["Applied", "Interviewing", "Offer", "Rejected"]
+                        "Status",
+                        options=["Applied", "Interviewing", "Offer", "Rejected", "Shadow"],
                     ),
                 }
                 if "interview_stage" in display_df.columns:

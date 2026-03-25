@@ -47,7 +47,18 @@ def test_application_audit_report_payload():
     assert out["applied"] == 1
     assert out["failed"] == 1
     assert out["dry_run"] == 1
+    assert out.get("shadow_would_apply") == 0
+    assert out.get("shadow_would_not_apply") == 0
     assert "timeout" in (out.get("fail_reasons") or [])
+
+    out2 = application_audit_report_payload(
+        [
+            {"status": "shadow_would_apply"},
+            {"status": "shadow_would_not_apply", "error": "x"},
+        ]
+    )
+    assert out2["shadow_would_apply"] == 1
+    assert out2["shadow_would_not_apply"] == 1
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")

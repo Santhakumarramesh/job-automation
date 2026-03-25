@@ -43,6 +43,15 @@ def test_submission_skipped_policy_variants():
     ) == ("Skipped – Policy")
 
 
+def test_submission_shadow_statuses():
+    assert _submission_status_for_run_result(_FakeRun("shadow_would_apply", "")) == (
+        "Shadow – Would Apply"
+    )
+    assert _submission_status_for_run_result(
+        _FakeRun("shadow_would_not_apply", "answerer_manual_review_required")
+    ) == ("Shadow – Would Not Apply")
+
+
 def test_submission_failed_login_vs_form():
     assert _submission_status_for_run_result(
         _FakeRun("failed", "checkpoint in URL")

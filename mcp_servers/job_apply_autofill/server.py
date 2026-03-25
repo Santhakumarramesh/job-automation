@@ -83,6 +83,7 @@ def get_autofill_values(
 def apply_to_jobs(
     jobs_json: str,
     dry_run: bool = False,
+    shadow_mode: bool = False,
     rate_limit_seconds: float = 90.0,
     manual_assist: bool = False,
     require_safeguards: bool = True,
@@ -91,6 +92,8 @@ def apply_to_jobs(
     Apply to jobs from JSON. By default: Easy Apply only, no external ATS.
     jobs_json: JSON string, list of {title, company, url, easy_apply?, easy_apply_confirmed?, apply_mode?, fit_decision?, ats_score?, unsupported_requirements?}.
     dry_run: if True, fill forms but do not submit. Recommended for first run.
+    shadow_mode: Phase 2 — fill through pre-submit, never submit; statuses ``shadow_would_apply`` /
+    ``shadow_would_not_apply`` (tracker + run JSON). Overrides dry-run labeling when both True.
     rate_limit_seconds: min seconds between applications (default 90).
     manual_assist: if True, allow external ATS (Greenhouse, Lever, Workday). Default False = Easy Apply only.
     require_safeguards: if True, skip jobs without fit_decision=apply and ats_score>=85 when provided.
@@ -102,6 +105,7 @@ def apply_to_jobs(
         return apply_to_jobs_payload(
             jobs_json,
             dry_run=dry_run,
+            shadow_mode=shadow_mode,
             rate_limit_seconds=rate_limit_seconds,
             manual_assist=manual_assist,
             require_safeguards=require_safeguards,

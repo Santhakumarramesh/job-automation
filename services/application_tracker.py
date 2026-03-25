@@ -250,6 +250,10 @@ def _submission_status_for_run_result(run_result) -> str:
         return "Manual Assist Ready"
     if st == "dry_run":
         return "Dry Run Complete"
+    if st == "shadow_would_apply":
+        return "Shadow – Would Apply"
+    if st == "shadow_would_not_apply":
+        return "Shadow – Would Not Apply"
     if st == "failed":
         if "checkpoint" in el or "challenge" in el or "verification" in el:
             return "Failed – Login Challenge"
@@ -346,7 +350,20 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "apply_url": run_result.job_url,
         "company": run_result.company,
         "position": run_result.position,
-        "status": "Applied" if run_result.status == "applied" else ("Interviewing" if run_result.status == "manual_assist_ready" else "Rejected"),
+        "status": (
+            "Applied"
+            if run_result.status == "applied"
+            else (
+                "Interviewing"
+                if run_result.status == "manual_assist_ready"
+                else (
+                    "Shadow"
+                    if run_result.status
+                    in ("shadow_would_apply", "shadow_would_not_apply")
+                    else "Rejected"
+                )
+            )
+        ),
         "submission_status": _submission_status_for_run_result(run_result),
         "easy_apply_confirmed": job_metadata.get("easy_apply_confirmed", ""),
         "apply_mode": job_metadata.get("apply_mode", ""),

@@ -56,6 +56,8 @@ def application_audit_report_payload(run_results: Union[List[Dict[str, Any]], Di
     skipped = sum(1 for r in data if r.get("status") == "skipped")
     failed = sum(1 for r in data if r.get("status") == "failed")
     dry_run = sum(1 for r in data if r.get("status") == "dry_run")
+    shadow_yes = sum(1 for r in data if r.get("status") == "shadow_would_apply")
+    shadow_no = sum(1 for r in data if r.get("status") == "shadow_would_not_apply")
     manual = sum(1 for r in data if r.get("status") == "manual_assist_ready")
     errors = [r.get("error", "") for r in data if r.get("error")]
     all_unmapped: List[str] = []
@@ -69,6 +71,8 @@ def application_audit_report_payload(run_results: Union[List[Dict[str, Any]], Di
         "skipped": skipped,
         "failed": failed,
         "dry_run": dry_run,
+        "shadow_would_apply": shadow_yes,
+        "shadow_would_not_apply": shadow_no,
         "manual_assist_ready": manual,
         "fail_reasons": list(dict.fromkeys(e for e in errors if e))[:5],
         "unmapped_fields_count": len(all_unmapped),

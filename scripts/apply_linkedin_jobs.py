@@ -25,6 +25,7 @@ async def run_apply(
     resume_path: str = "",
     headless: bool = True,
     dry_run: bool = False,
+    shadow_mode: bool = False,
     rate_limit: float = 120.0,
     *,
     allow_answerer_submit: bool = False,
@@ -61,8 +62,9 @@ async def run_apply(
         resume_path=resume_path or "",
         profile=profile,
         dry_run=dry_run,
+        shadow_mode=shadow_mode,
         rate_limit_sec=rate_limit,
-        confirm_before_submit=not dry_run,
+        confirm_before_submit=not dry_run and not shadow_mode,
         screenshots_dir="application_runs/screenshots",
         use_answerer=True,
         block_submit_on_answerer_review=not allow_answerer_submit,
@@ -77,7 +79,9 @@ async def run_apply(
         print("Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD")
         return
 
-    if dry_run:
+    if shadow_mode:
+        print("🌑 SHADOW MODE: Fill through pre-submit; never submit (shadow_would_apply / shadow_would_not_apply).")
+    elif dry_run:
         print("🔬 DRY RUN: Will fill forms but NOT submit.")
     elif allow_answerer_submit:
         print("⚠️ allow_answerer_submit: will submit even if answerer fields need manual_review.")
@@ -153,6 +157,11 @@ def main():
     parser.add_argument("--resume", default="", help="Resume PDF path")
     parser.add_argument("--no-headless", action="store_true", help="Show browser")
     parser.add_argument("--dry-run", action="store_true", help="Fill forms but do not submit")
+    parser.add_argument(
+        "--shadow",
+        action="store_true",
+        help="Phase 2 shadow: fill through pre-submit, never submit; tracker uses Shadow – Would Apply / Not Apply.",
+    )
     parser.add_argument("--rate-limit", type=float, default=120.0, help="Min seconds between applications (default: 120)")
     parser.add_argument(
         "--allow-answerer-submit",
@@ -164,6 +173,7 @@ def main():
         args.jobs_file, args.resume,
         headless=not args.no_headless,
         dry_run=args.dry_run,
+        shadow_mode=args.shadow,
         rate_limit=args.rate_limit,
         allow_answerer_submit=args.allow_answerer_submit,
     ))

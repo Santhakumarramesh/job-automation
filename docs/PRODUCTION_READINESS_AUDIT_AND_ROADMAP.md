@@ -76,7 +76,8 @@
 
 ## Phase 2 — Shadow autonomy (4–6 weeks)
 
-- [ ] Compute `safe_auto_apply` + `safe_to_submit` but **do not** click submit; log intent vs human outcome.
+- [x] **v0:** LinkedIn **`shadow_mode`** (MCP / REST / CLI): fill through pre-submit, never submit; runner statuses + tracker **Shadow** / submission_status labels.
+- [ ] Rollups: log **shadow intent vs human** outcome and alignment metrics (not bundled yet).
 - [ ] Metrics: alignment rate, false positive/negative estimates, DOM failure rate.
 - [ ] Tune fit/ATS thresholds from shadow data.
 - [ ] UI toggle: shadow vs live supervised.

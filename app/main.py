@@ -443,6 +443,13 @@ class ApplyToJobsRequest(BaseModel):
 
     jobs: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
     dry_run: bool = False
+    shadow_mode: bool = Field(
+        default=False,
+        description=(
+            "Phase 2 shadow: fill through pre-submit, never click submit; "
+            "runner statuses shadow_would_apply / shadow_would_not_apply."
+        ),
+    )
     rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
     manual_assist: bool = False
     require_safeguards: bool = True
@@ -454,6 +461,10 @@ class DryRunApplyToJobsRequest(BaseModel):
     """
 
     jobs: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+    shadow_mode: bool = Field(
+        default=False,
+        description="When True with dry_run, use shadow runner statuses instead of dry_run only.",
+    )
     rate_limit_seconds: float = Field(90.0, ge=5.0, le=600.0)
     manual_assist: bool = False
     require_safeguards: bool = True
@@ -769,9 +780,14 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest):
 
     if not linkedin_browser_automation_enabled():
         return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
     return apply_to_jobs_payload(
         body.jobs,
-        dry_run=body.dry_run,
+        dry_run=raw.get("dry_run", False),
+        shadow_mode=raw.get("shadow_mode", False),
         rate_limit_seconds=body.rate_limit_seconds,
         manual_assist=body.manual_assist,
         require_safeguards=body.require_safeguards,
@@ -796,9 +812,14 @@ def ats_apply_to_jobs_dry_run(body: DryRunApplyToJobsRequest):
 
     if not linkedin_browser_automation_enabled():
         return JSONResponse(status_code=403, content=linkedin_browser_automation_disabled_response())
+    try:
+        raw = body.model_dump()
+    except AttributeError:
+        raw = body.dict()
     return apply_to_jobs_payload(
         body.jobs,
         dry_run=True,
+        shadow_mode=raw.get("shadow_mode", False),
         rate_limit_seconds=body.rate_limit_seconds,
         manual_assist=body.manual_assist,
         require_safeguards=body.require_safeguards,

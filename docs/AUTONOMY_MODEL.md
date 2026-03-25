@@ -172,3 +172,32 @@ This value is derived from:
 - Form template recognition.
 
 The operator layer must treat `safe_to_submit == false` as a **hard stop** for auto‑submit.
+
+---
+
+## Phase 2 — Shadow mode (v0, implemented)
+
+**Goal:** Exercise the same LinkedIn Easy Apply fill path through **pre‑submit**, but **never click Submit**, and record intent for telemetry.
+
+**How to enable**
+
+- MCP **`apply_to_jobs`**: `shadow_mode=True` (optional `dry_run=True`; shadow labeling wins when both are set).
+- REST **`POST /api/ats/apply-to-jobs`**: `"shadow_mode": true` in JSON.
+- REST dry-run alias: **`POST /api/ats/apply-to-jobs/dry-run`** with `"shadow_mode": true` for fill + shadow statuses.
+- CLI: `python scripts/apply_linkedin_jobs.py jobs.json --shadow`.
+
+**Runner statuses**
+
+- `shadow_would_apply` — filled through pre‑submit; **would** have proceeded to submit under current `block_submit_on_answerer_review` rules (i.e. no pending answerer manual review).
+- `shadow_would_not_apply` — same fill path, but **would not** auto‑submit because answerer fields require manual review (or analogous pre‑submit gate).
+
+**Tracker**
+
+- **Status** column: `Shadow`.
+- **submission_status**: `Shadow – Would Apply` or `Shadow – Would Not Apply`.
+- **`application_decision`** JSON is still computed on log (v0.1 contract) for audit.
+
+**Limits (v0)**
+
+- External ATS (`manual_assist` lane) is unchanged; shadow semantics apply primarily to **LinkedIn Easy Apply** in this iteration.
+- Alignment metrics (“shadow vs human”) and UI toggles are **roadmap** on top of these logs.

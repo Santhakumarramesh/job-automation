@@ -30,6 +30,8 @@ class RunConfig:
     cover_letter_path: str = ""
     profile: dict = field(default_factory=dict)
     dry_run: bool = False
+    # Phase 2 shadow: fill through pre-submit, never submit; statuses shadow_would_apply / shadow_would_not_apply
+    shadow_mode: bool = False
     rate_limit_sec: float = 120.0
     confirm_before_submit: bool = True
     screenshots_dir: str = ""
@@ -42,7 +44,7 @@ class RunConfig:
 @dataclass
 class RunResult:
     """Result of an application run."""
-    status: str  # applied, skipped, failed, dry_run
+    status: str  # applied, skipped, failed, dry_run, shadow_would_apply, shadow_would_not_apply, ...
     company: str = ""
     position: str = ""
     job_url: str = ""
@@ -280,7 +282,7 @@ async def run_linkedin_application(
             await page.screenshot(path=str(fp))
             screenshot_paths.append(str(fp))
 
-        if config.dry_run:
+        if config.dry_run and not config.shadow_mode:
             return RunResult(
                 status="dry_run",
                 company=company,
@@ -290,6 +292,38 @@ async def run_linkedin_application(
                 qa_audit=qa_audit,
                 unmapped_fields=unmapped,
                 answerer_review=answerer_review,
+            )
+
+        if config.shadow_mode:
+            if (
+                config.block_submit_on_answerer_review
+                and answerer_review_pending(answerer_review)
+            ):
+                return RunResult(
+                    status="shadow_would_not_apply",
+                    company=company,
+                    position=position,
+                    job_url=url,
+                    screenshot_paths=screenshot_paths,
+                    qa_audit=qa_audit,
+                    unmapped_fields=unmapped,
+                    answerer_review=answerer_review,
+                    error=(
+                        "answerer_manual_review_required: would not auto-submit "
+                        "(shadow_mode)"
+                    ),
+                )
+            return RunResult(
+                status="shadow_would_apply",
+                company=company,
+                position=position,
+                job_url=url,
+                applied_at=datetime.now().isoformat(),
+                screenshot_paths=screenshot_paths,
+                qa_audit=qa_audit,
+                unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+                error="shadow_mode: filled through pre-submit; submit not clicked",
             )
 
         if (
