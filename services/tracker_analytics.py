@@ -58,6 +58,7 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
             "applied_by_recruiter_response": {},
             "by_applied_iso_week": {},
             "rows_with_parseable_applied_at": 0,
+            "by_job_state": {},
         }
 
     st = _norm_col(df, "status")
@@ -86,6 +87,11 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
 
     by_week, n_applied_ts = _by_applied_iso_week(df)
 
+    if "job_state" in df.columns and len(df):
+        by_js = _counts(_norm_col(df, "job_state").replace("", "(empty)"))
+    else:
+        by_js = {}
+
     return {
         "row_count": int(len(df)),
         "by_status": _counts(st.replace("", "(empty)")),
@@ -98,4 +104,5 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "applied_by_recruiter_response": applied_by_rr,
         "by_applied_iso_week": by_week,
         "rows_with_parseable_applied_at": n_applied_ts,
+        "by_job_state": by_js,
     }

@@ -38,6 +38,7 @@ TRACKER_COLUMNS = [
     "selected_address_label",
     "package_field_stats",
     "application_decision",
+    "job_state",
 ]
 
 FOLLOW_UP_COLUMN_SET = frozenset({"follow_up_at", "follow_up_status", "follow_up_note"})
@@ -200,6 +201,7 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
             application_decision TEXT DEFAULT '',
+            job_state TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -257,6 +259,9 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
             "ALTER TABLE applications ADD COLUMN application_decision TEXT DEFAULT ''"
         )
         conn.commit()
+    if "job_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN job_state TEXT DEFAULT ''")
+        conn.commit()
 
 
 def _init_schema_postgres(conn) -> None:
@@ -299,6 +304,7 @@ def _init_schema_postgres(conn) -> None:
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
             application_decision TEXT DEFAULT '',
+            job_state TEXT DEFAULT '',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -318,6 +324,7 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
     _pg_ensure_column(conn, "workspace_id", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "application_decision", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "job_state", "TEXT DEFAULT ''")
 
 
 def migrate_from_csv_sqlite(conn: sqlite3.Connection) -> int:
@@ -413,6 +420,8 @@ def _row_vals(row, col: str) -> str:
         return s[:8000]
     if col == "application_decision":
         return str(v or "")[:31000]
+    if col == "job_state":
+        return str(v or "").strip()[:64]
     if col == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]
@@ -478,6 +487,8 @@ def _cell(row: dict, c: str) -> str:
         return str(v or "").strip()[:120]
     if c == "application_decision":
         return str(v or "")[:31000]
+    if c == "job_state":
+        return str(v or "").strip()[:64]
     if c == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]

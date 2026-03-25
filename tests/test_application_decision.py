@@ -5,6 +5,7 @@ import json
 from services.application_decision import (
     application_decision_json_for_tracker_job,
     build_application_decision,
+    extract_job_state_from_decision_json,
 )
 
 
@@ -121,3 +122,6 @@ def test_application_decision_json_for_tracker_job_roundtrip():
     assert d["schema_version"] == "0.1"
     assert d["job_state"] == "skip"
     assert "answers" in d
+    assert extract_job_state_from_decision_json(raw) == "skip"
+    assert extract_job_state_from_decision_json("") == ""
+    assert extract_job_state_from_decision_json("not json") == ""

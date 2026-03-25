@@ -58,6 +58,7 @@ TRACKER_COLUMNS = [
     "selected_address_label",
     "package_field_stats",
     "application_decision",  # JSON: v0.1 decision payload (see application_decision.py)
+    "job_state",  # Indexed copy of decision job_state (skip, manual_assist, safe_auto_apply, blocked, …)
 ]
 
 # Legacy columns for backward compat
@@ -180,7 +181,9 @@ def log_application(state: dict):
     """Logs a processed job application. Accepts graph state."""
     initialize_tracker()
     from services.tracker_context import build_tracker_row_extras
+    from services.application_decision import extract_job_state_from_decision_json
 
+    _decision_cell = _application_decision_cell_for_state(state)
     row = {
         "id": str(uuid.uuid4()),
         "source": state.get("job_source", "url"),
@@ -218,7 +221,8 @@ def log_application(state: dict):
         "follow_up_note": str(state.get("follow_up_note", "") or ""),
         "interview_stage": str(state.get("interview_stage", "") or ""),
         "offer_outcome": str(state.get("offer_outcome", "") or ""),
-        "application_decision": _application_decision_cell_for_state(state),
+        "application_decision": _decision_cell,
+        "job_state": extract_job_state_from_decision_json(_decision_cell),
     }
     row.update(build_tracker_row_extras(state))
     if USE_DB:
@@ -342,6 +346,7 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
     initialize_tracker()
     job_metadata = job_metadata or {}
     from services.tracker_context import build_tracker_row_extras
+    from services.application_decision import extract_job_state_from_decision_json
 
     screenshots_json = json.dumps(run_result.screenshot_paths) if run_result.screenshot_paths else ""
     qa_combined = dict(run_result.qa_audit) if run_result.qa_audit else {}
@@ -350,6 +355,7 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         qa_combined["_answerer_review"] = ar
     qa_json = json.dumps(qa_combined) if qa_combined else ""
 
+    _decision_cell = _application_decision_cell_from_run(run_result, job_metadata)
     row = {
         "id": str(uuid.uuid4()),
         "source": "linkedin_mcp",
@@ -396,9 +402,8 @@ def log_application_from_result(run_result, resume_path: str = "", cover_path: s
         "follow_up_note": "",
         "interview_stage": "",
         "offer_outcome": "",
-        "application_decision": _application_decision_cell_from_run(
-            run_result, job_metadata
-        ),
+        "application_decision": _decision_cell,
+        "job_state": extract_job_state_from_decision_json(_decision_cell),
     }
     merge_state = {
         "job_url": run_result.job_url,

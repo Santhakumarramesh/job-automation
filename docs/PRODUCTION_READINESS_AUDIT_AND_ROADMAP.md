@@ -32,7 +32,7 @@
 
 | Gap | Detail |
 |-----|--------|
-| **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; optional indexed `job_state` column still open. |
+| **Persistence** | **Done (v0):** `application_decision` JSON on tracker writes; **indexed `job_state` column** populated on new writes (Postgres: `tracker_0008`; SQLite: `tracker_db` migrate). |
 | **DB enums** | No Alembic migration adding dedicated `job_state` / `answer_state` columns; tracker uses strings (`apply_mode`, `policy_reason`, etc.). |
 | **Streamlit supervision UX** | **Partial:** Job Finder “Supervision — application decision” + tracker snapshot expander + REST tab POST; **open:** explicit “I approve submit” audit + shadow toggle (Phase 2). |
 | **Telemetry product** | Prometheus/Redis hooks exist; **no** bundled Grafana job dashboard or “success by job_state” rollup as a shipped artifact. |
@@ -50,7 +50,8 @@
 - [x] Structured **job_state** / **apply_mode_legacy** / **safe_to_submit** in service + MCP + REST.
 - [x] Per canonical screening field: **answer_state**, **truth_safe**, **submit_safe** (heuristic from answerer `reason_codes`).
 - [x] **Persist** last decision snapshot on tracker write paths (runner + `log_application` graph state).
-- [ ] **Optional:** SQLAlchemy/Alembic columns or JSONB for `application_decision` + indexed `job_state`.
+- [x] **Indexed `job_state`:** column on `applications` + admin analytics `by_job_state`; filled from v0.1 decision JSON on log paths.
+- [ ] **Optional:** JSONB for `application_decision` (Postgres) for server-side querying.
 
 ### UI supervision
 
@@ -98,7 +99,7 @@
 
 ## Phase 4 — Scale & polish (ongoing)
 
-- [x] **Admin tracker analytics (v0):** `GET /api/admin/tracker-analytics/summary` — rollups by `status`, `submission_status`, `recruiter_response`, cross-tab `status_by_recruiter_response`, `applied_by_recruiter_response`, **`by_applied_iso_week`** (UTC ISO week of `applied_at`) and `rows_with_parseable_applied_at`; optional `user_id` / `workspace_id` filters and `max_rows` cap (`services/tracker_analytics.py`).
+- [x] **Admin tracker analytics (v0):** `GET /api/admin/tracker-analytics/summary` — rollups by `status`, `submission_status`, `recruiter_response`, cross-tab `status_by_recruiter_response`, `applied_by_recruiter_response`, **`by_applied_iso_week`**, **`by_job_state`** (when column populated), and `rows_with_parseable_applied_at`; optional `user_id` / `workspace_id` filters and `max_rows` cap (`services/tracker_analytics.py`).
 - [x] **Versioned CI sample:** [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) — copy to `.github/workflows/ci.yml` when your token has **workflow** scope (avoids losing the Ruff/pytest steps when workflow files cannot be pushed).
 - [x] **Workspace on enqueue (v0):** optional `API_ENFORCE_USER_WORKSPACE_ON_WRITES` + `API_WORKSPACE_ENFORCE_FOR_ADMIN` — `services/workspace_write_guard.py` on `POST /api/jobs` and LinkedIn batch apply (see [DEPLOY.md](DEPLOY.md)).
 - [x] **LinkedIn ATS auth (v0):** optional `API_ATS_LINKEDIN_REQUIRE_AUTH` — rejects `demo-user` on confirm/apply routes; batch apply stamps `user_id` when missing.

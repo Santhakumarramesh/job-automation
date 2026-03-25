@@ -142,6 +142,25 @@ def build_application_decision(
     }
 
 
+def extract_job_state_from_decision_json(raw: Optional[str]) -> str:
+    """
+    Parse v0.1 ``application_decision`` JSON and return indexed ``job_state`` (max 64 chars).
+    Returns empty string if missing or invalid.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    try:
+        d = json.loads(s)
+        js = d.get("job_state")
+        if isinstance(js, str):
+            t = js.strip()
+            return t[:64] if t else ""
+    except Exception:
+        pass
+    return ""
+
+
 def application_decision_json_for_tracker_job(
     job: Dict[str, Any],
     *,

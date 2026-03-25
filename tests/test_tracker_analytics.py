@@ -13,6 +13,7 @@ def test_empty_summary():
     assert out["applied_row_count"] == 0
     assert out["by_applied_iso_week"] == {}
     assert out["rows_with_parseable_applied_at"] == 0
+    assert out["by_job_state"] == {}
 
 
 def test_summary_counts_and_applied_breakdown():
@@ -25,6 +26,7 @@ def test_summary_counts_and_applied_breakdown():
                 "recruiter_response": "positive",
                 "user_id": "u1",
                 "workspace_id": "ws1",
+                "job_state": "manual_assist",
             },
             {
                 **{c: "" for c in TRACKER_COLUMNS},
@@ -33,6 +35,7 @@ def test_summary_counts_and_applied_breakdown():
                 "recruiter_response": "Pending",
                 "user_id": "u1",
                 "workspace_id": "ws1",
+                "job_state": "manual_assist",
             },
             {
                 **{c: "" for c in TRACKER_COLUMNS},
@@ -54,6 +57,8 @@ def test_summary_counts_and_applied_breakdown():
     assert out["applied_by_recruiter_response"].get("positive") == 1
     assert out["applied_by_recruiter_response"].get("Pending") == 1
     assert "Applied" in out["status_by_recruiter_response"]
+    assert out["by_job_state"].get("manual_assist") == 2
+    assert out["by_job_state"].get("(empty)") == 1
 
 
 def test_by_applied_iso_week_buckets():
