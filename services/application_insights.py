@@ -9,10 +9,9 @@ import json
 import math
 from collections import Counter, deque, defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from services.observability import AUDIT_LOG_PATH
+from services.observability import get_audit_log_path
 
 
 def _now_iso() -> str:
@@ -440,7 +439,7 @@ def compute_tracker_insights(
 
 
 def _read_audit_events(max_lines: int = 2500) -> List[Dict[str, Any]]:
-    path = Path(AUDIT_LOG_PATH)
+    path = get_audit_log_path()
     if not path.is_file():
         return []
     dq: deque[str] = deque(maxlen=max(100, min(max_lines, 50_000)))

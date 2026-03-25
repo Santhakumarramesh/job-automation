@@ -1578,6 +1578,26 @@ def run():
             )
             baj_safe = st.checkbox("require_safeguards", value=True, key="api_baj_safe")
             baj_rl = st.number_input("rate_limit_seconds", min_value=5.0, max_value=600.0, value=90.0, key="api_baj_rl")
+            _will_live_submit = not baj_dry and not baj_shadow
+            baj_approve = False
+            baj_approve_note = ""
+            if _will_live_submit:
+                st.caption(
+                    "Live submit: the API can require **operator_submit_approved** "
+                    "(set `ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL=1` on the server). "
+                    "Checking the box sends approval and writes **operator_submit_approved** to the API audit log."
+                )
+                baj_approve = st.checkbox(
+                    "I approve live LinkedIn submit (operator_submit_approved → API audit log)",
+                    value=False,
+                    key="api_baj_approve",
+                )
+                baj_approve_note = st.text_input(
+                    "Optional operator note (operator_submit_note, max 500 chars)",
+                    value="",
+                    max_length=500,
+                    key="api_baj_approve_note",
+                )
             if st.button("POST /api/ats/apply-to-jobs", key="api_baj_btn"):
                 try:
                     jobs_parsed = json.loads(baj_jobs)
@@ -1587,22 +1607,34 @@ def run():
                     if not isinstance(jobs_parsed, list):
                         st.error("jobs must be a JSON array")
                     else:
-                        try:
-                            r = _call(
-                                "POST",
-                                "/api/ats/apply-to-jobs",
-                                json_body={
-                                    "jobs": jobs_parsed,
-                                    "dry_run": baj_dry,
-                                    "shadow_mode": baj_shadow,
-                                    "require_safeguards": baj_safe,
-                                    "rate_limit_seconds": float(baj_rl),
-                                },
-                                timeout=600.0,
+                        if _will_live_submit and not baj_approve:
+                            st.error(
+                                "Live submit blocked in UI: enable **I approve live LinkedIn submit**, "
+                                "or use **dry_run** / **shadow_mode** first."
                             )
-                            _show_api_response(r)
-                        except requests.RequestException as ex:
-                            st.error(f"Connection error: {ex}")
+                        else:
+                            try:
+                                r = _call(
+                                    "POST",
+                                    "/api/ats/apply-to-jobs",
+                                    json_body={
+                                        "jobs": jobs_parsed,
+                                        "dry_run": baj_dry,
+                                        "shadow_mode": baj_shadow,
+                                        "require_safeguards": baj_safe,
+                                        "rate_limit_seconds": float(baj_rl),
+                                        "operator_submit_approved": bool(
+                                            _will_live_submit and baj_approve
+                                        ),
+                                        "operator_submit_note": str(baj_approve_note or "")[
+                                            :500
+                                        ],
+                                    },
+                                    timeout=600.0,
+                                )
+                                _show_api_response(r)
+                            except requests.RequestException as ex:
+                                st.error(f"Connection error: {ex}")
 
         with st.expander("Score job fit, address, static analyze-form", expanded=False):
             st.caption("POST /api/ats/score-job-fit — JD + resume text required (min length enforced by API).")

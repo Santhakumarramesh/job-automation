@@ -12,11 +12,19 @@ from typing import Optional
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
-AUDIT_LOG_PATH = Path(os.getenv("AUDIT_LOG_PATH", str(_PROJECT_ROOT / "application_audit.jsonl")))
 
 
-def _ensure_audit_dir() -> None:
-    AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+def get_audit_log_path() -> Path:
+    """Resolve audit JSONL path (reads ``AUDIT_LOG_PATH`` on each call for tests / late env)."""
+    return Path(os.getenv("AUDIT_LOG_PATH", str(_PROJECT_ROOT / "application_audit.jsonl")))
+
+
+# Import-time default for callers that snapshot the path once.
+AUDIT_LOG_PATH = get_audit_log_path()
+
+
+def _ensure_audit_dir(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def audit_log(
@@ -42,9 +50,10 @@ def audit_log(
         "correlation_id": correlation_id,
         **(extra or {}),
     }
+    path = get_audit_log_path()
     try:
-        _ensure_audit_dir()
-        with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+        _ensure_audit_dir(path)
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, default=str) + "\n")
     except Exception:
         pass

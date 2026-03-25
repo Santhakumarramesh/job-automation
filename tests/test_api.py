@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -287,6 +288,111 @@ def test_post_ats_apply_to_jobs_enabled_mocked(mock_payload, monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json().get("status") == "ok"
     mock_payload.assert_called_once()
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+def test_post_ats_apply_live_requires_operator_when_env(monkeypatch):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    monkeypatch.setenv("ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL", "1")
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": False,
+            "shadow_mode": False,
+            "require_safeguards": False,
+        },
+    )
+    assert r.status_code == 400
+    assert "operator_submit_approved" in (r.json().get("detail") or "")
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.apply_to_jobs_payload")
+def test_post_ats_apply_live_allowed_with_operator_flag(mock_payload, monkeypatch, tmp_path):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    monkeypatch.setenv("ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL", "1")
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    mock_payload.return_value = {
+        "status": "ok",
+        "applied": 0,
+        "total": 1,
+        "results": [],
+        "results_file": "/tmp/x",
+    }
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/1",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": False,
+            "shadow_mode": False,
+            "require_safeguards": False,
+            "operator_submit_approved": True,
+            "operator_submit_note": "approved e2e",
+        },
+    )
+    assert r.status_code == 200, r.text
+    log = tmp_path / "audit.jsonl"
+    assert log.is_file()
+    lines = log.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) >= 1
+    ev = json.loads(lines[-1])
+    assert ev["action"] == "operator_submit_approved"
+    assert ev.get("operator_submit_note") == "approved e2e"
+    assert ev.get("user_id")
+
+
+@pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
+@patch("services.linkedin_browser_automation.apply_to_jobs_payload")
+def test_post_ats_apply_live_writes_audit_when_approved_even_if_gate_off(
+    mock_payload, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ATS_ALLOW_LINKEDIN_BROWSER", "1")
+    monkeypatch.delenv("ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL", raising=False)
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    mock_payload.return_value = {
+        "status": "ok",
+        "applied": 0,
+        "total": 1,
+        "results": [],
+        "results_file": "/tmp/x",
+    }
+    r = client.post(
+        "/api/ats/apply-to-jobs",
+        json={
+            "jobs": [
+                {
+                    "title": "Eng",
+                    "company": "Co",
+                    "url": "https://www.linkedin.com/jobs/view/99",
+                    "easy_apply_confirmed": True,
+                }
+            ],
+            "dry_run": False,
+            "shadow_mode": False,
+            "require_safeguards": False,
+            "operator_submit_approved": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    ev = json.loads(
+        (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1]
+    )
+    assert ev["action"] == "operator_submit_approved"
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")

@@ -473,6 +473,20 @@ class ApplyToJobsRequest(BaseModel):
             "With API_ENFORCE_USER_WORKSPACE_ON_WRITES, must match the authenticated tenant."
         ),
     )
+    operator_submit_approved: bool = Field(
+        default=False,
+        description=(
+            "Supervised operators: explicit approval before live LinkedIn submit. "
+            "When True and the request is a live submit (not dry_run, not shadow_mode), "
+            "the API appends an audit line to application_audit.jsonl (AUDIT_LOG_PATH). "
+            "When ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL=1, live submit is rejected unless this is True."
+        ),
+    )
+    operator_submit_note: str = Field(
+        default="",
+        max_length=500,
+        description="Optional note included in the operator_submit_approved audit event.",
+    )
 
 
 class DryRunApplyToJobsRequest(BaseModel):
@@ -799,12 +813,17 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest, user: User = Depends(get_current
     """
     Run the LinkedIn apply loop (or dry-run) for up to 50 jobs (MCP parity).
     Requires ``ATS_ALLOW_LINKEDIN_BROWSER=1``, Playwright, credentials, and (for default mode) Easy Apply–confirmed rows.
+
+    Live submit (``dry_run=false`` and ``shadow_mode=false``): optional gate
+    ``ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL=1`` requires ``operator_submit_approved=true``.
+    When ``operator_submit_approved`` is true on a live submit, an audit line is written (``AUDIT_LOG_PATH``).
     """
     from services.linkedin_browser_automation import apply_to_jobs_payload
     from services.linkedin_browser_gate import (
         linkedin_browser_automation_disabled_response,
         linkedin_browser_automation_enabled,
     )
+    from services.observability import audit_log
     from services.workspace_write_guard import (
         assert_ats_linkedin_caller_allowed,
         enforce_user_workspace_on_apply_jobs,
@@ -824,10 +843,49 @@ def ats_apply_to_jobs(body: ApplyToJobsRequest, user: User = Depends(get_current
         jobs=jobs,
         default_workspace_id=raw.get("workspace_id"),
     )
+    dry_run = bool(raw.get("dry_run", False))
+    shadow_mode = bool(raw.get("shadow_mode", False))
+    live_submit = not dry_run and not shadow_mode
+    op_ok = bool(raw.get("operator_submit_approved", False))
+    op_note = str(raw.get("operator_submit_note") or "")[:500]
+    require_op = os.getenv("ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if live_submit and require_op and not op_ok:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Live LinkedIn submit requires operator_submit_approved=true. "
+                "Use dry_run or shadow_mode for unattended tests, or set "
+                "ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL=0 to disable this gate."
+            ),
+        )
+    if live_submit and op_ok:
+        sample_urls: list[str] = []
+        for j in jobs[:12]:
+            if not isinstance(j, dict):
+                continue
+            u = str(j.get("url") or j.get("applyUrl") or "").strip()
+            if u:
+                sample_urls.append(u[:500])
+        audit_log(
+            "operator_submit_approved",
+            status="before_apply_payload",
+            extra={
+                "user_id": user.id,
+                "job_count": len(jobs),
+                "operator_submit_note": op_note,
+                "rate_limit_seconds": float(raw.get("rate_limit_seconds") or 90.0),
+                "require_safeguards": bool(raw.get("require_safeguards", True)),
+                "job_urls_sample": sample_urls,
+            },
+        )
     return apply_to_jobs_payload(
         jobs,
-        dry_run=raw.get("dry_run", False),
-        shadow_mode=raw.get("shadow_mode", False),
+        dry_run=dry_run,
+        shadow_mode=shadow_mode,
         rate_limit_seconds=body.rate_limit_seconds,
         manual_assist=body.manual_assist,
         require_safeguards=body.require_safeguards,

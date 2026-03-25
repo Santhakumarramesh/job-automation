@@ -58,7 +58,7 @@
 - [x] Streamlit: show **job_state**, **safe_to_submit**, **critical_unsatisfied**, per-field table from `build_application_decision` (Job Finder preview); tracker column snapshot expander; API tab POST.
 - [x] **manual_assist:** table of fields with safe/review/missing + autofill preview (Job Finder supervision — sorted table, optional “all fields”, copy bundle).
 - [x] **safe_auto_apply:** preconditions checklist + dry-run / shadow / CLI screenshot pointers (Job Finder supervision when `job_state` is `safe_auto_apply`; `safe_auto_apply_precondition_checklist` in `application_decision`).
-- [ ] Explicit **“I approve submit”** logging (audit trail) before live submit in UI flows.
+- [x] Explicit **“I approve submit”** logging: `POST /api/ats/apply-to-jobs` with `operator_submit_approved` + optional `operator_submit_note` writes `operator_submit_approved` to `application_audit.jsonl` on **live** submit; optional gate `ATS_REQUIRE_OPERATOR_SUBMIT_APPROVAL=1`; Streamlit batch-apply requires the approval checkbox for live runs.
 
 ### Truth validation
 
