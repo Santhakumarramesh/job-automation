@@ -406,6 +406,86 @@
       ],
       "title": "DOM scan avg seconds over time (5m window)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 45 },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(ccp_apply_runner_linkedin_fill_total_seconds_sum[5m]) / clamp_min(rate(ccp_apply_runner_linkedin_fill_total_seconds_count[5m]), 1e-9)",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg fill total seconds (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 45 },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(ccp_apply_runner_linkedin_fill_unmapped_fields_sum[5m]) / clamp_min(rate(ccp_apply_runner_linkedin_fill_unmapped_fields_count[5m]), 1e-9)",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg unmapped fields/run (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 45 },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "increase(ccp_apply_runner_linkedin_fill_playwright_timeout_total[15m])",
+          "refId": "A"
+        }
+      ],
+      "title": "Playwright timeouts (15m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 45 },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(ccp_apply_runner_linkedin_live_submit_blocked_autonomy_total[5m]) / clamp_min(rate(ccp_apply_runner_linkedin_live_submit_attempt_total[5m]), 1e-9)",
+          "refId": "A"
+        }
+      ],
+      "title": "Blocked share (5m)",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
