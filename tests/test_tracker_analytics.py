@@ -11,6 +11,8 @@ def test_empty_summary():
     assert out["row_count"] == 0
     assert out["by_status"] == {}
     assert out["applied_row_count"] == 0
+    assert out["by_applied_iso_week"] == {}
+    assert out["rows_with_parseable_applied_at"] == 0
 
 
 def test_summary_counts_and_applied_breakdown():
@@ -52,6 +54,30 @@ def test_summary_counts_and_applied_breakdown():
     assert out["applied_by_recruiter_response"].get("positive") == 1
     assert out["applied_by_recruiter_response"].get("Pending") == 1
     assert "Applied" in out["status_by_recruiter_response"]
+
+
+def test_by_applied_iso_week_buckets():
+    base = {c: "" for c in TRACKER_COLUMNS}
+    df = pd.DataFrame(
+        [
+            {
+                **base,
+                "status": "Applied",
+                "submission_status": "Applied",
+                "applied_at": "2024-01-01T12:00:00",
+            },
+            {
+                **base,
+                "status": "Shadow",
+                "submission_status": "Shadow – Would Apply",
+                "applied_at": "2024-01-03T00:00:00",
+            },
+            {**base, "status": "Applied", "submission_status": "Applied", "applied_at": "not-a-date"},
+        ]
+    )
+    out = build_admin_tracker_analytics_summary(df)
+    assert out["rows_with_parseable_applied_at"] == 2
+    assert out["by_applied_iso_week"].get("2024-W01") == 2
 
 
 def test_status_by_recruiter_response_cross_tab():

@@ -137,7 +137,7 @@ At the end of Phase 3, the system can truthfully claim **narrow, well‑governed
 
 **Still roadmap:** multi-tenant RBAC hardening, mobile/PWA approvals, role templates, time-series / BI exports.
 
-**CI:** Run **pytest**, **`ruff check .`**, example profile validation, and startup smoke in Actions (or locally); workflow YAML may live in-repo once your token has **workflow** scope for pushes.
+**CI:** Run **pytest**, **`ruff check .`**, example profile validation, and startup smoke in Actions (or locally). A full workflow sample lives in **`contrib/github-actions-ci.yml`** (copy to `.github/workflows/` when your PAT has **workflow** scope).
 
 ---
 

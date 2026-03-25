@@ -42,6 +42,7 @@ Set `APP_ENV=production` (or rely on `STRICT_STARTUP=1`) and satisfy [startup_ch
 4. **JWT (JWKS):** Prefer `JWT_AUDIENCE` when using `JWT_JWKS_URL` or `JWT_ISSUER`.
 5. **Multi-tenant writes (optional):** `API_ENFORCE_USER_WORKSPACE_ON_WRITES=1` makes `POST /api/jobs` and LinkedIn batch apply (`POST /api/ats/apply-to-jobs`, `…/dry-run`) require that per-job (or batch default) `workspace_id` / `organization_id` matches the caller’s JWT / `X-Workspace-Id` workspace (admins exempt unless `API_WORKSPACE_ENFORCE_FOR_ADMIN=1`). See `services/workspace_write_guard.py`.
 6. **LinkedIn ATS auth (optional):** `API_ATS_LINKEDIN_REQUIRE_AUTH=1` returns **401** for the anonymous `demo-user` on `POST /api/ats/confirm-easy-apply`, `POST /api/ats/apply-to-jobs`, and `POST /api/ats/apply-to-jobs/dry-run` — callers must send `X-API-Key`, `Authorization: Bearer`, or `X-M2M-API-Key`.
+7. **GitHub Actions:** If you cannot push `.github/workflows/*.yml` (PAT missing **workflow** scope), copy [`contrib/github-actions-ci.yml`](../contrib/github-actions-ci.yml) into `.github/workflows/ci.yml` locally or in the GitHub UI.
 
 Optional: `AWS_SECRETS_MANAGER_SECRET_ID` to merge secrets at startup ([SECRETS_AND_CONFIG.md](SECRETS_AND_CONFIG.md)).
 

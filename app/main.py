@@ -1072,7 +1072,8 @@ def admin_tracker_analytics_summary(
 ):
     """
     Phase 4 — aggregated tracker counts: status, submission_status, recruiter_response,
-    cross-tabs for response rates by status, and applied rows broken down by recruiter_response.
+    cross-tabs for response rates by status, applied rows by recruiter_response, and
+    ``by_applied_iso_week`` (UTC ISO week of ``applied_at``) plus parseable timestamp count.
     """
     from services.application_tracker import load_applications
     from services.tracker_analytics import build_admin_tracker_analytics_summary

@@ -11,6 +11,29 @@ from typing import Any, Dict
 import pandas as pd
 
 
+def _by_applied_iso_week(df: pd.DataFrame) -> tuple[Dict[str, int], int]:
+    """
+    Bucket rows by ISO week of ``applied_at`` (UTC). Keys: ``YYYY-Www`` (week zero-padded).
+
+    Returns ``(counts_by_week, rows_with_parseable_applied_at)``.
+    """
+    if df.empty or "applied_at" not in df.columns:
+        return {}, 0
+    ts = pd.to_datetime(df["applied_at"], errors="coerce", utc=True)
+    valid = ts.notna()
+    n_parse = int(valid.sum())
+    if n_parse == 0:
+        return {}, 0
+    t_ok = ts[valid]
+    try:
+        iso = t_ok.dt.isocalendar()
+        keys = iso.year.astype(str) + "-W" + iso.week.astype(str).str.zfill(2)
+    except (AttributeError, TypeError, ValueError):
+        return {}, n_parse
+    vc = keys.value_counts().sort_index()
+    return {str(k): int(v) for k, v in vc.items()}, n_parse
+
+
 def _norm_col(df: pd.DataFrame, col: str) -> pd.Series:
     if col not in df.columns or df.empty:
         return pd.Series([""] * len(df), index=df.index, dtype=str)
@@ -33,6 +56,8 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
             "unique_workspace_ids": 0,
             "applied_row_count": 0,
             "applied_by_recruiter_response": {},
+            "by_applied_iso_week": {},
+            "rows_with_parseable_applied_at": 0,
         }
 
     st = _norm_col(df, "status")
@@ -59,6 +84,8 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
     sub = df.loc[is_applied]
     applied_by_rr = _counts(_norm_col(sub, "recruiter_response")) if len(sub) else {}
 
+    by_week, n_applied_ts = _by_applied_iso_week(df)
+
     return {
         "row_count": int(len(df)),
         "by_status": _counts(st.replace("", "(empty)")),
@@ -69,4 +96,6 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "unique_workspace_ids": unique_ws,
         "applied_row_count": applied_row_count,
         "applied_by_recruiter_response": applied_by_rr,
+        "by_applied_iso_week": by_week,
+        "rows_with_parseable_applied_at": n_applied_ts,
     }
