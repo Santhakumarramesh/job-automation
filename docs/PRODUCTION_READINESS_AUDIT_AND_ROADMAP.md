@@ -24,7 +24,7 @@
 - **Tracking:** Application tracker (CSV / SQLite / Postgres) with rich columns; admin/insights APIs.
 - **Policy v0.1:** `services/application_decision.build_application_decision`, MCP `get_application_decision`, `POST /api/ats/application-decision` — structured `job_state`, per-field `answer_state`, `truth_safe`, `submit_safe`, `safe_to_submit` ([MCP_APPLICATION_DECISION_CONTRACT.md](MCP_APPLICATION_DECISION_CONTRACT.md)).
 - **Docs & positioning:** README production scope; CI badge; vision/scope/autonomy/roadmap/external ATS strategy docs.
-- **CI:** [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — pytest, example profile validation, `check_startup.py app` (extend with ruff/mypy when ready).
+- **CI:** pytest, example profile validation, `check_startup.py app`; **Ruff** configured in `pyproject.toml` (run `ruff check .`). Add the Ruff step to `.github/workflows/ci.yml` when your PAT can update workflows (**workflow** scope).
 
 ---
 
