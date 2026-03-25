@@ -9,6 +9,7 @@ from services.workspace_write_guard import (
     assert_ats_linkedin_caller_allowed,
     enforce_user_workspace_on_apply_jobs,
     enforce_user_workspace_on_job_payload,
+    enforce_admin_workspace_on_read,
 )
 
 
@@ -109,6 +110,35 @@ def test_enforce_apply_jobs_batch_default_workspace(monkeypatch):
         default_workspace_id="ws-1",
     )
     assert jobs[0]["workspace_id"] == "ws-1"
+
+
+def test_admin_read_noop_when_env_disabled(monkeypatch):
+    monkeypatch.delenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", raising=False)
+    adm = User("admin", ["admin"], workspace_id="ws-a")
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id="ws-b") == "ws-b"
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id=None) is None
+
+
+def test_admin_read_enforced_defaults_to_admin_workspace(monkeypatch):
+    monkeypatch.setenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", "1")
+    adm = User("admin", ["admin"], workspace_id="ws-a")
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id=None) == "ws-a"
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id=" ws-a ") == "ws-a"
+
+
+def test_admin_read_rejects_mismatched_workspace(monkeypatch):
+    monkeypatch.setenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", "true")
+    adm = User("admin", ["admin"], workspace_id="ws-a")
+    with pytest.raises(HTTPException) as ei:
+        enforce_admin_workspace_on_read(admin=adm, query_workspace_id="ws-b")
+    assert ei.value.status_code == 403
+
+
+def test_admin_read_falls_back_when_admin_has_no_workspace(monkeypatch):
+    monkeypatch.setenv("API_WORKSPACE_ENFORCE_FOR_ADMIN", "1")
+    adm = User("admin", ["admin"], workspace_id=None)
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id="ws-b") == "ws-b"
+    assert enforce_admin_workspace_on_read(admin=adm, query_workspace_id=None) is None
 
 
 def test_build_runner_metadata_passes_identity_from_job():

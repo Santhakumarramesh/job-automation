@@ -149,3 +149,43 @@ def enforce_user_workspace_on_apply_jobs(
                 detail="Job workspace_id does not match authenticated workspace (API_ENFORCE_USER_WORKSPACE_ON_WRITES).",
             )
         jraw["workspace_id"] = eff
+
+
+def enforce_admin_workspace_on_read(
+    *,
+    admin: Any,
+    query_workspace_id: Optional[str],
+) -> Optional[str]:
+    """
+    Phase 4.2/4.3 — tenant boundary for admin *read* endpoints.
+
+    By default, admin endpoints can optionally scope by `workspace_id` query param
+    (or return everything when unset).
+
+    When `API_WORKSPACE_ENFORCE_FOR_ADMIN=1` and the admin has a non-empty
+    `admin.workspace_id`, we enforce:
+    - if `workspace_id` query param is unset/empty -> return admin's workspace_id
+    - if query param matches -> allow it
+    - if query param differs -> raise 403
+    """
+    q = str(query_workspace_id or "").strip()
+    q = q[:200] if q else ""
+
+    if not _truthy("API_WORKSPACE_ENFORCE_FOR_ADMIN"):
+        return q if q else None
+
+    aw = str(getattr(admin, "workspace_id", None) or "").strip()
+    aw = aw[:200] if aw else ""
+    if not aw:
+        # If the admin identity doesn't have workspace metadata, fall back to
+        # old behavior (query scoping when provided, else unscoped).
+        return q if q else None
+
+    if not q:
+        return aw
+    if q != aw:
+        raise HTTPException(
+            status_code=403,
+            detail="admin workspace_id does not match authenticated admin workspace (API_WORKSPACE_ENFORCE_FOR_ADMIN=1).",
+        )
+    return q

@@ -183,11 +183,10 @@ def _workspace_filter(query_workspace_id: Optional[str], user: User) -> Optional
     return resolve_workspace_list_filter(query_workspace_id, getattr(user, "workspace_id", None))
 
 
-def _admin_workspace_filter(query_workspace_id: Optional[str]) -> Optional[str]:
-    if query_workspace_id is None:
-        return None
-    q = (query_workspace_id or "").strip()
-    return q if q else None
+def _admin_workspace_filter(query_workspace_id: Optional[str], admin: User) -> Optional[str]:
+    from services.workspace_write_guard import enforce_admin_workspace_on_read
+
+    return enforce_admin_workspace_on_read(admin=admin, query_workspace_id=query_workspace_id)
 
 
 def _artifacts_with_optional_signed_urls(artifacts: dict, signed_urls: bool) -> dict:
@@ -1102,7 +1101,7 @@ def admin_list_applications(
     """
     from services.application_tracker import load_applications
 
-    wf = _admin_workspace_filter(workspace_id)
+    wf = _admin_workspace_filter(workspace_id, admin)
     df = load_applications(for_user_id=None, workspace_id=wf)
     records = df.fillna("").to_dict(orient="records")
     return {"count": len(records), "items": records[:2000], "scoped": False}
@@ -1139,7 +1138,7 @@ def admin_tracker_analytics_summary(
     from services.tracker_analytics import build_admin_tracker_analytics_summary
 
     uid = user_id.strip() if user_id else None
-    wf = _admin_workspace_filter(workspace_id)
+    wf = _admin_workspace_filter(workspace_id, admin)
     df = load_applications(for_user_id=uid, workspace_id=wf)
     total_matching = len(df)
     truncated = total_matching > max_rows
@@ -1186,7 +1185,7 @@ def admin_export_tracker_for_user(
     from services.application_tracker import load_applications
 
     uid = user_id.strip()
-    wf = _admin_workspace_filter(workspace_id)
+    wf = _admin_workspace_filter(workspace_id, admin)
     df = load_applications(for_user_id=uid, workspace_id=wf)
     total = len(df)
     df = df.head(limit)
