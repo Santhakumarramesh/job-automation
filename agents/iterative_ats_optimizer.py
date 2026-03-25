@@ -10,6 +10,7 @@ from agents.state import AgentState
 
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_TARGET_SCORE = 100
+DEFAULT_MIN_SCORE_GAIN_DELTA = 1
 
 
 def run_iterative_ats_optimizer(
@@ -20,6 +21,7 @@ def run_iterative_ats_optimizer(
     target_score: int = DEFAULT_TARGET_SCORE,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     truth_safe: bool = True,
+    min_score_gain_delta: int = DEFAULT_MIN_SCORE_GAIN_DELTA,
 ) -> dict:
     """
     Iterative loop:
@@ -35,11 +37,12 @@ def run_iterative_ats_optimizer(
 
     current_resume = master_text
     current_score = 0
+    prev_score: Optional[int] = None
     first_ats_score: Optional[int] = None
     attempt = 0
-    last_feedback = []
-    last_missing = []
-    last_truthful_missing = []
+    last_feedback: list[str] = []
+    last_missing: list[str] = []
+    last_truthful_missing: list[str] = []
 
     def _run_ats_check(resume_text: str) -> dict:
         return ats_checker.comprehensive_ats_check(
@@ -66,6 +69,13 @@ def run_iterative_ats_optimizer(
             return {
                 "tailored_resume_text": current_resume,
                 "humanized_resume_text": current_resume,
+                "ats_oriented_resume_text": current_resume,
+                "human_readable_resume_text": current_resume,
+                # Structured output (extra keys for ops/docs; keep legacy names too).
+                "baseline_score": first_ats_score if first_ats_score is not None else current_score,
+                "final_internal_ats_score": current_score,
+                "truthful_ceiling": current_score,
+                "iterations": attempt,
                 "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
                 "final_ats_score": current_score,
                 "feedback": last_feedback,
@@ -75,6 +85,33 @@ def run_iterative_ats_optimizer(
                 "converged": True,
             }
 
+        # Early stop: if last iteration did not improve enough.
+        if prev_score is not None:
+            gain = current_score - prev_score
+            if gain < int(min_score_gain_delta or 0) and attempt >= 2:
+                return {
+                    "tailored_resume_text": current_resume,
+                    "humanized_resume_text": current_resume,
+                    "ats_oriented_resume_text": current_resume,
+                    "human_readable_resume_text": current_resume,
+                    # Structured output (extra keys for ops/docs; keep legacy names too).
+                    "baseline_score": first_ats_score if first_ats_score is not None else current_score,
+                    "final_internal_ats_score": current_score,
+                    "truthful_ceiling": current_score,
+                    "iterations": attempt,
+                    "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
+                    "final_ats_score": current_score,
+                    "feedback": last_feedback,
+                    "missing_keywords": last_missing,
+                    "truthful_missing_keywords": last_truthful_missing,
+                    "attempts": attempt,
+                    "converged": False,
+                    "stopped_early": True,
+                    "score_gain": gain,
+                }
+
+        prev_score = int(current_score)
+
         # Truth-safe: only add keywords from master
         if truth_safe and master_inventory:
             last_truthful_missing = get_truthful_missing_keywords(master_inventory, last_missing)
@@ -82,6 +119,12 @@ def run_iterative_ats_optimizer(
                 return {
                     "tailored_resume_text": current_resume,
                     "humanized_resume_text": current_resume,
+                    "ats_oriented_resume_text": current_resume,
+                    "human_readable_resume_text": current_resume,
+                    "baseline_score": first_ats_score if first_ats_score is not None else current_score,
+                    "final_internal_ats_score": current_score,
+                    "truthful_ceiling": current_score,
+                    "iterations": attempt,
                     "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
                     "final_ats_score": current_score,
                     "feedback": last_feedback,
@@ -113,6 +156,12 @@ def run_iterative_ats_optimizer(
     return {
         "tailored_resume_text": current_resume,
         "humanized_resume_text": current_resume,
+        "ats_oriented_resume_text": current_resume,
+        "human_readable_resume_text": current_resume,
+        "baseline_score": first_ats_score if first_ats_score is not None else current_score,
+        "final_internal_ats_score": current_score,
+        "truthful_ceiling": current_score,
+        "iterations": attempt,
         "initial_ats_score": first_ats_score if first_ats_score is not None else current_score,
         "final_ats_score": current_score,
         "feedback": last_feedback,

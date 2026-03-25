@@ -67,10 +67,10 @@
 
 **Goal:** Strong internal ATS alignment without hallucination.
 
-- [ ] Cap loop: max **N** iterations (e.g. 3–5); early stop if score gain &lt; delta.
-- [ ] Hard constraints: reuse existing facts/metrics only; no new tools/domains/achievements; no fake locations or seniority inflation.
-- [ ] Structured output: `baseline_score`, `final_internal_ats_score`, `truthful_ceiling`, `iterations`.
-- [ ] Two variants: ATS-oriented + human-readable (same facts).
+ - [x] Cap loop: max **N** iterations (e.g. 3–5); early stop if score gain &lt; delta.
+ - [x] Hard constraints: reuse existing facts/metrics only; no new tools/domains/achievements; no fake locations or seniority inflation.
+ - [x] Structured output: `baseline_score`, `final_internal_ats_score`, `truthful_ceiling`, `iterations`.
+ - [x] Two variants: ATS-oriented + human-readable (same facts).
 
 **Status:** ATS direction **green**; formal loop caps + dual-variant contract **yellow** (partially present in iterative optimizer + truth-safe ceiling).
 
