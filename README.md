@@ -1,8 +1,12 @@
-# Career Co-Pilot Pro: Job Application Automation
+# Career Co-Pilot Pro — Supervised Candidate-Ops Platform
 
 [![CI](https://github.com/Santhakumarramesh/career-co-pilot-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/Santhakumarramesh/career-co-pilot-pro/actions/workflows/ci.yml)
 
-**Production-minded candidate-ops platform** with **supervised, policy-gated** automation: job discovery, truthful resume tailoring, and application workflows. Auto-submit is **narrow and gated** (LinkedIn Easy Apply only, when policy allows); treat browser automation as **operator-supervised**, not hands-off production.
+> **Career Co-Pilot Pro is a supervised candidate-ops platform that helps serious job seekers run a truthful, high-signal, faster application workflow — from job discovery to tailored documents to safe assisted submission.**
+
+This is **not a bot**. It is a **candidate operating system**: truth-safe, policy-gated, and built for technical professionals who want quality applications over spray-and-pray volume.
+
+**Operating model:** MCP backend = policy brain → browser operator = executor → human = final authority on high-risk steps. Auto-submit is narrow and gated (LinkedIn Easy Apply only, strict conditions); external ATS (Workday, Greenhouse, Lever) runs in supervised **manual-assist** mode — system prepares and pre-fills, you submit.
 
 ### Current production scope
 
@@ -10,6 +14,7 @@
 
 | Doc | Role |
 |-----|------|
+| [docs/PRODUCT_BRIEF.md](docs/PRODUCT_BRIEF.md) | **Market-ready product brief** — problem, target user, workflows, differentiators, pricing, roadmap |
 | [docs/SYSTEM_VISION.md](docs/SYSTEM_VISION.md) | Single entry‑point blueprint for contributors and operators |
 | [docs/PRODUCT_SCOPE.md](docs/PRODUCT_SCOPE.md) | What the product is / is not; in‑scope vs out‑of‑scope; autonomy levels |
 | [docs/AUTONOMY_MODEL.md](docs/AUTONOMY_MODEL.md) | Job & answer states; truth vs submission safety; `safe_to_submit` |
@@ -21,7 +26,11 @@ Implementation checklist and scores: [docs/MARKET_PRODUCTION_AUDIT_CHECKLIST.md]
 
 ## 🚀 Overview
 
-This repository provides a **prototype / early automation platform** for AI/ML professionals: Streamlit UI, job discovery (Apify, LinkedIn MCP), ATS-oriented resume tailoring, and document generation.
+Career Co-Pilot Pro is a **supervised, policy-gated candidate-ops platform** for technical professionals. It manages the full application pipeline: truth-based profile data → job discovery → fit scoring → ATS alignment → tailored document generation → supervised or assisted submission.
+
+**Target users:** AI/ML engineers, data scientists, software engineers, and international candidates (OPT/H1B) who need truthful, high-signal applications — not volume spam.
+
+**Full product brief:** [docs/PRODUCT_BRIEF.md](docs/PRODUCT_BRIEF.md)
 
 ### What this is not
 

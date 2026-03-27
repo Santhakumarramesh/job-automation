@@ -4,6 +4,27 @@ Notable changes to **Career Co-Pilot Pro** are listed here. For autonomy and ope
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased — Market Positioning & State Machine Hardening] — 2026-03-26
+
+### Added
+- **`docs/PRODUCT_BRIEF.md`** — market-ready product brief: problem statement, target user, core workflows, autonomy ladder (Phase 1/2/3), competitive differentiators, MVP scope, pricing direction, and priority build list. Primary external-facing document for investors, users, and contributors.
+
+### Changed
+- **`README.md`** — repositioned hero from "Job Application Automation" to "Supervised Candidate-Ops Platform". New tagline: *"Career Co-Pilot Pro is a supervised candidate-ops platform that helps serious job seekers run a truthful, high-signal, faster application workflow."* Clarified operating model (MCP = policy brain, browser = executor, human = final authority). Added PRODUCT_BRIEF to the doc table. Updated Overview section to name the target user and link to brief.
+- **`agents/state.py`** — hardened `AgentState` TypedDict with first-class state fields:
+  - `JobState` literal type: `skip | manual_review | manual_assist | safe_auto_apply | blocked`
+  - `AnswerState` literal type: `safe | review | missing | blocked`
+  - `FitDecision` literal type: `apply | manual_review | reject`
+  - New fields: `job_state`, `previous_job_state`, `answer_states` (dict), `critical_fields` (list)
+  - Truth/submission safety gates: `truth_safe`, `submit_safe`, `safe_to_submit` (bool) — with docstring enforcing operator hard-stop on `safe_to_submit=False`
+  - Telemetry fields: `run_id`, `shadow_mode`, `dry_run`, `application_decision`, `submission_status`, `error`
+  - `workspace_id` for multi-tenant isolation
+- **`mcp_servers/job_apply_autofill/server.py`** — updated module docstring and `_MCP_INSTRUCTIONS` to reflect supervised candidate-ops positioning, job/answer state model, and link to PRODUCT_BRIEF and AUTONOMY_MODEL docs. Removed "autofill bot" framing.
+
+### Positioning note
+> **Do not present this as a bot. Present it as a candidate operating system.**
+> Market-ready as a supervised candidate-ops platform (Phase 1). Shadow autonomy (Phase 2) and narrow live-submit (Phase 3) are implemented and available with pilot evidence gates.
+
 ## [Unreleased]
 
 ### Changed

@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """
-Career Copilot MCP — job application automation server.
+Career Copilot MCP — supervised candidate-ops policy server.
 
-Exposes tools for quick job application autofill (JobRight-style):
-- LinkedIn Easy Apply (primary)
-- Greenhouse, Lever, Workday, and other external ATS (redirects from LinkedIn)
+This MCP is the POLICY + PACKAGE ENGINE of the Career Co-Pilot Pro platform.
+It is NOT an autonomous apply bot. It implements a supervised, truth-gated
+application workflow:
 
-Resume is renamed per job: {Name}_{Position}_at_{Company}_Resume.pdf
+  - Truth inventory → fit scoring → ATS alignment → package generation
+  - LinkedIn Easy Apply: policy-gated assisted or supervised submit
+  - Workday / Greenhouse / Lever: manual_assist only (system prepares; human submits)
+
+Job states: skip | manual_review | manual_assist | safe_auto_apply | blocked
+Answer states: safe | review | missing | blocked
+Safety gates: truth_safe AND submit_safe → safe_to_submit
+
+See docs/PRODUCT_BRIEF.md for positioning, docs/AUTONOMY_MODEL.md for policy model.
 
 Requires: pip install fastmcp playwright mcp
 Then: playwright install chromium
@@ -27,8 +35,11 @@ except ImportError:
     sys.exit(1)
 
 _MCP_INSTRUCTIONS = (
-    "Career Copilot MCP — autofill job applications on LinkedIn Easy Apply and external ATS "
-    "(Greenhouse, Lever, Workday). Resume renamed per job."
+    "Career Copilot MCP — supervised candidate-ops policy engine. "
+    "Truth-safe job fit scoring, ATS alignment, tailored package generation, and "
+    "policy-gated assisted submission. LinkedIn Easy Apply (supervised/shadow/pilot). "
+    "External ATS (Workday/Greenhouse/Lever) = manual_assist only. "
+    "See docs/PRODUCT_BRIEF.md and docs/AUTONOMY_MODEL.md."
 )
 try:
     mcp = FastMCP("Career Copilot MCP", description=_MCP_INSTRUCTIONS)
