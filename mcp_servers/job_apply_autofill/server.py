@@ -545,6 +545,329 @@ def application_audit_report(run_results_path: str) -> dict:
         return {"status": "error", "message": str(e)[:200]}
 
 
+
+# =============================================================================
+# Phase 11 — Production-Ready Apply Queue Tools
+# =============================================================================
+
+@mcp.tool()
+def answer_form_fields(
+    fields_json: str,
+    job_title: str = "",
+    company: str = "",
+    job_description: str = "",
+    master_resume_text: str = "",
+) -> dict:
+    """
+    Given a JSON list of form field labels/questions detected in the DOM,
+    answer each one from the truth inventory (profile + master resume).
+    Returns {field_label: {answer, review_required, source, confidence}}.
+    
+    fields_json: JSON array of strings (field labels or questions), e.g.
+      ["How many years of Python experience?", "Are you authorized to work in the US?"]
+    """
+    try:
+        import json as _json
+        from agents.application_answerer import answer_question_structured
+        from services.profile_service import load_profile
+
+        fields = _json.loads(fields_json) if isinstance(fields_json, str) else fields_json
+        profile = load_profile() or {}
+        job_ctx = {"company": company, "title": job_title}
+        results = {}
+
+        for field_label in fields:
+            if not field_label:
+                continue
+            meta = answer_question_structured(
+                question_text=str(field_label),
+                profile=profile,
+                master_resume_text=master_resume_text,
+                job_description=job_description,
+                job_context=job_ctx,
+                use_llm=bool(os.getenv("OPENAI_API_KEY")),
+            )
+            results[str(field_label)] = {
+                "answer": meta["answer"],
+                "review_required": meta["manual_review_required"],
+                "reason_codes": meta["reason_codes"],
+                "classified_type": meta["classified_type"],
+                "confidence": "high" if not meta["manual_review_required"] else "low",
+            }
+
+        return {"status": "ok", "answers": results, "total_fields": len(results)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def generate_tailored_resume_for_job(
+    job_title: str,
+    company: str,
+    job_description: str,
+    master_resume_path: str = "",
+    target_ats_score: int = 85,
+    max_iterations: int = 5,
+) -> dict:
+    """
+    Generate a truthfully-optimized resume for a specific job using the ATS loop.
+    Does NOT fabricate experience — stops at truth-safe ceiling.
+    
+    Returns resume_path, ats scores, keywords covered/missing, optimization_summary.
+    """
+    try:
+        from services.resume_package_service import generate_package_for_job
+        package = generate_package_for_job(
+            job_title=job_title,
+            company=company,
+            job_description=job_description,
+            master_resume_path=master_resume_path or None,
+            target_ats_score=target_ats_score,
+            max_iterations=max_iterations,
+        )
+        return {"status": "ok", **package}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def get_job_queue_for_review(
+    jobs_json: str,
+    master_resume_text: str = "",
+    master_resume_path: str = "",
+) -> dict:
+    """
+    Score a batch of discovered jobs using the structured fit engine.
+    Returns a ready-to-review approval list grouped by:
+      high_confidence_match | review_fit | skip
+    
+    jobs_json: JSON array of job objects with keys:
+      url, title, company, description, location, work_type
+    
+    Adds each scored job to the apply_queue DB. Returns the queue summary.
+    """
+    try:
+        import json as _json
+        from services.fit_engine import score_structured_fit, fit_result_to_dict
+        from services.job_prefilter import prefilter_batch
+        from services.apply_queue_service import upsert_queue_item, get_queue_summary
+        from services.profile_service import load_profile
+        from services.resume_package_service import _load_master_resume_text
+        from enhanced_ats_checker import EnhancedATSChecker
+
+        jobs = _json.loads(jobs_json) if isinstance(jobs_json, str) else jobs_json
+        if isinstance(jobs, dict) and "jobs" in jobs:
+            jobs = jobs["jobs"]
+
+        profile = load_profile() or {}
+        resume_text = master_resume_text
+        if not resume_text:
+            resume_text = _load_master_resume_text(master_resume_path or None)
+
+        ats_checker = EnhancedATSChecker()
+
+        # Compute ATS scores
+        ats_scores = {}
+        for job in jobs:
+            url = job.get("url", job.get("job_url", ""))
+            title = job.get("title", job.get("job_title", ""))
+            company = job.get("company", "")
+            desc = job.get("description", job.get("job_description", ""))
+            if url and desc and resume_text:
+                try:
+                    r = ats_checker.comprehensive_ats_check(
+                        resume_text=resume_text,
+                        job_description=desc,
+                        job_title=title,
+                        company_name=company,
+                        location="",
+                    )
+                    ats_scores[url] = r.get("ats_score", 0)
+                except Exception:
+                    ats_scores[url] = 0
+
+        # Prefilter
+        result = prefilter_batch(jobs, resume_text=resume_text, profile=profile, ats_scores=ats_scores)
+
+        # Upsert into queue
+        queued_ids = {}
+        for category in ["high_confidence", "review_fit"]:
+            for job_result in result[category]:
+                url = job_result.get("job_url", "")
+                if url:
+                    item_id = upsert_queue_item(
+                        job_url=url,
+                        job_title=job_result.get("job_title", ""),
+                        company=job_result.get("company", ""),
+                        job_description=next(
+                            (j.get("description", j.get("job_description", ""))
+                             for j in jobs if j.get("url", j.get("job_url")) == url), ""
+                        ),
+                        fit_data=job_result.get("fit", {}),
+                        ats_score=ats_scores.get(url, 0),
+                        truth_safe_ceiling=job_result.get("fit", {}).get("truth_safe_ats_ceiling", 0),
+                    )
+                    queued_ids[url] = item_id
+
+        summary = get_queue_summary()
+
+        return {
+            "status": "ok",
+            "high_confidence": result["high_confidence"],
+            "review_fit": result["review_fit"],
+            "skip": [{"job_url": j.get("job_url"), "company": j.get("company"),
+                      "reason": j.get("reason")} for j in result["skip"]],
+            "counts": {
+                "high_confidence": result["high_confidence_count"],
+                "review_fit": result["review_fit_count"],
+                "skip": result["skip_count"],
+                "total": result["total"],
+            },
+            "queue_summary": summary,
+            "queued_ids": queued_ids,
+        }
+    except Exception as e:
+        import traceback
+        return {"status": "error", "message": str(e)[:300], "trace": traceback.format_exc()[-500:]}
+
+
+@mcp.tool()
+def approve_jobs_for_apply(
+    item_ids_json: str,
+) -> dict:
+    """
+    Approve one or more queue items for automated applying.
+    Only approved items will be processed by the apply runner.
+    
+    item_ids_json: JSON array of queue item IDs returned by get_job_queue_for_review.
+    """
+    try:
+        import json as _json
+        from services.apply_queue_service import approve_job, get_item_by_id
+
+        ids = _json.loads(item_ids_json) if isinstance(item_ids_json, str) else item_ids_json
+        approved = []
+        not_found = []
+
+        for item_id in ids:
+            item = get_item_by_id(item_id)
+            if item:
+                approve_job(item_id)
+                approved.append({
+                    "id": item_id,
+                    "job_title": item.get("job_title"),
+                    "company": item.get("company"),
+                })
+            else:
+                not_found.append(item_id)
+
+        return {
+            "status": "ok",
+            "approved_count": len(approved),
+            "approved": approved,
+            "not_found": not_found,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def run_approved_queue(
+    dry_run: bool = False,
+    max_jobs: int = 20,
+    target_ats_score: float = 85.0,
+    master_resume_path: str = "",
+    skip_resume_generation: bool = False,
+) -> dict:
+    """
+    Phase 11 — Queue Runner.
+    Process all approved_for_apply jobs in the queue one-by-one.
+
+    For each job:
+      1. Generate a tailored resume (iterative ATS optimizer, truth-safe)
+      2. Pull form answers from truth inventory (answer_question_structured)
+      3. Submit the application via the apply runner
+      4. Update queue state → applied | blocked
+
+    dry_run=True: Prepares packages + form answers but does NOT submit.
+    max_jobs: Safety cap per single run (default 20).
+    target_ats_score: ATS target for resume generation (default 85).
+    skip_resume_generation: Re-use already generated package if present.
+
+    Returns per-job results with ATS scores, form answers, and statuses.
+    """
+    try:
+        from agents.queue_runner_executor import run_approved_queue as _run, RunnerConfig
+
+        cfg = RunnerConfig(
+            dry_run=dry_run,
+            max_jobs=max_jobs,
+            target_ats_score=target_ats_score,
+            master_resume_path=master_resume_path,
+            skip_resume_generation=skip_resume_generation,
+        )
+        return _run(cfg)
+    except Exception as e:
+        import traceback
+        return {"status": "error", "message": str(e)[:300], "trace": traceback.format_exc()[-500:]}
+
+
+@mcp.tool()
+def get_queue_status() -> dict:
+    """
+    Return current queue summary — counts by state, pending approvals, and recent activity.
+    Use this to check what's in the queue before running apply.
+    """
+    try:
+        from services.apply_queue_service import get_queue_summary, get_queue
+        from services.apply_queue_service import JobQueueState
+
+        summary = get_queue_summary()
+        pending_approval = get_queue(
+            states=[JobQueueState.READY_FOR_APPROVAL, JobQueueState.REVIEW_FIT],
+            limit=50,
+        )
+        approved = get_queue(states=[JobQueueState.APPROVED_FOR_APPLY], limit=50)
+        recently_applied = get_queue(states=[JobQueueState.APPLIED], limit=10)
+
+        return {
+            "status": "ok",
+            "summary": summary,
+            "pending_user_approval": [
+                {
+                    "id": i["id"],
+                    "job_title": i.get("job_title"),
+                    "company": i.get("company"),
+                    "job_state": i.get("job_state"),
+                    "fit_score": i.get("fit_score"),
+                    "ats_score": i.get("ats_score"),
+                }
+                for i in pending_approval
+            ],
+            "approved_ready_to_apply": [
+                {
+                    "id": i["id"],
+                    "job_title": i.get("job_title"),
+                    "company": i.get("company"),
+                    "package_status": i.get("package_status"),
+                    "ats_score": i.get("ats_score"),
+                }
+                for i in approved
+            ],
+            "recently_applied": [
+                {
+                    "id": i["id"],
+                    "job_title": i.get("job_title"),
+                    "company": i.get("company"),
+                    "applied_at": i.get("applied_at"),
+                }
+                for i in recently_applied
+            ],
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
 if __name__ == "__main__":
     # Run with: python -m mcp_servers.job_apply_autofill.server
     # Or: fastmcp run mcp_servers/job_apply_autofill/server.py
