@@ -3,12 +3,61 @@ ATS service. score_resume, iterative_optimizer, fit gate.
 """
 
 
+from typing import Optional
+
 from enhanced_ats_checker import EnhancedATSChecker
 from agents.iterative_ats_optimizer import run_iterative_ats_optimizer
-from agents.master_resume_guard import parse_master_resume, is_job_fit, compute_job_fit_score
+from agents.master_resume_guard import parse_master_resume, compute_job_fit_score
 from agents.resume_editor import tailor_resume
 from agents.humanize_resume import humanize_resume
+from services.fit_engine import score_structured_fit, fit_result_to_dict
+from services.keyword_coverage import analyze_keyword_coverage, build_truth_inventory_from_resume
 from services.truth_safe_ats import compute_truth_safe_ats_ceiling
+
+
+def _load_profile_safe() -> dict:
+    try:
+        from services.profile_service import load_profile
+
+        return load_profile() or {}
+    except Exception:
+        return {}
+
+
+def _legacy_fit_decision(structured: str) -> str:
+    s = str(structured or "").strip().lower()
+    if s == "apply":
+        return "apply"
+    if s in ("review_fit", "manual_review", "review"):
+        return "manual_review"
+    return "reject"
+
+
+def _build_optimization_summary(
+    initial: int,
+    final: int,
+    ceiling: int,
+    *,
+    converged: bool,
+    no_truthful_improvement: bool = False,
+    stopped_early: bool = False,
+    stopped_after_max: bool = False,
+    missing: Optional[list[str]] = None,
+) -> str:
+    parts = [f"ATS score: {initial} -> {final} (truth-safe ceiling: {ceiling})."]
+    if converged:
+        parts.append("Optimizer converged at target score.")
+    elif no_truthful_improvement:
+        parts.append("Stopped: no further truthful improvement possible.")
+    elif stopped_early:
+        parts.append("Stopped early due to low ATS score gain.")
+    elif stopped_after_max:
+        parts.append("Stopped after max iterations.")
+    elif final == ceiling:
+        parts.append("Reached truth-safe ceiling.")
+    if missing:
+        parts.append(f"Keywords not supported by resume: {', '.join(missing[:5])}.")
+    return " ".join(parts)
 
 
 def score_resume(
@@ -76,10 +125,29 @@ def run_iterative_ats(
         truth_safe=truth_safe,
     )
     master_inv = parse_master_resume(state.get("base_resume_text", ""))
-    fit = compute_job_fit_score(
+    legacy_fit = compute_job_fit_score(
         state.get("job_description", ""),
         master_inv,
         ats_score=opt_result.get("final_ats_score", 0),
+    )
+    profile = _load_profile_safe()
+    structured = score_structured_fit(
+        job_title=state.get("target_position", ""),
+        job_description=state.get("job_description", ""),
+        resume_text=state.get("base_resume_text", ""),
+        profile=profile,
+        ats_score=opt_result.get("final_ats_score", 0),
+    )
+    structured_dict = fit_result_to_dict(structured)
+    fit_decision_structured = structured_dict.get("fit_decision", "")
+    fit_decision = _legacy_fit_decision(fit_decision_structured)
+    merged_unsupported = sorted(
+        {
+            str(x).strip()
+            for x in (structured_dict.get("unsupported_requirements") or [])
+            + (legacy_fit.get("unsupported_requirements") or [])
+            if str(x).strip()
+        }
     )
     ats_results = checker.comprehensive_ats_check(
         resume_text=opt_result["humanized_resume_text"],
@@ -92,8 +160,13 @@ def run_iterative_ats(
     )
     report_filename = f"ATS_Report_{state['target_company']}.xlsx".replace("/", "_")
     ats_report_path = checker.save_ats_results_to_excel(ats_results, filename=report_filename)
-    fit_decision = "apply" if fit.get("apply") else ("reject" if fit.get("reject") else "manual_review")
     truthful_final = ats_results.get("truthful_missing_keywords") or opt_result.get("truthful_missing_keywords") or []
+    truth_inv = build_truth_inventory_from_resume(state.get("base_resume_text", ""))
+    coverage = analyze_keyword_coverage(
+        state.get("job_description", ""),
+        opt_result.get("humanized_resume_text", ""),
+        truth_inv,
+    )
     ceiling = compute_truth_safe_ats_ceiling(
         opt_result.get("final_ats_score", 0),
         target_score=target_score,
@@ -101,10 +174,22 @@ def run_iterative_ats(
         converged=bool(opt_result.get("converged")),
         no_truthful_improvement=bool(opt_result.get("no_truthful_improvement")),
         stopped_after_max_attempts=bool(opt_result.get("stopped_after_max_attempts")),
-        unsupported_requirements=fit.get("unsupported_requirements", []),
+        unsupported_requirements=merged_unsupported,
         truthful_missing_keywords=truthful_final,
         initial_ats_score=opt_result.get("initial_ats_score"),
     )
+    optimization_summary = _build_optimization_summary(
+        int(opt_result.get("initial_ats_score", opt_result.get("final_ats_score", 0)) or 0),
+        int(opt_result.get("final_ats_score", 0) or 0),
+        int(ceiling["truth_safe_ats_ceiling"]),
+        converged=bool(opt_result.get("converged")),
+        no_truthful_improvement=bool(opt_result.get("no_truthful_improvement")),
+        stopped_early=bool(opt_result.get("stopped_early")),
+        stopped_after_max=bool(opt_result.get("stopped_after_max_attempts")),
+        missing=coverage.unsupported_keywords,
+    )
+    structured_dict.pop("fit_decision", None)
+    structured_dict.pop("unsupported_requirements", None)
     return {
         "tailored_resume_text": opt_result["tailored_resume_text"],
         "humanized_resume_text": opt_result["humanized_resume_text"],
@@ -112,11 +197,18 @@ def run_iterative_ats(
         "final_ats_score": opt_result.get("final_ats_score", 0),
         "feedback": "\n".join(opt_result.get("feedback", [])) if isinstance(opt_result.get("feedback"), list) else str(opt_result.get("feedback", "")),
         "ats_report_path": ats_report_path,
-        "job_fit_score": fit.get("score"),
+        "job_fit_score": structured.overall_fit_score,
         "fit_decision": fit_decision,
-        "unsupported_requirements": fit.get("unsupported_requirements", []),
+        "fit_decision_structured": fit_decision_structured,
+        "unsupported_requirements": merged_unsupported,
+        "covered_keywords": coverage.covered_keywords,
+        "supported_keywords": coverage.supported_keywords,
+        "partially_supported_keywords": coverage.partially_supported_keywords,
+        "unsupported_keywords": coverage.unsupported_keywords,
+        "truthful_missing_keywords": coverage.truthful_missing_keywords or truthful_final,
+        "optimization_summary": optimization_summary,
+        **structured_dict,
         "missing_keywords": opt_result.get("missing_keywords", []),
-        "truthful_missing_keywords": truthful_final,
         "truth_safe_ats_ceiling": ceiling["truth_safe_ats_ceiling"],
         "truth_safe_ceiling_reason": ceiling["truth_safe_ceiling_reason"],
         "ceiling_limited_by": ceiling.get("ceiling_limited_by", []),
@@ -128,26 +220,51 @@ def check_fit_gate(state: dict) -> dict:
     Master-resume fit gate. Returns is_eligible, fit_decision, job_fit_score,
     unsupported_requirements, eligibility_reason (if rejected).
     """
-    profile = parse_master_resume(state.get("base_resume_text", ""))
-    job = {
-        "description": state.get("job_description", ""),
-        "title": state.get("target_position", ""),
-        "company": state.get("target_company", ""),
-    }
-    result = is_job_fit(profile, job, ats_score=0)
-    if result.reject:
+    master_inv = parse_master_resume(state.get("base_resume_text", ""))
+    legacy_fit = compute_job_fit_score(
+        state.get("job_description", ""),
+        master_inv,
+        ats_score=0,
+    )
+    profile = _load_profile_safe()
+    structured = score_structured_fit(
+        job_title=state.get("target_position", ""),
+        job_description=state.get("job_description", ""),
+        resume_text=state.get("base_resume_text", ""),
+        profile=profile,
+        ats_score=0,
+    )
+    structured_dict = fit_result_to_dict(structured)
+    fit_decision_structured = structured_dict.get("fit_decision", "")
+    fit_decision = _legacy_fit_decision(fit_decision_structured)
+    merged_unsupported = sorted(
+        {
+            str(x).strip()
+            for x in (structured_dict.get("unsupported_requirements") or [])
+            + (legacy_fit.get("unsupported_requirements") or [])
+            if str(x).strip()
+        }
+    )
+    structured_dict.pop("fit_decision", None)
+    structured_dict.pop("unsupported_requirements", None)
+
+    if fit_decision == "reject":
         return {
             "is_eligible": False,
-            "eligibility_reason": f"Master-resume fit gate: {'; '.join(result.reasons[:3])}",
-            "fit_decision": result.decision,
-            "job_fit_score": result.score,
-            "unsupported_requirements": result.unsupported_requirements,
+            "eligibility_reason": f"Structured fit gate: {'; '.join(structured.fit_reasons[:3])}",
+            "fit_decision": fit_decision,
+            "fit_decision_structured": fit_decision_structured,
+            "job_fit_score": structured.overall_fit_score,
+            "unsupported_requirements": merged_unsupported,
+            **structured_dict,
         }
     return {
         "is_eligible": True,
-        "fit_decision": result.decision,
-        "job_fit_score": result.score,
-        "unsupported_requirements": result.unsupported_requirements,
+        "fit_decision": fit_decision,
+        "fit_decision_structured": fit_decision_structured,
+        "job_fit_score": structured.overall_fit_score,
+        "unsupported_requirements": merged_unsupported,
+        **structured_dict,
     }
 
 
@@ -205,6 +322,16 @@ def score_job_fit_payload(
             "status": "ok",
             "fit_score": fit_result.get("job_fit_score", 0),
             "fit_decision": fit_result.get("fit_decision", "manual_review"),
+            "fit_decision_structured": fit_result.get("fit_decision_structured", ""),
+            "role_family": fit_result.get("role_family", ""),
+            "seniority_band": fit_result.get("seniority_band", ""),
+            "role_match_score": fit_result.get("role_match_score", 0),
+            "experience_match_score": fit_result.get("experience_match_score", 0),
+            "seniority_match_score": fit_result.get("seniority_match_score", 0),
+            "overall_fit_score": fit_result.get("overall_fit_score", fit_result.get("job_fit_score", 0)),
+            "fit_reasons": fit_result.get("fit_reasons", []),
+            "requirement_evidence_map": fit_result.get("requirement_evidence_map", []),
+            "hard_blockers": fit_result.get("hard_blockers", []),
             "ats_score": ats_results.get("ats_score", 0),
             "missing_keywords": missing[:15],
             "unsupported_requirements": merged_unsup[:10] or fit_result.get("unsupported_requirements", [])[:10],
@@ -226,15 +353,4 @@ def run_live_optimizer(
     Standalone live ATS optimizer (for tab 4). Returns opt_result + fit info.
     """
     opt_result = run_iterative_ats(state, target_score=target_ats, truth_safe=truth_safe)
-    master_inv = parse_master_resume(state.get("base_resume_text", ""))
-    fit = compute_job_fit_score(
-        state.get("job_description", ""),
-        master_inv,
-        ats_score=opt_result.get("final_ats_score", 0),
-    )
-    fit_decision = "apply" if fit.get("apply") else ("reject" if fit.get("reject") else "manual_review")
-    return {
-        **opt_result,
-        "fit_decision": fit_decision,
-        "fit_reasons": fit.get("reasons", []),
-    }
+    return opt_result

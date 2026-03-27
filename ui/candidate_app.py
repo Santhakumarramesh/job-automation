@@ -13,12 +13,28 @@ from __future__ import annotations
 import json
 import os
 import time
+import base64
 from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _display_pdf(path: str, *, height: int = 640) -> None:
+    """Embed a PDF preview in Streamlit."""
+    if not path:
+        return
+    try:
+        pdf_bytes = Path(path).read_bytes()
+    except Exception:
+        return
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    st.markdown(
+        f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="{height}" type="application/pdf"></iframe>',
+        unsafe_allow_html=True,
+    )
 
 
 def run():
@@ -240,8 +256,14 @@ def _page_review_queue():
 
     try:
         from services.apply_queue_service import (
-            get_queue, get_queue_summary, approve_job, skip_job, hold_job,
+            get_queue, get_queue_summary,
             JobQueueState
+        )
+        from services.approval_service import (
+            approve_job_with_metadata,
+            hold_job_for_review,
+            reject_job_for_apply,
+            send_back_for_regeneration,
         )
 
         summary = get_queue_summary()
@@ -307,23 +329,29 @@ def _render_queue_item_card(item: dict, show_approve: bool = True):
         col1.caption(item.get("job_url", ""))
         col2.metric("Fit", f"{item.get('overall_fit_score', 0)}/100")
         col2.metric("ATS", f"{item.get('ats_score', 0)}/100")
+        col3.caption(f"Action: {item.get('recommended_action', 'review_fit')}")
+        col3.caption(f"Package: {item.get('package_status', 'not_generated')}")
+        col3.caption(f"Approval: {item.get('approval_status', 'pending')}")
+        if item.get("unsupported_requirements_count") is not None:
+            col3.caption(f"Unsupported reqs: {item.get('unsupported_requirements_count', 0)}")
 
         if show_approve:
             with col3:
                 a_col, h_col, s_col = st.columns(3)
                 if a_col.button("✅ Approve", key=f"approve_{item_id}", type="primary"):
-                    from services.apply_queue_service import approve_job
-                    approve_job(item_id)
+                    approve_job_with_metadata(item_id, approved_by="user")
                     st.success("Approved!")
                     time.sleep(0.5)
                     st.rerun()
                 if h_col.button("⏸ Hold", key=f"hold_{item_id}"):
-                    from services.apply_queue_service import hold_job
-                    hold_job(item_id)
+                    hold_job_for_review(item_id)
                     st.rerun()
-                if s_col.button("⏭ Skip", key=f"skip_{item_id}"):
-                    from services.apply_queue_service import skip_job
-                    skip_job(item_id)
+                if s_col.button("⏭ Reject", key=f"reject_{item_id}"):
+                    reject_job_for_apply(item_id)
+                    st.rerun()
+
+                if col3.button("↩️ Send Back", key=f"sendback_{item_id}"):
+                    send_back_for_regeneration(item_id)
                     st.rerun()
 
         # Detail expander
@@ -337,6 +365,19 @@ def _render_queue_item_card(item: dict, show_approve: bool = True):
             blockers = item.get("hard_blockers", [])
             if blockers:
                 st.error(f"Hard blockers: {', '.join(blockers)}")
+
+            try:
+                from services.approval_service import build_review_payload
+                from services.resume_package_service import load_package
+
+                pkg = load_package(item.get("resume_version_id", "")) or {}
+                payload = build_review_payload(item, pkg)
+                st.caption(f"Safe to submit: {payload.get('safe_to_submit_summary')}")
+                resume_preview = payload.get("resume_preview", {})
+                if resume_preview.get("rendered_pdf_path"):
+                    st.caption(f"One-page PDF: {resume_preview.get('rendered_pdf_path')}")
+            except Exception:
+                pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -353,7 +394,7 @@ def _page_resume_review():
         )
         from services.resume_package_service import generate_package_for_job, load_package
 
-        items = get_queue(states=[JobQueueState.READY_FOR_APPROVAL, JobQueueState.APPROVED_FOR_APPLY])
+        items = get_queue(states=[JobQueueState.REVIEW_FIT, JobQueueState.REVIEW_RESUME])
         if not items:
             st.info("No jobs ready for resume generation. Approve jobs in Review Queue first.")
             return
@@ -374,6 +415,7 @@ def _page_resume_review():
                                 job_title=item.get("job_title", ""),
                                 company=item.get("company", ""),
                                 job_description=item.get("job_description", ""),
+                                render_one_page_pdf=True,
                             )
                             attach_package(item_id, pkg)
                             st.success(f"Generated! ATS: {pkg.get('initial_ats_score')} → {pkg.get('final_ats_score')} "
@@ -394,6 +436,14 @@ def _page_resume_review():
                         st.success(f"✅ Covered: {', '.join(covered[:10])}")
                     if missing:
                         st.warning(f"⚠️ Truthfully missing (NOT in resume): {', '.join(missing[:8])}")
+
+                    rendered_path = pkg.get("rendered_pdf_path", "")
+                    if rendered_path:
+                        st.caption(
+                            f"One-page layout: {pkg.get('template_id', 'classic_ats')} · "
+                            f"pages={pkg.get('page_count', 0)} · layout={pkg.get('layout_status', '')}"
+                        )
+                        _display_pdf(rendered_path, height=640)
 
                     resume_path = pkg.get("resume_path", "")
                     if resume_path and Path(resume_path).exists():
@@ -421,8 +471,7 @@ def _page_apply_queue():
 
     try:
         from services.apply_queue_service import (
-            get_approved_queue, get_queue_summary, mark_applied, mark_blocked,
-            set_job_state, JobQueueState
+            get_approved_queue, get_queue_summary
         )
 
         approved = get_approved_queue()
@@ -438,6 +487,16 @@ def _page_apply_queue():
             st.info("No approved jobs in queue. Go to **2 · Review Queue** to approve jobs.")
             return
 
+        runner_counts: dict[str, int] = {}
+        for item in approved:
+            rs = str(item.get("runner_state") or "queued")
+            runner_counts[rs] = runner_counts.get(rs, 0) + 1
+        if runner_counts:
+            st.caption(
+                "Runner status: "
+                + ", ".join(f"{k}={v}" for k, v in sorted(runner_counts.items()))
+            )
+
         st.divider()
 
         # Show queue
@@ -450,6 +509,9 @@ def _page_apply_queue():
                 col2.metric("Fit", f"{item.get('overall_fit_score', 0)}/100")
                 col2.metric("ATS", f"{item.get('final_ats_score', item.get('ats_score', 0))}/100")
                 col2.caption(f"Package: {item.get('package_status', 'not_generated')}")
+                col2.caption(f"Runner: {item.get('runner_state', 'queued')}")
+                if item.get("runner_error"):
+                    col2.caption(f"Runner error: {item.get('runner_error')}")
 
         st.divider()
 
@@ -467,43 +529,33 @@ def _page_apply_queue():
 
 
 def _run_apply_queue(items: list[dict], dry_run: bool = False):
-    """Process the approved apply queue one by one."""
-    from services.apply_queue_service import set_job_state, mark_applied, mark_blocked, JobQueueState
+    """Process approved queue with the runner executor."""
+    from services.runner_queue_executor import run_approved_queue, RunnerConfig
 
-    progress = st.progress(0)
-    status_area = st.empty()
-    results_log = []
-
-    for i, item in enumerate(items):
-        item_id = item["id"]
-        job_title = item.get("job_title", "")
-        company = item.get("company", "")
-        job_url = item.get("job_url", "")
-
-        status_area.info(f"{'[DRY RUN] ' if dry_run else ''}Applying to {job_title} @ {company}…")
-        set_job_state(item_id, JobQueueState.APPLYING)
-
-        try:
-            result = _apply_single_job(item, dry_run=dry_run)
-            if result.get("success"):
-                mark_applied(item_id)
-                results_log.append({"job": f"{job_title} @ {company}", "status": "✅ Applied" if not dry_run else "🔍 Dry run OK"})
-                status_area.success(f"{'[DRY RUN] ' if dry_run else ''}Applied: {job_title} @ {company}")
-            else:
-                mark_blocked(item_id, result.get("error", "Unknown error"))
-                results_log.append({"job": f"{job_title} @ {company}", "status": f"🚫 Blocked: {result.get('error', '')}"})
-
-        except Exception as e:
-            mark_blocked(item_id, str(e)[:200])
-            results_log.append({"job": f"{job_title} @ {company}", "status": f"❌ Error: {str(e)[:80]}"})
-
-        progress.progress((i + 1) / len(items))
-        time.sleep(2)  # Rate limit
-
-    status_area.empty()
-    st.success("Queue run complete!")
-    for r in results_log:
-        st.write(f"{r['status']} — {r['job']}")
+    result = run_approved_queue(
+        RunnerConfig(
+            dry_run=dry_run,
+            max_jobs=len(items),
+            rate_limit_seconds=5.0,
+            require_safeguards=True,
+            manual_assist=False,
+        )
+    )
+    if result.get("processed", 0) == 0:
+        st.info(result.get("message", "No approved jobs in queue."))
+        return
+    summary = result.get("summary", {})
+    st.success(
+        f"Queue run complete — submitted={summary.get('submitted', 0)}, "
+        f"failed={summary.get('failed', 0)}, "
+        f"review={summary.get('stopped_review_required', 0)}, "
+        f"retry={summary.get('retry_needed', 0)}"
+    )
+    for r in result.get("results", []):
+        st.write(
+            f"{r.get('runner_state', '')} · {r.get('job_title', '')} @ {r.get('company', '')} "
+            f"{('- ' + r.get('error')) if r.get('error') else ''}"
+        )
 
 
 def _apply_single_job(item: dict, dry_run: bool = False) -> dict:
@@ -517,6 +569,8 @@ def _apply_single_job(item: dict, dry_run: bool = False) -> dict:
             "apply_url": item.get("job_url"),
             "fit_decision": "apply",
             "ats_score": item.get("final_ats_score", item.get("ats_score", 85)),
+            "approved_resume_path": item.get("approved_resume_path") or "",
+            "resume_path": item.get("approved_resume_path") or item.get("resume_path") or "",
         }]
         result = apply_to_jobs_payload(
             jobs=jobs_payload,
@@ -526,8 +580,17 @@ def _apply_single_job(item: dict, dry_run: bool = False) -> dict:
             manual_assist=False,
             require_safeguards=True,
         )
-        applied = result.get("applied", 0)
-        return {"success": applied > 0 or dry_run, "result": result}
+        if result.get("status") != "ok":
+            return {"success": False, "error": result.get("message", "apply_to_jobs failed"), "result": result}
+        applied = int(result.get("applied", 0) or 0)
+        if applied > 0 or dry_run:
+            return {"success": True, "result": result}
+        # Extract first result error/status if present
+        res_list = result.get("results") or []
+        if res_list:
+            r0 = res_list[0] or {}
+            return {"success": False, "error": r0.get("error") or r0.get("status") or "apply_failed", "result": result}
+        return {"success": False, "error": "apply_failed", "result": result}
     except Exception as e:
         return {"success": False, "error": str(e)[:200]}
 
@@ -559,13 +622,17 @@ def _page_tracker():
             rows.append({
                 "Company": item.get("company", ""),
                 "Title": item.get("job_title", ""),
-                "State": item.get("job_state", ""),
+                "Queue State": item.get("job_state", ""),
+                "Package": item.get("package_status", "not_generated"),
+                "Approval": item.get("approval_status", "pending"),
+                "Runner": item.get("runner_state", ""),
+                "Final": item.get("application_status", item.get("final_state", "")),
                 "Fit": item.get("overall_fit_score", 0),
                 "ATS": item.get("ats_score", 0),
                 "ATS Final": item.get("final_ats_score", 0),
-                "Package": item.get("package_status", "not_generated"),
                 "Decision": item.get("user_decision", "pending"),
                 "Applied": item.get("application_date", ""),
+                "Error": item.get("runner_error", item.get("error_message", "")),
                 "URL": item.get("job_url", ""),
             })
 
@@ -575,12 +642,12 @@ def _page_tracker():
         # Filter controls
         col1, col2 = st.columns(2)
         state_filter = col1.multiselect(
-            "Filter by state",
-            options=sorted(df["State"].unique().tolist()),
+            "Filter by queue state",
+            options=sorted(df["Queue State"].unique().tolist()),
             default=[],
         )
         if state_filter:
-            df = df[df["State"].isin(state_filter)]
+            df = df[df["Queue State"].isin(state_filter)]
 
         st.dataframe(df, use_container_width=True, hide_index=True)
 

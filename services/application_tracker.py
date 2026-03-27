@@ -52,6 +52,7 @@ TRACKER_COLUMNS = [
     "apply_mode",       # auto_easy_apply, manual_assist, skip
     "policy_reason",    # stable code from policy_service.decide_apply_mode_with_reason
     "fit_decision",
+    "fit_state",        # Lifecycle: fit decision (apply/manual_review/reject)
     "ats_score",
     "resume_path",
     "cover_letter_path",
@@ -74,12 +75,49 @@ TRACKER_COLUMNS = [
     "truth_safe_ats_ceiling",
     "selected_address_label",
     "package_field_stats",
+    "package_state",    # Lifecycle: ATS/package state
+    "approval_state",   # Lifecycle: approval state
+    "queue_state",      # Lifecycle: apply queue job_state
+    "runner_state",     # Lifecycle: runner state
+    "final_state",      # Lifecycle: final application result
     "application_decision",  # JSON: v0.1 decision payload (see application_decision.py)
     "job_state",  # Indexed copy of decision job_state (skip, manual_assist, safe_auto_apply, blocked, …)
 ]
 
 # Legacy columns for backward compat
 LEGACY_COLUMNS = ["Date Applied", "Company", "Position", "Status", "Resume Path", "Cover Letter Path", "Job Description"]
+
+
+def _lifecycle_fields_from_state(state: dict) -> dict:
+    """Normalize lifecycle fields for tracker rows (queue + runner)."""
+    st = state or {}
+    return {
+        "fit_state": str(st.get("fit_state") or st.get("fit_decision") or ""),
+        "package_state": str(st.get("package_state") or st.get("package_status") or ""),
+        "approval_state": str(st.get("approval_state") or st.get("approval_status") or ""),
+        "queue_state": str(st.get("queue_state") or st.get("queue_job_state") or ""),
+        "runner_state": str(st.get("runner_state") or ""),
+        "final_state": str(st.get("final_state") or ""),
+    }
+
+
+def _runner_state_from_run_result(run_result: Any) -> str:
+    """Fallback mapping from RunResult.status to runner_state."""
+    status = str(getattr(run_result, "status", "") or "").strip().lower()
+    if status == "applied":
+        return "submitted"
+    if status in ("manual_assist_ready", "dry_run"):
+        return "stopped_review_required"
+    if status in ("blocked_resume_verification", "failed", "skipped"):
+        return "failed"
+    if status.startswith("shadow_"):
+        return "shadow"
+    return ""
+
+
+def _final_state_from_run_result(run_result: Any) -> str:
+    """Final lifecycle state from runner outcome."""
+    return str(getattr(run_result, "status", "") or "").strip()
 
 
 def _application_decision_cell_for_state(state: dict) -> str:
@@ -217,6 +255,7 @@ def log_application(state: dict):
         "apply_mode": state.get("apply_mode", ""),
         "policy_reason": str(state.get("policy_reason", "") or ""),
         "fit_decision": state.get("fit_decision", ""),
+        "fit_state": state.get("fit_state", state.get("fit_decision", "")),
         "ats_score": state.get("final_ats_score", state.get("initial_ats_score", "")),
         "resume_path": state.get("final_pdf_path", ""),
         "cover_letter_path": state.get("cover_letter_pdf_path", ""),
@@ -243,6 +282,7 @@ def log_application(state: dict):
         "application_decision": _decision_cell,
         "job_state": extract_job_state_from_decision_json(_decision_cell),
     }
+    row.update(_lifecycle_fields_from_state(state))
     row.update(build_tracker_row_extras(state))
     if USE_DB:
         try:
@@ -277,6 +317,8 @@ def _submission_status_for_run_result(run_result) -> str:
         return "Shadow – Would Apply"
     if st == "shadow_would_not_apply":
         return "Shadow – Would Not Apply"
+    if st == "blocked_resume_verification":
+        return "Blocked – Resume Verification"
     if st == "failed":
         if "checkpoint" in el or "challenge" in el or "verification" in el:
             return "Failed – Login Challenge"
@@ -322,6 +364,36 @@ def build_runner_tracker_metadata(job: dict, **extra: Any) -> dict:
         "unsupported_requirements": j.get("unsupported_requirements") or [],
         "apply_url": j.get("apply_url") or j.get("applyUrl") or "",
     }
+    # Lifecycle snapshots (queue runner or operator tools can pass these through)
+    fit_state = j.get("fit_state") or j.get("fit_decision")
+    if fit_state:
+        meta["fit_state"] = str(fit_state)
+    pkg_state = j.get("package_state") or j.get("package_status")
+    if pkg_state:
+        meta["package_state"] = str(pkg_state)
+    appr_state = j.get("approval_state") or j.get("approval_status")
+    if appr_state:
+        meta["approval_state"] = str(appr_state)
+    queue_state = j.get("queue_state")
+    if not queue_state:
+        js = str(j.get("job_state") or "").strip()
+        if js in {
+            "skip",
+            "review_fit",
+            "review_resume",
+            "ready_for_approval",
+            "approved_for_apply",
+            "applying",
+            "applied",
+            "blocked",
+        }:
+            queue_state = js
+    if queue_state:
+        meta["queue_state"] = str(queue_state)
+    if j.get("runner_state"):
+        meta["runner_state"] = str(j.get("runner_state"))
+    if j.get("final_state"):
+        meta["final_state"] = str(j.get("final_state"))
     u_row = str(j.get("user_id") or j.get("authenticated_user_id") or "").strip()
     if u_row:
         meta["user_id"] = u_row[:240]
@@ -380,6 +452,14 @@ def log_application_from_result(
     qa_json = json.dumps(qa_combined) if qa_combined else ""
 
     _decision_cell = _application_decision_cell_from_run(run_result, job_metadata)
+    lifecycle = _lifecycle_fields_from_state(job_metadata)
+    if not lifecycle.get("fit_state"):
+        lifecycle["fit_state"] = str(job_metadata.get("fit_decision") or "")
+    if not lifecycle.get("runner_state"):
+        lifecycle["runner_state"] = _runner_state_from_run_result(run_result)
+    if not lifecycle.get("final_state"):
+        lifecycle["final_state"] = _final_state_from_run_result(run_result)
+
     row = {
         "id": str(uuid.uuid4()),
         "source": "linkedin_mcp",
@@ -407,6 +487,7 @@ def log_application_from_result(
         "apply_mode": job_metadata.get("apply_mode", ""),
         "policy_reason": str(job_metadata.get("policy_reason", "") or ""),
         "fit_decision": job_metadata.get("fit_decision", ""),
+        "fit_state": lifecycle.get("fit_state", ""),
         "ats_score": job_metadata.get("ats_score", job_metadata.get("final_ats_score", "")),
         "resume_path": resume_path,
         "cover_letter_path": cover_path,
@@ -426,6 +507,11 @@ def log_application_from_result(
         "follow_up_note": "",
         "interview_stage": "",
         "offer_outcome": "",
+        "package_state": lifecycle.get("package_state", ""),
+        "approval_state": lifecycle.get("approval_state", ""),
+        "queue_state": lifecycle.get("queue_state", ""),
+        "runner_state": lifecycle.get("runner_state", ""),
+        "final_state": lifecycle.get("final_state", ""),
         "application_decision": _decision_cell,
         "job_state": extract_job_state_from_decision_json(_decision_cell),
     }

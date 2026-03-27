@@ -27,6 +27,12 @@ TRACKER_ANALYTICS_BI_COLUMNS: List[str] = [
     "apply_mode",
     "policy_reason",
     "fit_decision",
+    "fit_state",
+    "package_state",
+    "approval_state",
+    "queue_state",
+    "runner_state",
+    "final_state",
     "ats_score",
     "follow_up_at",
     "follow_up_status",
@@ -173,6 +179,19 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
     else:
         by_js = {}
 
+    def _maybe_counts(col: str) -> Dict[str, int]:
+        if col in df.columns and len(df):
+            return _counts(_norm_col(df, col).replace("", "(empty)"))
+        return {}
+
+    # Lifecycle dimensions (Phase 11)
+    by_fit_state = _maybe_counts("fit_state") or _maybe_counts("fit_decision")
+    by_package_state = _maybe_counts("package_state")
+    by_approval_state = _maybe_counts("approval_state")
+    by_queue_state = _maybe_counts("queue_state")
+    by_runner_state = _maybe_counts("runner_state")
+    by_final_state = _maybe_counts("final_state")
+
     return {
         "row_count": int(len(df)),
         "by_status": _counts(st.replace("", "(empty)")),
@@ -186,6 +205,12 @@ def build_admin_tracker_analytics_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "by_applied_iso_week": by_week,
         "rows_with_parseable_applied_at": n_applied_ts,
         "by_job_state": by_js,
+        "by_fit_state": by_fit_state,
+        "by_package_state": by_package_state,
+        "by_approval_state": by_approval_state,
+        "by_queue_state": by_queue_state,
+        "by_runner_state": by_runner_state,
+        "by_final_state": by_final_state,
         "shadow_metrics_v0": shadow_metrics_v0,
         "timeseries_v0": _timeseries_v0_from_buckets(by_week, by_month, n_applied_ts),
     }

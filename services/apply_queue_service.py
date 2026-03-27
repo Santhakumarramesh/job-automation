@@ -1,5 +1,5 @@
 """
-Phase 11 — Apply Queue Service
+Phase 6 — Apply Queue Service
 Central data model and state machine for the production-ready job approval queue.
 
 Job states:
@@ -20,6 +20,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
+from services.queue_transitions import (
+    determine_initial_state,
+    determine_state_after_package,
+    recommended_action,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "job_applications.db"
 
@@ -37,12 +43,63 @@ class JobQueueState:
     APPLIED = "applied"
     BLOCKED = "blocked"
 
+
 class PackageState:
     NOT_GENERATED = "not_generated"
     GENERATED = "generated"
     OPTIMIZED_TRUTH_SAFE = "optimized_truth_safe"
     APPROVED = "approved"
     UPLOADED = "uploaded"
+
+
+def _audit_queue_event(action: str, item_id: str, *, extra: Optional[dict] = None, status: str = "") -> None:
+    """Emit lifecycle audit events for queue transitions."""
+    try:
+        from services.observability import audit_log
+
+        item = get_item_by_id(item_id)
+        if not item:
+            return
+        payload = {
+            "job_url": item.get("job_url", ""),
+            "queue_state": item.get("job_state", ""),
+            "package_state": item.get("package_status", ""),
+            "approval_state": item.get("approval_status", ""),
+            "runner_state": item.get("runner_state", ""),
+            "application_status": item.get("application_status", ""),
+        }
+        if extra:
+            payload.update(extra)
+        audit_log(
+            action,
+            job_id=item_id,
+            company=item.get("company", ""),
+            position=item.get("job_title", ""),
+            status=status or item.get("job_state", ""),
+            extra=payload,
+        )
+    except Exception:
+        pass
+
+
+def queue_row_summary(item: dict) -> dict:
+    """
+    Minimal queue row used by UI/exports.
+    """
+    return {
+        "company": item.get("company", ""),
+        "job_title": item.get("job_title", ""),
+        "job_url": item.get("job_url", ""),
+        "role_family": item.get("role_family", ""),
+        "overall_fit_score": item.get("overall_fit_score", 0),
+        "ats_score": item.get("ats_score", 0),
+        "truth_safe_ats_ceiling": item.get("truth_safe_ats_ceiling", 0),
+        "package_status": item.get("package_status", ""),
+        "approved_resume_version_id": item.get("approved_resume_version_id", ""),
+        "approved_resume_path": item.get("approved_resume_path", ""),
+        "unsupported_requirements_count": item.get("unsupported_requirements_count", 0),
+        "recommended_action": item.get("recommended_action", "review_fit"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +140,15 @@ CREATE TABLE IF NOT EXISTS apply_queue (
     truthful_missing_keywords TEXT, -- JSON array
     optimization_summary TEXT,
     resume_path TEXT,
-    
+
+    -- Approval metadata
+    approval_status TEXT DEFAULT 'pending', -- pending | approved | hold | rejected
+    approval_metadata TEXT,                 -- JSON object
+    approved_resume_version_id TEXT,
+    approved_resume_path TEXT,
+    approved_at TEXT,
+    approved_by TEXT,
+
     -- Queue state
     job_state TEXT DEFAULT 'review_fit',
     user_decision TEXT DEFAULT 'pending',   -- pending | approved | hold | skip
@@ -99,6 +164,13 @@ CREATE TABLE IF NOT EXISTS apply_queue (
     run_id TEXT,
     screenshots_path TEXT,
     error_message TEXT,
+
+    -- Runner state (Phase 10)
+    runner_state TEXT DEFAULT 'queued',
+    runner_error TEXT,
+    runner_attempts INTEGER DEFAULT 0,
+    runner_last_started TEXT,
+    runner_last_finished TEXT,
     
     -- Metadata
     created_at TEXT DEFAULT (datetime('now')),
@@ -131,18 +203,81 @@ def _db() -> Iterator[sqlite3.Connection]:
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(apply_queue)").fetchall()}
+    additions = {
+        "job_title": "TEXT",
+        "company": "TEXT",
+        "job_description": "TEXT",
+        "role_family": "TEXT",
+        "seniority_band": "TEXT",
+        "role_match_score": "INTEGER DEFAULT 0",
+        "experience_match_score": "INTEGER DEFAULT 0",
+        "seniority_match_score": "INTEGER DEFAULT 0",
+        "overall_fit_score": "INTEGER DEFAULT 0",
+        "fit_decision": "TEXT",
+        "fit_reasons": "TEXT",
+        "unsupported_requirements": "TEXT",
+        "hard_blockers": "TEXT",
+        "requirement_evidence_map": "TEXT",
+        "ats_score": "INTEGER DEFAULT 0",
+        "truth_safe_ats_ceiling": "INTEGER DEFAULT 0",
+        "resume_version_id": "TEXT",
+        "package_status": "TEXT DEFAULT 'not_generated'",
+        "initial_ats_score": "INTEGER DEFAULT 0",
+        "final_ats_score": "INTEGER DEFAULT 0",
+        "covered_keywords": "TEXT",
+        "truthful_missing_keywords": "TEXT",
+        "optimization_summary": "TEXT",
+        "resume_path": "TEXT",
+        "approval_status": "TEXT DEFAULT 'pending'",
+        "approval_metadata": "TEXT",
+        "approved_resume_version_id": "TEXT",
+        "approved_resume_path": "TEXT",
+        "approved_at": "TEXT",
+        "approved_by": "TEXT",
+        "job_state": "TEXT DEFAULT 'review_fit'",
+        "user_decision": "TEXT DEFAULT 'pending'",
+        "safe_to_submit": "INTEGER DEFAULT 0",
+        "safe_to_autofill": "INTEGER DEFAULT 1",
+        "operator_approved": "INTEGER DEFAULT 0",
+        "blocker_fields": "TEXT",
+        "review_fields": "TEXT",
+        "application_status": "TEXT",
+        "application_date": "TEXT",
+        "run_id": "TEXT",
+        "screenshots_path": "TEXT",
+        "error_message": "TEXT",
+        "runner_state": "TEXT DEFAULT 'queued'",
+        "runner_error": "TEXT",
+        "runner_attempts": "INTEGER DEFAULT 0",
+        "runner_last_started": "TEXT",
+        "runner_last_finished": "TEXT",
+        "created_at": "TEXT",
+        "updated_at": "TEXT",
+        "source": "TEXT DEFAULT 'linkedin'",
+        "notes": "TEXT",
+    }
+    for col, ddl in additions.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE apply_queue ADD COLUMN {col} {ddl}")
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     for json_field in ["fit_reasons", "unsupported_requirements", "hard_blockers",
                        "requirement_evidence_map", "covered_keywords",
-                       "truthful_missing_keywords", "blocker_fields", "review_fields"]:
+                       "truthful_missing_keywords", "blocker_fields", "review_fields",
+                       "approval_metadata"]:
         if d.get(json_field) and isinstance(d[json_field], str):
             try:
                 d[json_field] = json.loads(d[json_field])
             except Exception:
                 d[json_field] = []
+    d["unsupported_requirements_count"] = len(d.get("unsupported_requirements") or [])
+    d["recommended_action"] = recommended_action(
+        job_state=d.get("job_state", ""),
+        package_status=d.get("package_status", ""),
+    )
     return d
 
 
@@ -171,14 +306,11 @@ def upsert_queue_item(
     fit_decision = fit.get("fit_decision", "review_fit")
     overall_score = fit.get("overall_fit_score", 0)
 
-    if hard_blockers:
-        state = JobQueueState.SKIP
-    elif fit_decision == "apply" and overall_score >= 65:
-        state = JobQueueState.READY_FOR_APPROVAL
-    elif fit_decision in ("review_fit", "apply"):
-        state = JobQueueState.REVIEW_FIT
-    else:
-        state = JobQueueState.SKIP
+    state = determine_initial_state(
+        fit_decision=fit_decision,
+        overall_fit_score=int(overall_score or 0),
+        hard_blockers=hard_blockers,
+    )
 
     with _db() as conn:
         # Check for existing item
@@ -245,6 +377,30 @@ def upsert_queue_item(
 def attach_package(item_id: str, package: dict) -> None:
     """Attach a generated resume package to a queue item."""
     with _db() as conn:
+        row = conn.execute(
+            "SELECT job_state, fit_decision, overall_fit_score, hard_blockers, unsupported_requirements FROM apply_queue WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        current_state = row["job_state"] if row else JobQueueState.REVIEW_FIT
+        fit_decision = row["fit_decision"] if row else ""
+        overall_fit_score = int(row["overall_fit_score"] or 0) if row else 0
+        try:
+            hard_blockers = json.loads(row["hard_blockers"]) if row and row["hard_blockers"] else []
+        except Exception:
+            hard_blockers = []
+        try:
+            unsupported = json.loads(row["unsupported_requirements"]) if row and row["unsupported_requirements"] else []
+        except Exception:
+            unsupported = []
+
+        next_state = determine_state_after_package(
+            current_state=current_state,
+            fit_decision=fit_decision,
+            overall_fit_score=overall_fit_score,
+            package_status=package.get("package_status", PackageState.GENERATED),
+            hard_blockers=hard_blockers,
+            unsupported_requirements=unsupported,
+        )
         conn.execute("""
             UPDATE apply_queue SET
                 resume_version_id=?, package_status=?,
@@ -252,6 +408,7 @@ def attach_package(item_id: str, package: dict) -> None:
                 truth_safe_ats_ceiling=?,
                 covered_keywords=?, truthful_missing_keywords=?,
                 optimization_summary=?, resume_path=?,
+                job_state=?,
                 updated_at=?
             WHERE id=?
         """, (
@@ -264,9 +421,22 @@ def attach_package(item_id: str, package: dict) -> None:
             json.dumps(package.get("truthful_missing_keywords", [])),
             package.get("optimization_summary", ""),
             package.get("resume_path", ""),
+            next_state,
             datetime.now().isoformat(),
             item_id,
         ))
+    _audit_queue_event(
+        "package_generated",
+        item_id,
+        extra={
+            "resume_version_id": package.get("resume_version_id", ""),
+            "package_status": package.get("package_status", PackageState.GENERATED),
+            "initial_ats_score": package.get("initial_ats_score", 0),
+            "final_ats_score": package.get("final_ats_score", 0),
+            "truth_safe_ats_ceiling": package.get("truth_safe_ats_ceiling", 0),
+        },
+        status=next_state,
+    )
 
 
 def set_job_state(item_id: str, new_state: str, notes: str = "") -> None:
@@ -277,23 +447,81 @@ def set_job_state(item_id: str, new_state: str, notes: str = "") -> None:
         """, (new_state, notes, datetime.now().isoformat(), item_id))
 
 
-def approve_job(item_id: str) -> None:
+def approve_job(item_id: str, approval_metadata: Optional[dict] = None) -> None:
     """Approve a job for apply. Sets state → approved_for_apply."""
+    approval_metadata = approval_metadata or {}
     with _db() as conn:
         conn.execute("""
             UPDATE apply_queue SET
                 job_state=?, user_decision='approved', operator_approved=1,
                 package_status=CASE WHEN package_status='optimized_truth_safe' THEN 'approved' ELSE package_status END,
+                approval_status='approved',
+                approval_metadata=?,
+                approved_resume_version_id=?,
+                approved_resume_path=?,
+                approved_at=?,
+                approved_by=?,
                 updated_at=?
             WHERE id=?
-        """, (JobQueueState.APPROVED_FOR_APPLY, datetime.now().isoformat(), item_id))
+        """, (
+            JobQueueState.APPROVED_FOR_APPLY,
+            json.dumps(approval_metadata),
+            approval_metadata.get("approved_resume_version_id", ""),
+            approval_metadata.get("approved_resume_path", ""),
+            approval_metadata.get("approved_at", datetime.now().isoformat()),
+            approval_metadata.get("approved_by", "user"),
+            datetime.now().isoformat(),
+            item_id,
+        ))
+    _audit_queue_event(
+        "package_approved",
+        item_id,
+        extra={
+            "approved_by": approval_metadata.get("approved_by", "user"),
+            "approved_at": approval_metadata.get("approved_at", ""),
+            "approved_resume_version_id": approval_metadata.get("approved_resume_version_id", ""),
+            "approved_resume_path": approval_metadata.get("approved_resume_path", ""),
+        },
+        status=JobQueueState.APPROVED_FOR_APPLY,
+    )
 
 
 def hold_job(item_id: str, notes: str = "") -> None:
     with _db() as conn:
         conn.execute("""
-            UPDATE apply_queue SET user_decision='hold', notes=?, updated_at=? WHERE id=?
-        """, (notes, datetime.now().isoformat(), item_id))
+            UPDATE apply_queue SET
+                job_state=?, user_decision='hold',
+                approval_status='hold',
+                notes=?, updated_at=?
+            WHERE id=?
+        """, (JobQueueState.REVIEW_FIT, notes, datetime.now().isoformat(), item_id))
+
+
+def reject_job(item_id: str, notes: str = "") -> None:
+    """Reject a job; mark as skipped with reject decision."""
+    with _db() as conn:
+        conn.execute("""
+            UPDATE apply_queue SET
+                job_state=?, user_decision='rejected',
+                approval_status='rejected',
+                notes=?, updated_at=?
+            WHERE id=?
+        """, (JobQueueState.SKIP, notes, datetime.now().isoformat(), item_id))
+
+
+def send_back_for_resume_review(item_id: str, notes: str = "") -> None:
+    """Send back to resume review; clears existing package so it can be regenerated."""
+    with _db() as conn:
+        conn.execute("""
+            UPDATE apply_queue SET
+                job_state=?,
+                package_status=?,
+                resume_version_id='',
+                resume_path='',
+                user_decision='pending',
+                notes=?, updated_at=?
+            WHERE id=?
+        """, (JobQueueState.REVIEW_RESUME, PackageState.NOT_GENERATED, notes, datetime.now().isoformat(), item_id))
 
 
 def skip_job(item_id: str, notes: str = "") -> None:
@@ -312,6 +540,12 @@ def mark_applied(item_id: str, run_id: str = "", screenshots_path: str = "") -> 
             WHERE id=?
         """, (JobQueueState.APPLIED, datetime.now().isoformat(),
               run_id, screenshots_path, datetime.now().isoformat(), item_id))
+    _audit_queue_event(
+        "application_submitted",
+        item_id,
+        extra={"run_id": run_id, "screenshots_path": screenshots_path},
+        status=JobQueueState.APPLIED,
+    )
 
 
 def mark_blocked(item_id: str, error: str = "") -> None:
@@ -319,6 +553,43 @@ def mark_blocked(item_id: str, error: str = "") -> None:
         conn.execute("""
             UPDATE apply_queue SET job_state=?, error_message=?, updated_at=? WHERE id=?
         """, (JobQueueState.BLOCKED, error[:500], datetime.now().isoformat(), item_id))
+
+
+def mark_runner_started(item_id: str) -> None:
+    with _db() as conn:
+        conn.execute(
+            """
+            UPDATE apply_queue SET
+                runner_state='running',
+                runner_attempts=COALESCE(runner_attempts, 0) + 1,
+                runner_last_started=?,
+                updated_at=?
+            WHERE id=?
+            """,
+            (datetime.now().isoformat(), datetime.now().isoformat(), item_id),
+        )
+    _audit_queue_event("runner_started", item_id, status=JobQueueState.APPLYING)
+
+
+def set_runner_state(item_id: str, state: str, error: str = "") -> None:
+    with _db() as conn:
+        conn.execute(
+            """
+            UPDATE apply_queue SET
+                runner_state=?,
+                runner_error=?,
+                runner_last_finished=?,
+                updated_at=?
+            WHERE id=?
+            """,
+            (state, error[:500], datetime.now().isoformat(), datetime.now().isoformat(), item_id),
+        )
+    if state == "stopped_review_required":
+        _audit_queue_event(
+            "runner_stopped_review_required",
+            item_id,
+            extra={"runner_state": state, "error": error[:200]},
+        )
 
 
 def get_queue(

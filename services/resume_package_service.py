@@ -1,5 +1,5 @@
 """
-Phase 11 — Resume Package Service
+Phase 2 - Resume Package Service
 Generates a truthfully-optimized resume for a specific job.
 Uses the existing iterative ATS optimizer loop.
 Returns a versioned package with ATS metadata and upload path.
@@ -14,6 +14,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from services.keyword_coverage import analyze_keyword_coverage, build_truth_inventory_from_resume
+from services.resume_content_selector import select_relevant_content
+from services.truth_safe_ats import compute_truth_safe_ats_ceiling
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -68,6 +72,8 @@ def generate_package_for_job(
     master_resume_path: Optional[str] = None,
     target_ats_score: int = 85,
     max_iterations: int = 5,
+    render_one_page_pdf: bool = False,
+    template_id: str = "classic_ats",
 ) -> dict:
     """
     Generate a truthfully-optimized resume package for a job.
@@ -77,7 +83,8 @@ def generate_package_for_job(
             resume_version_id, package_status, resume_path,
             initial_ats_score, final_ats_score, truth_safe_ats_ceiling,
             covered_keywords, truthful_missing_keywords, unsupported_keywords,
-            optimization_summary, iterations
+            optimization_summary, iterations, rendered_pdf_path, template_id,
+            page_count, layout_status
         }
     """
     version_id = f"res_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
@@ -93,7 +100,10 @@ def generate_package_for_job(
             "error": "Could not load master resume text. Set RESUME_PATH or ensure Master_Resumes/ has a PDF.",
         }
 
-    # Run existing iterative ATS optimizer
+    # Build truth inventory snapshot (for keyword support + section hints)
+    truth_inv = build_truth_inventory_from_resume(master_text)
+
+    # Run iterative ATS optimizer
     try:
         from enhanced_ats_checker import EnhancedATSChecker
         from agents.iterative_ats_optimizer import run_iterative_ats_optimizer
@@ -101,17 +111,22 @@ def generate_package_for_job(
 
         ats_checker = EnhancedATSChecker()
 
-        # Minimal tailor/humanize functions (text-based, no LLM required for MVP)
+        # Tailor/humanize functions (text-based, no LLM required)
         def _tailor_fn(state: dict) -> dict:
-            """Simple keyword-injection tailoring from supported missing keywords."""
-            resume = state.get("base_resume_text", "")
-            missing = state.get("missing_skills", [])
-            if missing:
-                # Append a skills addendum line (truthful — only what master resume supports)
-                addendum = "Additional competencies: " + ", ".join(missing[:8])
-                if addendum not in resume:
-                    resume = resume + "\n\n" + addendum
-            return {"tailored_resume_text": resume}
+            """Select relevant existing content and add truthful keyword expansions."""
+            base = state.get("base_resume_text", "") or master_text
+            missing = state.get("missing_skills", []) or []
+            selected = select_relevant_content(
+                base,
+                job_description,
+                additional_keywords=missing,
+            )
+            return {
+                "tailored_resume_text": selected.tailored_resume_text,
+                "selected_experience_bullets": selected.selected_experience_bullets,
+                "selected_project_bullets": selected.selected_project_bullets,
+                "skills_additions": selected.skills_additions,
+            }
 
         def _humanize_fn(state: dict) -> dict:
             return {"humanized_resume_text": state.get("tailored_resume_text", "")}
@@ -137,10 +152,12 @@ def generate_package_for_job(
         final_text = result.get("humanized_resume_text", master_text)
         initial_score = result.get("initial_ats_score", 0)
         final_score = result.get("final_ats_score", 0)
-        ceiling = result.get("truthful_ceiling", final_score)
         missing_kw = result.get("truthful_missing_keywords", result.get("missing_keywords", []))
         iterations = result.get("iterations", result.get("attempts", 1))
         converged = result.get("converged", False)
+        no_truthful_improvement = bool(result.get("no_truthful_improvement"))
+        stopped_early = bool(result.get("stopped_early"))
+        stopped_after_max = bool(result.get("stopped_after_max_attempts"))
 
     except Exception as e:
         # Fallback: copy master resume as-is, run basic ATS check
@@ -156,16 +173,17 @@ def generate_package_for_job(
             )
             initial_score = ats_result.get("ats_score", 0)
             final_score = initial_score
-            ceiling = initial_score
             missing_kw = ats_result.get("detailed_breakdown", {}).get("missing_keywords", [])
         except Exception:
             initial_score = 0
             final_score = 0
-            ceiling = 0
             missing_kw = []
         final_text = master_text
         iterations = 1
         converged = False
+        no_truthful_improvement = False
+        stopped_early = False
+        stopped_after_max = False
 
     # Save optimized text
     text_path = package_dir / "resume_optimized.txt"
@@ -174,8 +192,53 @@ def generate_package_for_job(
     # Copy best matching PDF
     pdf_path = _copy_best_resume_pdf(company, job_title, package_dir, master_resume_path)
 
-    # Keyword coverage analysis
-    covered, unsupported = _analyze_keyword_coverage(final_text, job_description)
+    rendered_pdf_path = ""
+    page_count = 0
+    layout_status = ""
+    if render_one_page_pdf:
+        try:
+            from services.resume_designer import render_one_page_resume
+            from services.profile_service import load_profile
+
+            profile = load_profile() or {}
+            one_page = render_one_page_resume(
+                master_resume_text=master_text,
+                job_title=job_title,
+                company=company,
+                job_description=job_description,
+                template_id=template_id,
+                profile=profile,
+                resume_text_override=final_text,
+                output_path=str(package_dir / f"resume_{template_id}.pdf"),
+            )
+            rendered_pdf_path = one_page.get("rendered_pdf_path", "")
+            page_count = int(one_page.get("final_page_count") or one_page.get("page_count") or 0)
+            layout_status = one_page.get("layout_status", "")
+            compression_steps = one_page.get("compression_steps_applied", [])
+            trim_log = one_page.get("trimmed_content_log", [])
+            fit_passed = one_page.get("fit_passed")
+        except Exception:
+            rendered_pdf_path = ""
+            compression_steps = []
+            trim_log = []
+            fit_passed = None
+
+    # Keyword coverage analysis (truth-aware)
+    coverage = analyze_keyword_coverage(job_description, final_text, truth_inv)
+    covered = coverage.covered_keywords
+    unsupported = coverage.unsupported_keywords
+    truthful_missing = coverage.truthful_missing_keywords
+    ceiling_meta = compute_truth_safe_ats_ceiling(
+        final_ats_score=int(final_score),
+        target_score=target_ats_score,
+        truth_safe=True,
+        converged=converged,
+        no_truthful_improvement=no_truthful_improvement,
+        stopped_after_max_attempts=stopped_after_max,
+        unsupported_requirements=unsupported,
+        truthful_missing_keywords=truthful_missing or missing_kw,
+        initial_ats_score=initial_score,
+    )
 
     # Package status
     if final_score >= target_ats_score:
@@ -195,12 +258,32 @@ def generate_package_for_job(
         "resume_text_path": str(text_path),
         "initial_ats_score": initial_score,
         "final_ats_score": final_score,
-        "truth_safe_ats_ceiling": ceiling,
+        "truth_safe_ats_ceiling": ceiling_meta["truth_safe_ats_ceiling"],
+        "truth_safe_ceiling_reason": ceiling_meta["truth_safe_ceiling_reason"],
+        "ceiling_limited_by": ceiling_meta.get("ceiling_limited_by", []),
         "covered_keywords": covered[:20],
-        "truthful_missing_keywords": missing_kw[:10],
+        "supported_keywords": coverage.supported_keywords[:20],
+        "partially_supported_keywords": coverage.partially_supported_keywords[:20],
+        "truthful_missing_keywords": truthful_missing[:10] or missing_kw[:10],
         "unsupported_keywords": unsupported[:10],
-        "optimization_summary": _build_summary(initial_score, final_score, ceiling, converged, missing_kw),
+        "optimization_summary": _build_summary(
+            initial_score,
+            final_score,
+            ceiling,
+            converged=converged,
+            missing=truthful_missing or missing_kw,
+            no_truthful_improvement=no_truthful_improvement,
+            stopped_early=stopped_early,
+            stopped_after_max=stopped_after_max,
+        ),
         "iterations": iterations,
+        "rendered_pdf_path": rendered_pdf_path,
+        "template_id": template_id,
+        "page_count": page_count,
+        "layout_status": layout_status,
+        "fit_passed": fit_passed,
+        "compression_steps_applied": compression_steps,
+        "trimmed_content_log": trim_log,
         "created_at": datetime.now().isoformat(),
     }
     (package_dir / "package.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -242,30 +325,28 @@ def _copy_best_resume_pdf(company: str, job_title: str, dest_dir: Path, master_r
     return dest
 
 
-def _analyze_keyword_coverage(resume_text: str, job_description: str) -> tuple[list[str], list[str]]:
-    """Return (covered_keywords, job_keywords_not_in_resume)."""
-    import re
-    resume_lower = resume_text.lower()
-    # Extract significant words from JD
-    jd_words = set(re.findall(r'\b[a-z][a-z0-9\+#]{2,}\b', job_description.lower()))
-    common_words = {
-        "the", "and", "for", "with", "this", "that", "are", "you", "our", "can",
-        "will", "from", "have", "has", "not", "but", "they", "your", "its", "all",
-        "experience", "required", "skills", "role", "team", "work", "build", "using",
-    }
-    jd_words -= common_words
-
-    covered = [w for w in sorted(jd_words) if w in resume_lower]
-    uncovered = [w for w in sorted(jd_words) if w not in resume_lower]
-    return covered[:30], uncovered[:20]
-
-
-def _build_summary(initial: int, final: int, ceiling: int, converged: bool, missing: list[str]) -> str:
-    parts = [f"ATS score: {initial} → {final} (truth-safe ceiling: {ceiling})."]
+def _build_summary(
+    initial: int,
+    final: int,
+    ceiling: int,
+    *,
+    converged: bool,
+    missing: list[str],
+    no_truthful_improvement: bool = False,
+    stopped_early: bool = False,
+    stopped_after_max: bool = False,
+) -> str:
+    parts = [f"ATS score: {initial} -> {final} (truth-safe ceiling: {ceiling})."]
     if converged:
         parts.append("Optimizer converged at target score.")
+    elif no_truthful_improvement:
+        parts.append("Stopped: no further truthful improvement possible.")
+    elif stopped_early:
+        parts.append("Stopped early due to low ATS score gain.")
+    elif stopped_after_max:
+        parts.append("Stopped after max iterations.")
     elif final == ceiling:
-        parts.append("Reached truth-safe ceiling — no further truthful improvement possible.")
+        parts.append("Reached truth-safe ceiling.")
     if missing:
         parts.append(f"Keywords not supported by resume: {', '.join(missing[:5])}.")
     return " ".join(parts)

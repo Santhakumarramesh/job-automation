@@ -5,6 +5,7 @@ Truth-safe: only adds keywords supported by master resume.
 
 from typing import Callable, Optional, Any
 from agents.master_resume_guard import parse_master_resume, get_truthful_missing_keywords
+from services.keyword_coverage import analyze_keyword_coverage, build_truth_inventory_from_resume
 from agents.state import AgentState
 
 
@@ -34,6 +35,7 @@ def run_iterative_ats_optimizer(
     """
     master_text = state.get("base_resume_text", "")
     master_inventory = parse_master_resume(master_text) if truth_safe else {}
+    truth_inv = build_truth_inventory_from_resume(master_text) if truth_safe else None
 
     current_resume = master_text
     current_score = 0
@@ -112,9 +114,18 @@ def run_iterative_ats_optimizer(
 
         prev_score = int(current_score)
 
-        # Truth-safe: only add keywords from master
+        # Truth-safe: only add keywords from master + supported JD synonyms
         if truth_safe and master_inventory:
             last_truthful_missing = get_truthful_missing_keywords(master_inventory, last_missing)
+            if truth_inv:
+                coverage = analyze_keyword_coverage(
+                    state.get("job_description", ""),
+                    current_resume,
+                    truth_inv,
+                )
+                for kw in coverage.truthful_expansion_keywords:
+                    if kw not in last_truthful_missing:
+                        last_truthful_missing.append(kw)
             if not last_truthful_missing:
                 return {
                     "tailored_resume_text": current_resume,

@@ -58,6 +58,12 @@ def test_submission_shadow_statuses():
     ) == ("Shadow – Would Not Apply")
 
 
+def test_submission_blocked_resume_verification():
+    assert _submission_status_for_run_result(
+        _FakeRun("blocked_resume_verification", "resume_verification_failed")
+    ) == ("Blocked – Resume Verification")
+
+
 def test_submission_failed_login_vs_form():
     assert _submission_status_for_run_result(
         _FakeRun("failed", "checkpoint in URL")

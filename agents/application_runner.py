@@ -106,6 +106,14 @@ def _resolve_resume_path(config: RunConfig, job: Optional[dict] = None) -> str:
     """Resolve resume path. Prefer job-specific path if exists."""
     proj = Path(__file__).resolve().parent.parent
     if job:
+        # Explicit approved/job-specific resume overrides
+        for key in ("approved_resume_path", "resume_path", "resume_pdf_path"):
+            try:
+                candidate = str(job.get(key) or "").strip()
+            except Exception:
+                candidate = ""
+            if candidate and os.path.isfile(candidate):
+                return candidate
         try:
             from services.resume_naming import ensure_resume_exists_for_job
             profile = config.profile or {}
@@ -386,19 +394,82 @@ async def run_linkedin_application(
         linkedin_fill_value_resolution_seconds = (modal_timings or {}).get("linkedin_fill_value_resolution")
         linkedin_fill_field_fill_seconds = (modal_timings or {}).get("linkedin_fill_field_fill")
 
-        # Resume upload (use job-specific path when available)
+        # Resume upload + verification (LinkedIn Easy Apply)
         resume_path = _resolve_resume_path(config, job) or config.resume_path
-        if resume_path and os.path.isfile(resume_path):
-            try:
-                up = await page.query_selector("input[type='file']")
-                if up and await up.is_visible():
-                    t0 = time.perf_counter()
-                    await up.set_input_files(resume_path)
-                    await page.wait_for_timeout(_scaled_wait_ms(1500, 1500))
-                    linkedin_fill_resume_upload_seconds = time.perf_counter() - t0
-                    qa_audit["resume_uploaded"] = os.path.basename(resume_path)
-            except Exception:
-                unmapped.append("resume_upload")
+        if not resume_path or not os.path.isfile(resume_path):
+            qa_audit["resume_portal_error"] = "resume_file_missing"
+            return RunResult(
+                status="blocked_resume_verification",
+                company=company,
+                position=position,
+                job_url=url,
+                screenshot_paths=screenshot_paths,
+                qa_audit=qa_audit,
+                unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+                error="resume_file_missing",
+            )
+        try:
+            from services.resume_portal_adapter import LinkedInEasyApplyResumeAdapter
+            from services.resume_upload_verifier import ensure_portal_resume
+
+            t0 = time.perf_counter()
+            portal_result = await ensure_portal_resume(
+                page,
+                resume_path,
+                adapter=LinkedInEasyApplyResumeAdapter(),
+                audit_context={
+                    "job_id": str(job.get("job_id") or job.get("id") or ""),
+                    "job_url": url,
+                    "company": company,
+                    "position": position,
+                    "queue_state": str(job.get("queue_state") or job.get("job_state") or ""),
+                },
+            )
+            linkedin_fill_resume_upload_seconds = time.perf_counter() - t0
+            qa_audit["resume_portal_action"] = (portal_result.get("action") or "")[:80]
+            qa_audit["resume_portal_status"] = (portal_result.get("status") or "")[:40]
+            qa_audit["resume_expected"] = (portal_result.get("expected_filename") or "")[:120]
+            qa_audit["resume_detected"] = (portal_result.get("detected_filename") or "")[:120]
+            qa_audit["resume_verified"] = str(portal_result.get("verified", False))
+            if portal_result.get("status") == "ok":
+                qa_audit["resume_uploaded"] = os.path.basename(resume_path)
+            else:
+                qa_audit["resume_portal_error"] = (portal_result.get("error") or "")[:160]
+                if screenshot_dir:
+                    try:
+                        screenshot_dir.mkdir(parents=True, exist_ok=True)
+                        fname = f"resume_blocked_{company.replace(' ', '_')[:30]}_{datetime.now().strftime('%H%M%S')}.png"
+                        fp = screenshot_dir / fname
+                        await page.screenshot(path=str(fp))
+                        screenshot_paths.append(str(fp))
+                    except Exception:
+                        pass
+                return RunResult(
+                    status="blocked_resume_verification",
+                    company=company,
+                    position=position,
+                    job_url=url,
+                    screenshot_paths=screenshot_paths,
+                    qa_audit=qa_audit,
+                    unmapped_fields=unmapped,
+                    answerer_review=answerer_review,
+                    error=portal_result.get("error") or "resume_verification_failed",
+                )
+        except Exception as exc:
+            err = f"resume_verification_exception:{str(exc)[:120]}"
+            qa_audit["resume_portal_error"] = err[:160]
+            return RunResult(
+                status="blocked_resume_verification",
+                company=company,
+                position=position,
+                job_url=url,
+                screenshot_paths=screenshot_paths,
+                qa_audit=qa_audit,
+                unmapped_fields=unmapped,
+                answerer_review=answerer_review,
+                error=err,
+            )
 
         # Screenshot before submit
         if screenshot_dir:

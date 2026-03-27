@@ -27,7 +27,7 @@ CSV_FILE = _PROJECT_ROOT / "job_applications.csv"
 TRACKER_COLUMNS = [
     "id", "source", "job_id", "job_url", "apply_url", "company", "position",
     "status", "submission_status", "easy_apply_confirmed", "apply_mode", "policy_reason",
-    "fit_decision", "ats_score", "resume_path", "cover_letter_path",
+    "fit_decision", "fit_state", "ats_score", "resume_path", "cover_letter_path",
     "job_description", "applied_at", "recruiter_response", "screenshots_path",
     "qa_audit", "artifacts_manifest", "retry_state", "user_id",
     "workspace_id",
@@ -38,6 +38,11 @@ TRACKER_COLUMNS = [
     "truth_safe_ats_ceiling",
     "selected_address_label",
     "package_field_stats",
+    "package_state",
+    "approval_state",
+    "queue_state",
+    "runner_state",
+    "final_state",
     "application_decision",
     "job_state",
 ]
@@ -188,6 +193,7 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             apply_mode TEXT,
             policy_reason TEXT DEFAULT '',
             fit_decision TEXT,
+            fit_state TEXT DEFAULT '',
             ats_score TEXT,
             resume_path TEXT,
             cover_letter_path TEXT,
@@ -210,6 +216,11 @@ def _init_schema_sqlite(conn: sqlite3.Connection) -> None:
             truth_safe_ats_ceiling TEXT DEFAULT '',
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
+            package_state TEXT DEFAULT '',
+            approval_state TEXT DEFAULT '',
+            queue_state TEXT DEFAULT '',
+            runner_state TEXT DEFAULT '',
+            final_state TEXT DEFAULT '',
             application_decision TEXT DEFAULT '',
             job_state TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -261,6 +272,24 @@ def _migrate_sqlite_columns(conn: sqlite3.Connection) -> None:
     if "package_field_stats" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN package_field_stats TEXT DEFAULT '{}'")
         conn.commit()
+    if "fit_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN fit_state TEXT DEFAULT ''")
+        conn.commit()
+    if "package_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN package_state TEXT DEFAULT ''")
+        conn.commit()
+    if "approval_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN approval_state TEXT DEFAULT ''")
+        conn.commit()
+    if "queue_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN queue_state TEXT DEFAULT ''")
+        conn.commit()
+    if "runner_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN runner_state TEXT DEFAULT ''")
+        conn.commit()
+    if "final_state" not in cols:
+        conn.execute("ALTER TABLE applications ADD COLUMN final_state TEXT DEFAULT ''")
+        conn.commit()
     if "workspace_id" not in cols:
         conn.execute("ALTER TABLE applications ADD COLUMN workspace_id TEXT DEFAULT ''")
         conn.commit()
@@ -291,6 +320,7 @@ def _init_schema_postgres(conn) -> None:
             apply_mode TEXT,
             policy_reason TEXT DEFAULT '',
             fit_decision TEXT,
+            fit_state TEXT DEFAULT '',
             ats_score TEXT,
             resume_path TEXT,
             cover_letter_path TEXT,
@@ -313,6 +343,11 @@ def _init_schema_postgres(conn) -> None:
             truth_safe_ats_ceiling TEXT DEFAULT '',
             selected_address_label TEXT DEFAULT '',
             package_field_stats TEXT DEFAULT '{}',
+            package_state TEXT DEFAULT '',
+            approval_state TEXT DEFAULT '',
+            queue_state TEXT DEFAULT '',
+            runner_state TEXT DEFAULT '',
+            final_state TEXT DEFAULT '',
             application_decision JSONB,
             job_state TEXT DEFAULT '',
             created_at TIMESTAMPTZ DEFAULT NOW()
@@ -332,6 +367,12 @@ def _init_schema_postgres(conn) -> None:
     _pg_ensure_column(conn, "truth_safe_ats_ceiling", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "selected_address_label", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "package_field_stats", "TEXT DEFAULT '{}'")
+    _pg_ensure_column(conn, "fit_state", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "package_state", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "approval_state", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "queue_state", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "runner_state", "TEXT DEFAULT ''")
+    _pg_ensure_column(conn, "final_state", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "workspace_id", "TEXT DEFAULT ''")
     _pg_ensure_column(conn, "application_decision", "JSONB")
     _pg_ensure_column(conn, "job_state", "TEXT DEFAULT ''")
@@ -428,6 +469,8 @@ def _row_vals(row, col: str) -> str:
         if not s:
             return "{}"
         return s[:8000]
+    if col in ("fit_state", "package_state", "approval_state", "queue_state", "runner_state", "final_state"):
+        return str(v or "").strip()[:120]
     if col == "application_decision":
         return _application_decision_cell_value(v)
     if col == "job_state":
@@ -504,6 +547,8 @@ def _cell(row: dict, c: str) -> Any:
         if _use_postgres() and not sv:
             return None
         return sv[:64]
+    if c in ("fit_state", "package_state", "approval_state", "queue_state", "runner_state", "final_state"):
+        return str(v or "").strip()[:120]
     if c == "workspace_id":
         return str(v or "").strip()[:200]
     return str(v or "")[:500]

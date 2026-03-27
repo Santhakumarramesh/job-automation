@@ -743,7 +743,8 @@ def approve_jobs_for_apply(
     """
     try:
         import json as _json
-        from services.apply_queue_service import approve_job, get_item_by_id
+        from services.approval_service import approve_job_with_metadata
+        from services.apply_queue_service import get_item_by_id
 
         ids = _json.loads(item_ids_json) if isinstance(item_ids_json, str) else item_ids_json
         approved = []
@@ -752,7 +753,7 @@ def approve_jobs_for_apply(
         for item_id in ids:
             item = get_item_by_id(item_id)
             if item:
-                approve_job(item_id)
+                approve_job_with_metadata(item_id, approved_by="mcp")
                 approved.append({
                     "id": item_id,
                     "job_title": item.get("job_title"),
@@ -780,31 +781,28 @@ def run_approved_queue(
     skip_resume_generation: bool = False,
 ) -> dict:
     """
-    Phase 11 — Queue Runner.
-    Process all approved_for_apply jobs in the queue one-by-one.
+    Phase 10 — One-by-one queue runner.
+    Processes only approved_for_apply items, enforcing approved resume bindings.
 
     For each job:
-      1. Generate a tailored resume (iterative ATS optimizer, truth-safe)
-      2. Pull form answers from truth inventory (answer_question_structured)
-      3. Submit the application via the apply runner
-      4. Update queue state → applied | blocked
+      1. Validate approved queue item + resume binding
+      2. Run LinkedIn Easy Apply via apply_to_jobs_payload (one job at a time)
+      3. Update runner_state + job_state
 
-    dry_run=True: Prepares packages + form answers but does NOT submit.
+    dry_run=True: fill without submit (runner_state=stopped_review_required).
     max_jobs: Safety cap per single run (default 20).
-    target_ats_score: ATS target for resume generation (default 85).
-    skip_resume_generation: Re-use already generated package if present.
 
-    Returns per-job results with ATS scores, form answers, and statuses.
+    Returns per-job runner_state + job_state outcomes.
     """
     try:
-        from agents.queue_runner_executor import run_approved_queue as _run, RunnerConfig
+        from services.runner_queue_executor import run_approved_queue as _run, RunnerConfig
 
         cfg = RunnerConfig(
             dry_run=dry_run,
             max_jobs=max_jobs,
-            target_ats_score=target_ats_score,
-            master_resume_path=master_resume_path,
-            skip_resume_generation=skip_resume_generation,
+            rate_limit_seconds=5.0,
+            require_safeguards=True,
+            manual_assist=False,
         )
         return _run(cfg)
     except Exception as e:

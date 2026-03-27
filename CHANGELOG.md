@@ -39,6 +39,19 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Expanded scoped `mypy.ini` coverage to HTTP/metrics middleware: `services/prometheus_setup.py`, `services/apply_runner_metrics_redis.py`, `services/rate_limit.py`, `services/api_cors.py`.
 - Expanded scoped `mypy.ini` coverage to policy/tracker/startup/profile services: `services/policy_service.py`, `services/tracker_db.py`, `services/application_tracker.py`, `services/startup_checks.py`, `services/profile_service.py`.
 - Expanded scoped `mypy.ini` coverage to queue/context surfaces: `app/tasks.py`, `services/tracker_context.py`.
+- Truthful ATS optimizer now classifies JD keywords into supported/partial/unsupported, filters additions to supported evidence only, and returns supported keyword buckets + truth-safe ceiling metadata in resume packages.
+- Discovery flow now applies a high-confidence prefilter with role/seniority/location/work-auth/ATS feasibility gates and annotates job search results with prefilter buckets.
+- Added ATS-safe one-page resume designer with deterministic templates, date normalization, optional PDF rendering, and package-level PDF generation hooks.
+- Added fit-to-one-page compression engine with deterministic formatting ladder, summary/bullet/project trimming, and compression logs.
+- Apply queue now enforces review-first states, moves to ready_for_approval only after package generation, and surfaces recommended actions + unsupported counts in queue rows.
+- Added user approval workflow with explicit approve/hold/reject/send-back actions, approval metadata binding to resume version, and review payload snapshots.
+- Added resume version store + upload binding to lock approved PDFs, plus queue bindings for approved resume version/path.
+- Added portal resume replacement engine with LinkedIn Easy Apply adapter, resume state detection, upload verification, and runner blocking when resume verification fails.
+- Apply queue execution now enforces approved resume bindings and passes job-specific approved resume paths through the runner.
+- Hardened apply_queue schema migration to backfill missing columns on older DBs.
+- Added Phase 10 one-by-one queue runner with guardrails, runner_state tracking, and MCP `run_approved_queue` wired to the approved-queue executor.
+- Added Phase 11 lifecycle tracking: new tracker columns for fit/package/approval/queue/runner/final states, audit events for package generation/approval, resume replacement, runner transitions, and application submission.
+- Phase 12 UI refactor: `ui/streamlit_app.py` now routes by `APP_MODE` to candidate vs operator UIs, and candidate workflow shows one-page resume previews plus runner/queue lifecycle states.
 
 ### Documentation
 

@@ -366,8 +366,8 @@ def _inject_mobile_operator_approval_styles() -> None:
     )
 
 
-def run():
-    """Main entry: render full Streamlit app."""
+def _legacy_run():
+    """Legacy monolithic Streamlit UI (operator + candidate + API console)."""
     load_dotenv()
     st.set_page_config(page_title="Career Co-Pilot Pro", page_icon="🚀", layout="wide")
     _inject_mobile_operator_approval_styles()
@@ -2405,3 +2405,29 @@ def run():
             "Browser automation (confirm Easy Apply, apply-to-jobs) is not triggered here — "
             "see scripts/README.md (needs ATS_ALLOW_LINKEDIN_BROWSER on the API)."
         )
+
+
+def run():
+    """
+    Streamlit entrypoint (Phase 12).
+
+    APP_MODE routing:
+      candidate (default) → ui/candidate_app.run
+      operator            → ui/operator_app.run
+      legacy              → legacy monolith (this file)
+    """
+    load_dotenv()
+    mode = (os.getenv("APP_MODE") or "candidate").strip().lower()
+    if mode in ("operator", "ops", "advanced"):
+        from ui.operator_app import run as _run
+        _run()
+        return
+    if mode in ("legacy", "full"):
+        _legacy_run()
+        return
+    from ui.candidate_app import run as _run
+    _run()
+
+
+if __name__ == "__main__":
+    run()

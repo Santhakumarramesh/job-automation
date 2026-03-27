@@ -152,6 +152,7 @@ def _process_single_item(
     """Execute a single approved queue item end-to-end."""
     from services.apply_queue_service import attach_package
     from services.resume_package_service import generate_package_for_job
+    from services.resume_upload_binding import ensure_bound_resume_or_block
 
     start_ts = time.monotonic()
     item_id = item["id"]
@@ -171,6 +172,17 @@ def _process_single_item(
     )
 
     try:
+        bound = ensure_bound_resume_or_block(item_id)
+        if bound.get("status") != "ok":
+            result.error = bound.get("message", "missing approved resume")
+            result.status = "blocked"
+            return result
+        approved_resume_path = (bound.get("version") or {}).get("approved_pdf_path") or item.get("approved_resume_path", "")
+        if not approved_resume_path or not Path(approved_resume_path).exists():
+            result.error = "approved_resume_path_missing"
+            result.status = "blocked"
+            return result
+
         # ------------------------------------------------------------------
         # Step 1: Generate or load resume package
         # ------------------------------------------------------------------
@@ -205,10 +217,8 @@ def _process_single_item(
         # Attach package to queue item
         attach_package(item_id, pkg)
 
-        if not result.resume_path:
-            result.error = "Resume package generation failed — no resume_path returned."
-            result.status = "blocked"
-            return result
+        # Use approved resume path for apply
+        result.resume_path = approved_resume_path
 
         # ------------------------------------------------------------------
         # Step 2: Gather form answers from truth inventory
@@ -338,53 +348,37 @@ def _execute_apply(
     Returns {"success": bool, "error": str}.
     """
     try:
-        from agents.application_runner import RunConfig
-        import asyncio
+        from services.linkedin_browser_automation import apply_to_jobs_payload
 
-        run_config = RunConfig(
-            resume_path=resume_path,
-            profile=profile,
-            dry_run=False,
-        )
-
-        # Inject pre-computed form answers so the runner doesn't guess
-        run_config_dict = {
-            "resume_path": resume_path,
-            "profile": profile,
-            "pre_filled_answers": form_answers,
-            "job_description": job_description,
-            "job_title": job_title,
+        jobs_payload = [{
+            "url": job_url,
+            "title": job_title,
             "company": company,
-        }
-
-        # Try to call apply via apply_to_jobs_payload (the existing MCP tool wrapper)
-        try:
-            from services.application_service import apply_single_job
-            result = apply_single_job(
-                job_url=job_url,
-                job_title=job_title,
-                company=company,
-                run_config_dict=run_config_dict,
-            )
-            if result.get("status") in ("applied", "success"):
-                return {"success": True, "error": ""}
-            else:
-                return {"success": False, "error": result.get("message", "Unknown error from application_service")}
-        except ImportError:
-            pass
-
-        # Fallback: log that application_service.apply_single_job is not available
-        logger.warning(
-            "[QueueRunner] application_service.apply_single_job not available. "
-            "Use the UI's Apply Queue page to execute via Chrome browser."
+            "apply_url": job_url,
+            "fit_decision": "apply",
+            "ats_score": 90,
+            "approved_resume_path": resume_path,
+            "resume_path": resume_path,
+        }]
+        result = apply_to_jobs_payload(
+            jobs=jobs_payload,
+            dry_run=False,
+            shadow_mode=False,
+            rate_limit_seconds=5,
+            manual_assist=False,
+            require_safeguards=True,
         )
-        return {
-            "success": False,
-            "error": (
-                "apply_single_job not available in this environment. "
-                "Use the Streamlit UI → Apply Queue → Apply to All to execute via Chrome."
-            ),
-        }
+        if result.get("status") != "ok":
+            return {"success": False, "error": result.get("message", "apply_to_jobs failed")}
+        applied = int(result.get("applied", 0) or 0)
+        if applied > 0:
+            return {"success": True, "error": ""}
+        # Extract first result error if present
+        res_list = result.get("results") or []
+        if res_list:
+            r0 = res_list[0] or {}
+            return {"success": False, "error": r0.get("error") or r0.get("status") or "apply_failed"}
+        return {"success": False, "error": "apply_failed"}
 
     except Exception as exc:
         import traceback

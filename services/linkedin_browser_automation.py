@@ -296,7 +296,8 @@ def apply_to_jobs_payload(
                     )
                     run_results.append(rr)
                     results.append({"company": j.get("company", ""), "status": "skipped", "reason": "no_url"})
-                    log_runner_result_to_tracker(j, rr, resume_path=config.resume_path or "")
+                    resume_path_for_job = j.get("approved_resume_path") or j.get("resume_path") or config.resume_path or ""
+                    log_runner_result_to_tracker(j, rr, resume_path=resume_path_for_job)
                     continue
                 result = await run_application(page, j, config, screenshot_dir=screenshot_dir)
                 run_results.append(result)
@@ -310,7 +311,8 @@ def apply_to_jobs_payload(
                         "answerer_review_field_keys": list((result.answerer_review or {}).keys())[:12],
                     }
                 )
-                log_runner_result_to_tracker(j, result, resume_path=config.resume_path or "")
+                resume_path_for_job = j.get("approved_resume_path") or j.get("resume_path") or config.resume_path or ""
+                log_runner_result_to_tracker(j, result, resume_path=resume_path_for_job)
                 if result.status == "applied":
                     applied += 1
 
