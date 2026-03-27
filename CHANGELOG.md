@@ -52,6 +52,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Added Phase 10 one-by-one queue runner with guardrails, runner_state tracking, and MCP `run_approved_queue` wired to the approved-queue executor.
 - Added Phase 11 lifecycle tracking: new tracker columns for fit/package/approval/queue/runner/final states, audit events for package generation/approval, resume replacement, runner transitions, and application submission.
 - Phase 12 UI refactor: `ui/streamlit_app.py` now routes by `APP_MODE` to candidate vs operator UIs, and candidate workflow shows one-page resume previews plus runner/queue lifecycle states.
+- Added MCP orchestration tool `evaluate_job_and_prepare_action_plan` to return normalized job, fit, ATS, policy job_state, answer risk summary, package artifacts, and next action.
 
 ### Documentation
 

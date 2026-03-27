@@ -731,6 +731,182 @@ def get_job_queue_for_review(
         return {"status": "error", "message": str(e)[:300], "trace": traceback.format_exc()[-500:]}
 
 
+def _normalize_job_input(job: dict) -> dict:
+    j = job or {}
+    url = (
+        j.get("url")
+        or j.get("job_url")
+        or j.get("apply_url")
+        or j.get("applyUrl")
+        or ""
+    )
+    title = (
+        j.get("title")
+        or j.get("job_title")
+        or j.get("jobTitle")
+        or j.get("position")
+        or ""
+    )
+    company = j.get("company") or j.get("company_name") or j.get("companyName") or ""
+    description = j.get("description") or j.get("job_description") or ""
+    location = j.get("location") or j.get("locationName") or ""
+    work_type = j.get("work_type") or j.get("workType") or ""
+    apply_url = j.get("apply_url") or j.get("applyUrl") or url
+    return {
+        "url": str(url or ""),
+        "apply_url": str(apply_url or url or ""),
+        "title": str(title or ""),
+        "company": str(company or ""),
+        "description": str(description or ""),
+        "location": str(location or ""),
+        "work_type": str(work_type or ""),
+    }
+
+
+def _answer_risk_summary(decision: dict) -> dict:
+    answers = (decision or {}).get("answers") or {}
+    counts = {"safe": 0, "review": 0, "missing": 0, "blocked": 0}
+    risky_fields: list[str] = []
+    for key, meta in answers.items():
+        if not isinstance(meta, dict):
+            continue
+        ast = str(meta.get("answer_state") or "")
+        if ast in counts:
+            counts[ast] += 1
+        if ast in ("review", "missing", "blocked"):
+            risky_fields.append(str(key))
+    return {
+        "counts": counts,
+        "risky_fields": risky_fields[:24],
+        "critical_unsatisfied": list((decision or {}).get("critical_unsatisfied") or [])[:24],
+        "safe_to_submit": bool(decision.get("safe_to_submit", False)),
+    }
+
+
+@mcp.tool()
+def evaluate_job_and_prepare_action_plan(
+    job_json: str,
+    master_resume_text: str = "",
+    master_resume_path: str = "",
+    include_package: bool = True,
+    target_ats_score: int = 85,
+    max_iterations: int = 5,
+    render_one_page_pdf: bool = False,
+    template_id: str = "classic_ats",
+) -> dict:
+    """
+    Orchestrate a single job through the full policy pipeline.
+
+    Returns:
+      - normalized_job
+      - fit (structured fit result)
+      - ats_score
+      - job_state (policy decision)
+      - answer_risk_summary
+      - package_artifacts (when include_package=True)
+      - next_action (recommended)
+    """
+    try:
+        job = json.loads(job_json) if isinstance(job_json, str) else job_json
+        normalized = _normalize_job_input(job if isinstance(job, dict) else {})
+
+        from services.profile_service import load_profile
+        from services.fit_engine import score_structured_fit, fit_result_to_dict
+        from services.resume_package_service import _load_master_resume_text, generate_package_for_job
+        from services.queue_transitions import determine_initial_state, determine_state_after_package, recommended_action
+        from services.application_decision import build_application_decision
+
+        profile = load_profile() or {}
+        resume_text = master_resume_text or _load_master_resume_text(master_resume_path or None)
+
+        fit = score_structured_fit(
+            normalized.get("title", ""),
+            normalized.get("description", ""),
+            resume_text,
+            profile,
+        )
+        fit_dict = fit_result_to_dict(fit)
+
+        ats_score = 0
+        try:
+            from enhanced_ats_checker import EnhancedATSChecker
+
+            if resume_text and normalized.get("description"):
+                ats_checker = EnhancedATSChecker()
+                ats = ats_checker.comprehensive_ats_check(
+                    resume_text=resume_text,
+                    job_description=normalized.get("description", ""),
+                    job_title=normalized.get("title", ""),
+                    company_name=normalized.get("company", ""),
+                    location=normalized.get("location", ""),
+                )
+                ats_score = int(ats.get("ats_score", 0) or 0)
+        except Exception:
+            ats_score = 0
+
+        decision_job = {
+            "url": normalized.get("url", ""),
+            "apply_url": normalized.get("apply_url", ""),
+            "title": normalized.get("title", ""),
+            "company": normalized.get("company", ""),
+            "description": normalized.get("description", ""),
+            "fit_decision": fit_dict.get("fit_decision", ""),
+            "ats_score": ats_score,
+            "unsupported_requirements": fit_dict.get("unsupported_requirements", []),
+        }
+        decision = build_application_decision(
+            decision_job,
+            profile=profile,
+            master_resume_text=resume_text,
+        )
+        answer_risk = _answer_risk_summary(decision)
+
+        queue_state = determine_initial_state(
+            fit_decision=fit_dict.get("fit_decision", ""),
+            overall_fit_score=int(fit_dict.get("overall_fit_score", 0) or 0),
+            hard_blockers=fit_dict.get("hard_blockers") or [],
+        )
+
+        package: dict = {}
+        package_status = "not_generated"
+        if include_package:
+            package = generate_package_for_job(
+                job_title=normalized.get("title", ""),
+                company=normalized.get("company", ""),
+                job_description=normalized.get("description", ""),
+                master_resume_path=master_resume_path or None,
+                target_ats_score=target_ats_score,
+                max_iterations=max_iterations,
+                render_one_page_pdf=render_one_page_pdf,
+                template_id=template_id,
+            )
+            package_status = str(package.get("package_status") or package_status)
+            queue_state = determine_state_after_package(
+                current_state=queue_state,
+                fit_decision=fit_dict.get("fit_decision", ""),
+                overall_fit_score=int(fit_dict.get("overall_fit_score", 0) or 0),
+                package_status=package_status,
+                hard_blockers=fit_dict.get("hard_blockers") or [],
+                unsupported_requirements=fit_dict.get("unsupported_requirements") or [],
+            )
+
+        next_action = recommended_action(job_state=queue_state, package_status=package_status)
+
+        return {
+            "status": "ok",
+            "normalized_job": normalized,
+            "fit": fit_dict,
+            "ats_score": ats_score,
+            "job_state": decision.get("job_state", ""),
+            "answer_risk_summary": answer_risk,
+            "package_artifacts": package,
+            "queue_state": queue_state,
+            "next_action": next_action,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
 @mcp.tool()
 def approve_jobs_for_apply(
     item_ids_json: str,
