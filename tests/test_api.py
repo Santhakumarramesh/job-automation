@@ -470,17 +470,22 @@ def test_post_ats_confirm_easy_apply_enabled_mocked(mock_confirm, monkeypatch):
 
 
 @pytest.mark.skipif(not _APP_AVAILABLE, reason="app deps not installed")
-@patch("langchain_openai.ChatOpenAI")
-def test_post_ats_generate_recruiter_followup_mocked(mock_llm_cls, monkeypatch):
+def test_post_ats_generate_recruiter_followup_mocked(monkeypatch):
     monkeypatch.setattr(
         "services.profile_service.load_profile",
         lambda: {"full_name": "Test User"},
     )
-    inst = MagicMock()
-    inst.invoke.return_value = MagicMock(
-        content='{"linkedin_message": "Hello", "email_subject": "Re role", "email_body": "Thanks"}'
+    monkeypatch.setattr(
+        "services.recruiter_followup.model_router.generate_json",
+        lambda **kwargs: {
+            "status": "ok",
+            "data": {
+                "linkedin_message": "Hello",
+                "email_subject": "Re role",
+                "email_body": "Thanks",
+            },
+        },
     )
-    mock_llm_cls.return_value = inst
     r = client.post(
         "/api/ats/generate-recruiter-followup",
         json={"job_title": "PM", "company": "Co", "application_date": "2025-01-01"},
