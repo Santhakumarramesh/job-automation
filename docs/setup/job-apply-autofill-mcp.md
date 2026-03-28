@@ -42,7 +42,7 @@ Claude Desktop: merge **[claude_desktop_config.example.json](claude_desktop_conf
 **Config notes**
 
 - **`start.sh`** (default, no args) runs **`python3 -m mcp_servers.job_apply_autofill.server`** — same module as `mcp_servers/job_apply_autofill/server.py`. Cowork mounts may use `src/career_copilot/`; this Mac layout keeps MCP at `mcp_servers/job_apply_autofill/`.
-- **LLM keys:** In-repo tools (e.g. recruiter follow-up, ATS) expect **`OPENAI_API_KEY`** (see `.env.example`). **`ANTHROPIC_API_KEY`** is for Claude itself, not automatically used by this Python stack unless you wire it.
+- **LLM keys:** In-repo reasoning/writing tools use the router in `services/model_router.py`. Configure via **`LLM_PROVIDER`** (`auto|openai|anthropic`) plus **`OPENAI_API_KEY`** and/or **`ANTHROPIC_API_KEY`** (see `.env.example`).
 - **Tracker:** Optional **`TRACKER_USE_DB=1`** and **`TRACKER_DB_PATH`** (absolute path to SQLite file) match `.env.example`. There is no standard **`OUTPUT_DIR`** env in this repo; omit it or map outputs via documented paths (`generated_resumes/`, etc.).
 - **Secrets:** Prefer a project **`.env`** (not committed) and keep Claude’s `env` block minimal (e.g. `PYTHONPATH` only), *or* use Claude’s `env` only if you accept secrets sitting in `claude_desktop_config.json`. Never paste real passwords into shared chats.
 

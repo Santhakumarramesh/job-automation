@@ -1,25 +1,21 @@
 
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def humanize_cover_letter(state: AgentState):
     """
-    Humanizes the generated cover letter text using a sophisticated prompt with GPT-4o.
-    This avoids the need for a separate, paid humanizer service.
+    Humanizes the generated cover letter text via the configured LLM provider.
+    This avoids the need for a separate humanizer service.
     """
-    print("🤖 Self-humanizing cover letter text with GPT-4o...")
+    print("🤖 Self-humanizing cover letter text via model router...")
     
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
     cover_letter_text = state.get("cover_letter_text", "")
     if fast:
         # Speed mode: do not run LLM humanization.
         return {"humanized_cover_letter_text": cover_letter_text}
-
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.75)  # Slightly higher temp for creativity
     
     if not cover_letter_text or len(cover_letter_text) < 100:
         print("⚠️ Cover letter text is too short to humanize. Skipping.")
@@ -38,11 +34,17 @@ def humanize_cover_letter(state: AgentState):
 
     human_prompt = f"Please rewrite the following cover letter to make it sound like it was written by a real, enthusiastic person. Increase the perplexity and burstiness of the language, while retaining all key information and a professional tone:\n\n---\n\n{cover_letter_text}"
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-    
     try:
-        response = llm.invoke(messages)
-        humanized_text = response.content
+        response = model_router.generate_text(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="reasoning",
+            temperature=0.75,
+            max_tokens=950,
+        )
+        humanized_text = str(response.get("text") or "").strip()
+        if response.get("status") != "ok" or not humanized_text:
+            raise RuntimeError(response.get("message", "llm_humanization_failed"))
         print("✅ Cover letter text has been successfully self-humanized.")
         return {"humanized_cover_letter_text": humanized_text}
     except Exception as e:

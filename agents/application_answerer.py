@@ -9,9 +9,7 @@ for automation gates (WORKFLOW_MODULE_MAP — answerer confidence).
 import re
 from typing import List, Optional, TypedDict
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-
+from services import model_router
 from services.profile_service import format_application_locations_summary, format_mailing_address_oneline
 
 
@@ -366,24 +364,34 @@ def build_answerer_preview_for_export(
 def _tailor_with_llm(question: str, base: str, profile: dict, jd: str, company: str, role: str, max_len: int = 150) -> str:
     """Light LLM tailoring to personalize base answer. Keeps truthful."""
     try:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
         prompt = f"""Shorten to max {max_len} chars. Use ONLY facts from the candidate profile.
 Question: {question}
 Base answer: {base}
 Company: {company}
 Role: {role}
 Return ONLY the tailored answer, no quotes or explanation."""
-        r = llm.invoke([HumanMessage(content=prompt)])
-        return (r.content or base)[:max_len].strip()
+        out = model_router.generate_text(
+            prompt=prompt,
+            system_prompt="You rewrite candidate answers truthfully and concisely.",
+            task="fast",
+            temperature=0.3,
+            max_tokens=max(128, max_len + 60),
+        )
+        if out.get("status") == "ok":
+            text = str(out.get("text") or "").strip()
+            if text:
+                return text[:max_len].strip()
     except Exception:
-        return base[:max_len]
+        pass
+    return base[:max_len]
 
 
 def _answer_generic_llm(question: str, profile: dict, resume: str, jd: str, job_ctx: dict) -> str:
     """LLM fallback for unclassified questions. Must stay truthful to profile + resume."""
     try:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
-        prompt = f"""Answer this job application question using ONLY the candidate profile and resume. Max 150 chars. No fabrication.
+        prompt = f"""Return JSON with keys: answer, manual_review_required, reason_codes.
+Use ONLY the candidate profile and resume. No fabrication.
+Keep answer <= 150 chars.
 
 Question: {question}
 
@@ -391,12 +399,24 @@ Profile (use only this): {str(profile)[:800]}
 
 Resume excerpt: {resume[:600]}
 
-Return ONLY the answer, nothing else."""
-        r = llm.invoke([HumanMessage(content=prompt)])
-        ans = (r.content or "").strip()
-        return ans[:MAX_ANSWER_LENGTH]
+Job context: {str(job_ctx)[:400]}
+Job description excerpt: {jd[:500]}
+"""
+        out = model_router.generate_json(
+            prompt=prompt,
+            system_prompt="You are a strict truthful application assistant.",
+            task="reasoning",
+            temperature=0.1,
+            max_tokens=260,
+            required_keys=("answer", "manual_review_required", "reason_codes"),
+        )
+        if out.get("status") == "ok":
+            data = out.get("data") or {}
+            ans = str(data.get("answer") or "").strip()
+            return ans[:MAX_ANSWER_LENGTH]
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 def answer_batch(

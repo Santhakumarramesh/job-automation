@@ -586,7 +586,7 @@ def answer_form_fields(
                 master_resume_text=master_resume_text,
                 job_description=job_description,
                 job_context=job_ctx,
-                use_llm=bool(os.getenv("OPENAI_API_KEY")),
+                use_llm=bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
             )
             results[str(field_label)] = {
                 "answer": meta["answer"],

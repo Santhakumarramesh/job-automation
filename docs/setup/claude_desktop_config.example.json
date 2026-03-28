@@ -6,7 +6,7 @@
     "Fill in your real API keys — never commit this file with real secrets.",
     "TRACKER_USE_DB=1 enables SQLite tracking (recommended). DB lands at TRACKER_DB_PATH.",
     "OUTPUT_DIR is NOT used by this project — omit it.",
-    "ANTHROPIC_API_KEY is NOT used by this project — omit it unless you add custom Claude tooling."
+    "LLM routing supports OPENAI_API_KEY and/or ANTHROPIC_API_KEY via LLM_PROVIDER (auto|openai|anthropic)."
   ],
   "mcpServers": {
     "career-copilot-mcp": {
@@ -14,7 +14,9 @@
       "args": ["/ABSOLUTE/PATH/TO/Career Copilot MCP/start.sh"],
       "env": {
         "PYTHONPATH": "/ABSOLUTE/PATH/TO/Career Copilot MCP",
+        "LLM_PROVIDER": "auto",
         "OPENAI_API_KEY": "sk-...",
+        "ANTHROPIC_API_KEY": "sk-ant-...",
         "APIFY_API_TOKEN": "apify_api_...",
         "LINKEDIN_EMAIL": "you@example.com",
         "LINKEDIN_PASSWORD": "your_linkedin_password",

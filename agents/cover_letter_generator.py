@@ -1,10 +1,9 @@
 
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
 from agents.interview_prep_agent import get_company_info  # Re-using the company scraper
+from services import model_router
 
 def generate_cover_letter(state: AgentState):
     """
@@ -15,10 +14,8 @@ def generate_cover_letter(state: AgentState):
     
     if not state.get("is_eligible", True) or not state.get("tailored_resume_text", ""):
         return {"cover_letter_text": ""}
-        
+
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.7)
     
     # --- Tone Matching --- #
     company_name = state.get("target_company", "")
@@ -63,11 +60,17 @@ Target Location/Address line: {state.get('target_location', 'USA')}
 {state['job_description']}
 """
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-    
     try:
-        response = llm.invoke(messages)
-        ai_generated_text = response.content
+        response = model_router.generate_text(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="fast" if fast else "reasoning",
+            temperature=0.7,
+            max_tokens=950,
+        )
+        ai_generated_text = str(response.get("text") or "").strip()
+        if response.get("status") != "ok" or not ai_generated_text:
+            raise RuntimeError(response.get("message", "llm_generation_failed"))
         print("✅ Cover letter generated successfully with tone matching.")
         # The self-humanization is now part of the main generation prompt
         return {"cover_letter_text": ai_generated_text}

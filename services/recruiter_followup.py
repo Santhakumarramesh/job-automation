@@ -5,8 +5,9 @@ Recruiter follow-up drafts (MCP ``generate_recruiter_followup`` parity).
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict
+
+from services import model_router
 
 
 def generate_recruiter_followup_payload(
@@ -15,15 +16,11 @@ def generate_recruiter_followup_payload(
     application_date: str = "",
 ) -> Dict[str, Any]:
     try:
-        from langchain_core.messages import HumanMessage
-        from langchain_openai import ChatOpenAI
-
         from services.profile_service import load_profile
 
         profile = load_profile()
         name = profile.get("full_name", "Candidate")
         date = application_date or "recently"
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
         prompt = f"""Generate two brief professional follow-ups for a job applicant.
 - Applicant: {name}
 - Role: {job_title} at {company}
@@ -34,18 +31,21 @@ def generate_recruiter_followup_payload(
 
 Return as JSON: {{"linkedin_message": "...", "email_subject": "...", "email_body": "..."}}
 """
-        r = llm.invoke([HumanMessage(content=prompt)])
-        text = (r.content or "").strip()
-        m = re.search(r"\{[\s\S]*\}", text)
-        try:
-            data = json.loads(m.group(0)) if m else {}
-        except json.JSONDecodeError:
-            data = {}
+        out = model_router.generate_json(
+            prompt=prompt,
+            system_prompt="You write concise professional recruiter follow-ups.",
+            task="reasoning",
+            temperature=0.4,
+            max_tokens=320,
+            required_keys=("linkedin_message", "email_subject", "email_body"),
+        )
+        data = out.get("data") if out.get("status") == "ok" else {}
         if not isinstance(data, dict):
             data = {}
-        data.setdefault("linkedin_message", text[:200] if text else "")
+        text_fallback = json.dumps(data)[:200] if data else ""
+        data.setdefault("linkedin_message", text_fallback)
         data.setdefault("email_subject", f"Following up - {job_title}")
-        data.setdefault("email_body", text[:300] if text else "")
+        data.setdefault("email_body", text_fallback)
         return {"status": "ok", **data}
     except Exception as e:
         return {"status": "error", "message": str(e)[:200]}
