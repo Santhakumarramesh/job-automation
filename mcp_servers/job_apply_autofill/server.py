@@ -21,6 +21,7 @@ Then: playwright install chromium
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
