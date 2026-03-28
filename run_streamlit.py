@@ -2,7 +2,7 @@
 Career Co-Pilot Pro — Streamlit entry point.
 
 APP_MODE routing:
-  candidate  (default) → ui/candidate_app.py  — guided 7-stage workflow for job seekers
+  candidate  (default) → ui/candidate_app.py  — guided 5-page workflow for job seekers
   operator              → ui/operator_app.py   — full operator cockpit (batch, API console, admin)
 
 Usage:

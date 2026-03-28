@@ -102,6 +102,7 @@ def run_approved_queue(config: Optional[RunnerConfig] = None) -> dict:
             "runner_state": item.get("runner_state", ""),
             "approved_resume_path": approved_resume_path,
             "resume_path": approved_resume_path,
+            "easy_apply_confirmed": bool(item.get("easy_apply_confirmed", False)),
         }]
 
         payload = apply_to_jobs_payload(

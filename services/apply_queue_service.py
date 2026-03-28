@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS apply_queue (
     job_title TEXT,
     company TEXT,
     job_description TEXT,
+    easy_apply_confirmed INTEGER DEFAULT 0,
     
     -- Fit data
     role_family TEXT,
@@ -208,6 +209,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         "job_title": "TEXT",
         "company": "TEXT",
         "job_description": "TEXT",
+        "easy_apply_confirmed": "INTEGER DEFAULT 0",
         "role_family": "TEXT",
         "seniority_band": "TEXT",
         "role_match_score": "INTEGER DEFAULT 0",
@@ -264,6 +266,11 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
+    if "easy_apply_confirmed" in d:
+        try:
+            d["easy_apply_confirmed"] = bool(int(d["easy_apply_confirmed"] or 0))
+        except Exception:
+            d["easy_apply_confirmed"] = bool(d.get("easy_apply_confirmed"))
     for json_field in ["fit_reasons", "unsupported_requirements", "hard_blockers",
                        "requirement_evidence_map", "covered_keywords",
                        "truthful_missing_keywords", "blocker_fields", "review_fields",
@@ -293,6 +300,7 @@ def upsert_queue_item(
     fit_data: Optional[dict] = None,
     ats_score: int = 0,
     truth_safe_ceiling: int = 0,
+    easy_apply_confirmed: bool = False,
     source: str = "linkedin",
 ) -> str:
     """
@@ -322,7 +330,7 @@ def upsert_queue_item(
             item_id = existing["id"]
             conn.execute("""
                 UPDATE apply_queue SET
-                    job_title=?, company=?, job_description=?,
+                    job_title=?, company=?, job_description=?, easy_apply_confirmed=?,
                     role_family=?, seniority_band=?,
                     role_match_score=?, experience_match_score=?, seniority_match_score=?,
                     overall_fit_score=?, fit_decision=?,
@@ -332,7 +340,7 @@ def upsert_queue_item(
                     job_state=?, source=?, updated_at=?
                 WHERE id=?
             """, (
-                job_title, company, job_description[:2000],
+                job_title, company, job_description[:2000], 1 if easy_apply_confirmed else 0,
                 fit.get("role_family", ""), fit.get("seniority_band", ""),
                 fit.get("role_match_score", 0), fit.get("experience_match_score", 0),
                 fit.get("seniority_match_score", 0), overall_score,
@@ -349,7 +357,7 @@ def upsert_queue_item(
             item_id = str(uuid.uuid4())
             conn.execute("""
                 INSERT INTO apply_queue (
-                    id, job_url, job_title, company, job_description,
+                    id, job_url, job_title, company, job_description, easy_apply_confirmed,
                     role_family, seniority_band,
                     role_match_score, experience_match_score, seniority_match_score,
                     overall_fit_score, fit_decision,
@@ -357,9 +365,10 @@ def upsert_queue_item(
                     requirement_evidence_map,
                     ats_score, truth_safe_ats_ceiling,
                     job_state, source
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 item_id, job_url, job_title, company, job_description[:2000],
+                1 if easy_apply_confirmed else 0,
                 fit.get("role_family", ""), fit.get("seniority_band", ""),
                 fit.get("role_match_score", 0), fit.get("experience_match_score", 0),
                 fit.get("seniority_match_score", 0), overall_score,

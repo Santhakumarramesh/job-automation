@@ -160,7 +160,7 @@ def _process_single_item(
     company = item.get("company", "")
     job_url = item.get("job_url", "")
     job_description = item.get("job_description", "")
-    existing_pkg = item.get("package_path") or ""
+    existing_pkg = item.get("resume_path") or ""
     existing_pkg_status = item.get("package_status", "not_generated")
 
     result = JobRunResult(
@@ -247,6 +247,7 @@ def _process_single_item(
                 profile=profile,
                 form_answers=form_answers,
                 job_description=job_description,
+                easy_apply_confirmed=bool(item.get("easy_apply_confirmed", False)),
             )
             result.status = "applied" if apply_result.get("success") else "blocked"
             result.error = apply_result.get("error", "")
@@ -307,16 +308,28 @@ def _get_form_answers(
                     job_context=job_context,
                     use_llm=False,
                 )
+                ans_dict = ans if isinstance(ans, dict) else None
+                answer_text = (ans_dict.get("answer") if ans_dict else getattr(ans, "answer", str(ans)))
+                manual_required = (
+                    ans_dict.get("manual_review_required") if ans_dict
+                    else getattr(ans, "manual_review_required", getattr(ans, "review_required", False))
+                )
+                reason_codes = ans_dict.get("reason_codes", []) if ans_dict else getattr(ans, "reason_codes", [])
+                classified_type = ans_dict.get("classified_type", q_type) if ans_dict else getattr(ans, "classified_type", q_type)
+                confidence = ans_dict.get("confidence", "high") if ans_dict else getattr(ans, "confidence", "high")
                 answers[field_key] = {
-                    "answer": getattr(ans, "answer", str(ans)),
-                    "review_required": getattr(ans, "review_required", False),
-                    "reason_codes": getattr(ans, "reason_codes", []),
-                    "confidence": getattr(ans, "confidence", "high"),
+                    "answer": str(answer_text),
+                    "manual_review_required": bool(manual_required),
+                    "review_required": bool(manual_required),
+                    "reason_codes": reason_codes,
+                    "classified_type": classified_type,
+                    "confidence": confidence,
                     "question_text": q_text,
                 }
             except Exception as e:
                 answers[field_key] = {
                     "answer": "",
+                    "manual_review_required": True,
                     "review_required": True,
                     "reason_codes": [f"error: {e}"],
                     "confidence": "low",
@@ -342,6 +355,7 @@ def _execute_apply(
     profile: dict,
     form_answers: dict,
     job_description: str,
+    easy_apply_confirmed: bool = False,
 ) -> dict:
     """
     Delegate actual application submission to the existing application_runner.
@@ -359,6 +373,7 @@ def _execute_apply(
             "ats_score": 90,
             "approved_resume_path": resume_path,
             "resume_path": resume_path,
+            "easy_apply_confirmed": bool(easy_apply_confirmed),
         }]
         result = apply_to_jobs_payload(
             jobs=jobs_payload,
@@ -403,7 +418,7 @@ def _result_to_dict(r: JobRunResult) -> dict:
         "truth_safe_ceiling": r.truth_safe_ceiling,
         "form_answers_count": len(r.form_answers),
         "review_required_fields": [
-            k for k, v in r.form_answers.items() if v.get("review_required")
+            k for k, v in r.form_answers.items() if v.get("manual_review_required") or v.get("review_required")
         ],
         "error": r.error[:500] if r.error else "",
         "duration_sec": r.duration_sec,

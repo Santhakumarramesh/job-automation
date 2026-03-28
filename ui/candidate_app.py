@@ -102,6 +102,7 @@ def _page_discover():
 
                 # Try LinkedIn MCP search first
                 jobs = _search_jobs(keywords, location, limit, easy_apply_only)
+                job_lookup = {j.get("url"): j for j in jobs if j.get("url")}
 
                 if not jobs:
                     st.warning("No jobs returned from search. Try different keywords or paste jobs manually below.")
@@ -116,15 +117,14 @@ def _page_discover():
                     for jr in result[category]:
                         url = jr.get("job_url", "")
                         if url:
+                            job_meta = job_lookup.get(url, {})
                             upsert_queue_item(
                                 job_url=url,
                                 job_title=jr.get("job_title", ""),
                                 company=jr.get("company", ""),
-                                job_description=next(
-                                    (j.get("description", "") for j in jobs
-                                     if j.get("url") == url), ""
-                                ),
+                                job_description=job_meta.get("description", ""),
                                 fit_data=jr.get("fit", {}),
+                                easy_apply_confirmed=bool(job_meta.get("easy_apply_confirmed", False)),
                             )
 
                 st.success(f"✅ Scored {len(jobs)} jobs → {result['high_confidence_count']} high-confidence, "
@@ -144,6 +144,7 @@ def _page_discover():
             job_title = st.text_input("Job Title")
             company = st.text_input("Company")
             job_desc = st.text_area("Job Description", height=200)
+            easy_apply_confirmed = st.checkbox("Easy Apply confirmed", value=False, help="Check only if this job is confirmed Easy Apply.")
             add_btn = st.form_submit_button("Add to Queue")
 
         if add_btn and job_url and job_title:
@@ -174,6 +175,7 @@ def _page_discover():
                 item_id = upsert_queue_item(
                     job_url=job_url, job_title=job_title, company=company,
                     job_description=job_desc, fit_data=fit_dict, ats_score=ats_score,
+                    easy_apply_confirmed=easy_apply_confirmed,
                 )
                 st.success(f"Added to queue (fit: {fit.overall_fit_score}/100, ATS: {ats_score}/100)")
             except Exception as e:
@@ -200,6 +202,7 @@ def _search_jobs(keywords: str, location: str, limit: int, easy_apply_only: bool
                 "description": j.get("description", j.get("job_description", "")),
                 "location": j.get("location", ""),
                 "work_type": j.get("work_type", "remote"),
+                "easy_apply_confirmed": bool(j.get("easy_apply_confirmed", False)),
             })
         return normalized
     except Exception:
@@ -571,6 +574,7 @@ def _apply_single_job(item: dict, dry_run: bool = False) -> dict:
             "ats_score": item.get("final_ats_score", item.get("ats_score", 85)),
             "approved_resume_path": item.get("approved_resume_path") or "",
             "resume_path": item.get("approved_resume_path") or item.get("resume_path") or "",
+            "easy_apply_confirmed": bool(item.get("easy_apply_confirmed", False)),
         }]
         result = apply_to_jobs_payload(
             jobs=jobs_payload,
@@ -583,8 +587,10 @@ def _apply_single_job(item: dict, dry_run: bool = False) -> dict:
         if result.get("status") != "ok":
             return {"success": False, "error": result.get("message", "apply_to_jobs failed"), "result": result}
         applied = int(result.get("applied", 0) or 0)
-        if applied > 0 or dry_run:
+        if applied > 0:
             return {"success": True, "result": result}
+        if dry_run:
+            return {"success": True, "dry_run": True, "result": result}
         # Extract first result error/status if present
         res_list = result.get("results") or []
         if res_list:

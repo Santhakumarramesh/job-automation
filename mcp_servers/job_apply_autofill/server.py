@@ -960,23 +960,28 @@ def get_job_queue_for_review(
         # Prefilter
         result = prefilter_batch(jobs, resume_text=resume_text, profile=profile, ats_scores=ats_scores)
 
+        job_lookup = {
+            (j.get("url") or j.get("job_url") or ""): j
+            for j in jobs
+            if (j.get("url") or j.get("job_url"))
+        }
+
         # Upsert into queue
         queued_ids = {}
         for category in ["high_confidence", "review_fit"]:
             for job_result in result[category]:
                 url = job_result.get("job_url", "")
                 if url:
+                    job_meta = job_lookup.get(url, {})
                     item_id = upsert_queue_item(
                         job_url=url,
                         job_title=job_result.get("job_title", ""),
                         company=job_result.get("company", ""),
-                        job_description=next(
-                            (j.get("description", j.get("job_description", ""))
-                             for j in jobs if j.get("url", j.get("job_url")) == url), ""
-                        ),
+                        job_description=job_meta.get("description", job_meta.get("job_description", "")),
                         fit_data=job_result.get("fit", {}),
                         ats_score=ats_scores.get(url, 0),
                         truth_safe_ceiling=job_result.get("fit", {}).get("truth_safe_ats_ceiling", 0),
+                        easy_apply_confirmed=bool(job_meta.get("easy_apply_confirmed", False)),
                     )
                     queued_ids[url] = item_id
 
