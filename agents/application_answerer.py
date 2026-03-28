@@ -31,6 +31,8 @@ REASON_MISSING_AVAILABILITY = "missing_availability_or_notice"
 REASON_MISSING_URL = "missing_url_field"
 REASON_MISSING_MAILING_ADDRESS = "missing_mailing_address_structured"
 REASON_TRUNCATED = "answer_truncated"
+REASON_MEMORY_APPROVED = "memory_approved_answer"
+REASON_MEMORY_REVIEW = "memory_requires_review"
 
 # Question type keywords for auto-classification
 QUESTION_PATTERNS = [
@@ -95,6 +97,34 @@ def answer_question_structured(
     role = job_context.get("title", job_context.get("role", ""))
 
     qtype = question_type or classify_question(question_text) or "unknown"
+    # Approved answer memory (never bypasses truth/policy gates)
+    try:
+        from services.answer_memory_store import get_saved_answer
+
+        mem = get_saved_answer(
+            question_text=question_text,
+            job_context=job_context,
+            require_context_match=True,
+        )
+    except Exception:
+        mem = {}
+
+    if mem and mem.get("found"):
+        answer = str(mem.get("answer_text") or "").strip()
+        state = str(mem.get("answer_state") or "")
+        auto_use = bool(mem.get("auto_use_allowed"))
+        manual = not (state == "safe" and auto_use)
+        reasons = [REASON_MEMORY_APPROVED if not manual else REASON_MEMORY_REVIEW]
+        if not answer:
+            answer = "Please review manually"
+            manual = True
+            reasons.append(REASON_PLACEHOLDER_MANUAL)
+        return {
+            "answer": answer[:MAX_ANSWER_LENGTH_LONG if qtype in ("why_role", "why_company") else MAX_ANSWER_LENGTH],
+            "manual_review_required": manual,
+            "reason_codes": reasons,
+            "classified_type": mem.get("question_key") or qtype,
+        }
     reasons: List[str] = []
     answer = ""
     manual = False

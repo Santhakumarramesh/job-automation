@@ -602,6 +602,122 @@ def answer_form_fields(
 
 
 @mcp.tool()
+def get_saved_answer(
+    question_text: str,
+    job_context_json: str = "",
+) -> dict:
+    """
+    Retrieve an approved answer from memory (if available).
+    Memory never bypasses truth/policy gates; use `answer_form_fields` for full gating.
+    """
+    try:
+        from services.answer_memory_store import get_saved_answer as _get
+
+        ctx = {}
+        if job_context_json:
+            try:
+                ctx = json.loads(job_context_json)
+            except json.JSONDecodeError:
+                ctx = {}
+
+        res = _get(question_text=question_text, job_context=ctx)
+        return {"status": "ok", **res}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def save_approved_answer(
+    question_text: str,
+    approved_answer: str,
+    context_json: str = "",
+    answer_state: str = "safe",
+    source: str = "user_approved",
+    approved_by: str = "user",
+    confidence: str = "high",
+    auto_use_allowed: bool = True,
+) -> dict:
+    """
+    Persist a user-approved answer to memory.
+    """
+    try:
+        from services.answer_memory_store import save_approved_answer as _save
+
+        ctx = {}
+        if context_json:
+            try:
+                ctx = json.loads(context_json)
+            except json.JSONDecodeError:
+                ctx = {"raw": context_json}
+
+        result = _save(
+            question_text=question_text,
+            approved_answer=approved_answer,
+            context=ctx,
+            answer_state=answer_state,
+            source=source,
+            approved_by=approved_by,
+            confidence=confidence,
+            auto_use_allowed=auto_use_allowed,
+        )
+        return {"status": "ok", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def list_answer_memory(limit: int = 200) -> dict:
+    """
+    List stored approved answers (current memory).
+    """
+    try:
+        from services.answer_memory_store import list_answer_memory as _list
+
+        rows = _list(limit=limit)
+        return {"status": "ok", "count": len(rows), "items": rows}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def mark_answer_requires_review(question_key: str) -> dict:
+    """
+    Mark a saved answer as review-required (disables auto-use).
+    """
+    try:
+        from services.answer_memory_store import mark_answer_requires_review as _mark
+
+        ok = _mark(question_key)
+        return {"status": "ok", "updated": bool(ok)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def suggest_answer_from_memory(
+    fields_json: str,
+    job_context_json: str = "",
+) -> dict:
+    """
+    Suggest answers from memory for a list of field labels/questions.
+    """
+    try:
+        fields = json.loads(fields_json) if isinstance(fields_json, str) else fields_json
+        ctx = {}
+        if job_context_json:
+            try:
+                ctx = json.loads(job_context_json)
+            except json.JSONDecodeError:
+                ctx = {}
+        from services.answer_memory_store import suggest_answers_from_memory
+
+        suggestions = suggest_answers_from_memory(list(fields or []), job_context=ctx)
+        return {"status": "ok", "suggestions": suggestions, "total_fields": len(fields or [])}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
 def generate_tailored_resume_for_job(
     job_title: str,
     company: str,
