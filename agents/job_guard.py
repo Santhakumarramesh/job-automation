@@ -1,10 +1,8 @@
 
 import os
 import re
-import json
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def guard_job_quality(state: AgentState):
     """
@@ -27,9 +25,6 @@ def guard_job_quality(state: AgentState):
 
     # Now, use the LLM to check for more subtle red flags
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.0)
-    
     system_prompt = """You are an expert fraud detection model. Your task is to analyze a job description and determine if it is a scam, a multi-level marketing scheme, or has absurd requirements (e.g., 10+ years of experience for an entry-level role). 
 
     You must respond in a valid JSON format with two keys:
@@ -39,11 +34,18 @@ def guard_job_quality(state: AgentState):
 
     human_prompt = f"Analyze the following job description:\n\n---\n{jd_text}"
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-
     try:
-        response = llm.invoke(messages)
-        result = json.loads(response.content)
+        out = model_router.generate_json(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="fast" if fast else "reasoning",
+            temperature=0.0,
+            max_tokens=280,
+            required_keys=("is_scam", "reason"),
+        )
+        result = out.get("data", {}) if out.get("status") == "ok" else {}
+        if not isinstance(result, dict):
+            result = {}
 
         if result.get("is_scam", False):
             reason = result.get("reason", "LLM detected it as low-quality or potential scam.")

@@ -1,16 +1,15 @@
 
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def humanize_resume(state: AgentState):
     """
-    Humanizes the tailored resume text using a sophisticated prompt with GPT-4o.
-    This avoids the need for a separate, paid humanizer service.
+    Humanizes the tailored resume text via the configured LLM provider.
+    This avoids the need for a separate humanizer service.
     """
-    print("🤖 Self-humanizing resume text with GPT-4o...")
+    print("🤖 Self-humanizing resume text via model router...")
     
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
     resume_text = state.get("tailored_resume_text", "")
@@ -18,9 +17,6 @@ def humanize_resume(state: AgentState):
         # Speed mode: do not run LLM humanization.
         return {"humanized_resume_text": resume_text}
 
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.7)
-    
     if not resume_text or len(resume_text) < 100:
         print("⚠️ Resume text is too short to humanize. Skipping.")
         return {"humanized_resume_text": resume_text}
@@ -39,11 +35,17 @@ def humanize_resume(state: AgentState):
 
     human_prompt = f"Please rewrite the following resume text to make it sound as if it were written by a human expert. Increase the perplexity and burstiness of the language while retaining all key information and professional tone. IMPORTANT: Preserve the Professional Summary content (company, role, keywords) — only refine its phrasing:\n\n---\n\n{resume_text}"
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-    
     try:
-        response = llm.invoke(messages)
-        humanized_text = response.content
+        out = model_router.generate_text(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="reasoning",
+            temperature=0.7,
+            max_tokens=1700,
+        )
+        humanized_text = str(out.get("text") or "").strip()
+        if out.get("status") != "ok" or not humanized_text:
+            raise RuntimeError(out.get("message", "llm_humanize_failed"))
         print("✅ Resume text has been successfully self-humanized.")
         return {"humanized_resume_text": humanized_text}
     except Exception as e:

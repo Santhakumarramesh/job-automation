@@ -1,7 +1,5 @@
-import json
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def score_resume(state: AgentState):
     """
@@ -16,8 +14,6 @@ def score_resume(state: AgentState):
             "missing_skills": []
         }
         
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    
     system_prompt = """You are an aggressive Applicant Tracking System (ATS). 
 You will compare the provided Resume text against the required and preferred skills 
 from the Job Description.
@@ -42,14 +38,23 @@ Job Description Skills PREFERRED: {state.get('preferred_skills', [])}
 Candidate Resume:
 {resume_to_score}
 """
-
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=human_prompt)
-    ]
-    
-    response = llm.invoke(messages, response_format={"type": "json_object"})
-    result = json.loads(response.content)
+    out = model_router.generate_json(
+        prompt=human_prompt,
+        system_prompt=system_prompt,
+        task="reasoning",
+        temperature=0.0,
+        max_tokens=420,
+        required_keys=("ats_score", "missing_skills", "feedback"),
+    )
+    result = out.get("data", {}) if out.get("status") == "ok" else {}
+    if not isinstance(result, dict):
+        result = {}
+    if not result:
+        return {
+            "initial_ats_score": 0,
+            "missing_skills": [],
+            "feedback": "ATS scoring unavailable; manual review required.",
+        }
     
     return {
         "initial_ats_score": result.get("ats_score", 0),

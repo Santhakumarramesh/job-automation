@@ -1,8 +1,7 @@
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def tailor_resume(state: AgentState):
     """
@@ -15,8 +14,6 @@ def tailor_resume(state: AgentState):
         return {"tailored_resume_text": ""}
         
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.7)
     
     missing_skills = state.get("missing_skills", [])
     allowed_skills = state.get("allowed_skills")
@@ -58,19 +55,24 @@ Please provide the fully rewritten resume in Markdown format."""
     else:
         truth_safe_fmt = ""
     
-    messages = [
-        SystemMessage(content=system_prompt.format(
+    out = model_router.generate_text(
+        prompt=human_prompt,
+        system_prompt=system_prompt.format(
             missing_skills=", ".join(missing_skills),
             target_position=state.get('target_position', 'AI/ML Engineer'),
             target_company=state.get('target_company', 'Tech Corp'),
             target_location=state.get('target_location', 'USA'),
             truth_safe_block=truth_safe_fmt,
-        )),
-        HumanMessage(content=human_prompt)
-    ]
-    
-    response = llm.invoke(messages)
+        ),
+        task="fast" if fast else "reasoning",
+        temperature=0.7,
+        max_tokens=1800,
+    )
+    rewritten = str(out.get("text") or "").strip()
+    if out.get("status") != "ok" or not rewritten:
+        # Safe fallback: keep original base resume text unchanged.
+        rewritten = state.get("base_resume_text", "")
     
     return {
-        "tailored_resume_text": response.content
+        "tailored_resume_text": rewritten
     }

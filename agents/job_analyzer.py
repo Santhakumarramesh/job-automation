@@ -1,9 +1,7 @@
-import json
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def analyze_job_description(state: AgentState):
     """
@@ -11,8 +9,6 @@ def analyze_job_description(state: AgentState):
     sponsorship and citizenship requirements for F1 OPT compatibility.
     """
     fast = os.getenv("CCP_FAST_PIPELINE", "").strip().lower() in ("1", "true", "yes")
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0)
     
     system_prompt = """You are an expert technical recruiter analyzing a job description. 
 You must extract the core requirements and meticulously check for citizenship / sponsorship constraints.
@@ -29,15 +25,25 @@ Extract the following information in strict JSON format:
 """
     
     human_prompt = f"Here is the Job Description:\n{state['job_description']}"
-    
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=human_prompt)
-    ]
-    
-    # Use LLM with JSON format constraints
-    response = llm.invoke(messages, response_format={"type": "json_object"})
-    result = json.loads(response.content)
+    out = model_router.generate_json(
+        prompt=human_prompt,
+        system_prompt=system_prompt,
+        task="fast" if fast else "reasoning",
+        temperature=0.0,
+        max_tokens=500,
+        required_keys=("is_eligible", "eligibility_reason", "required_skills", "preferred_skills"),
+    )
+    result = out.get("data", {}) if out.get("status") == "ok" else {}
+    if not isinstance(result, dict):
+        result = {}
+    if not result:
+        # Keep pipeline moving; manual policy gates later still apply.
+        return {
+            "is_eligible": True,
+            "eligibility_reason": "LLM job analysis unavailable; routed to supervised review.",
+            "required_skills": [],
+            "preferred_skills": [],
+        }
     
     return {
         "is_eligible": result.get("is_eligible", False),

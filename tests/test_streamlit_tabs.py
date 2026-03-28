@@ -193,9 +193,10 @@ def _check_job_guard_heuristic_block() -> None:
 
 
 def _check_job_guard_mocked_llm_pass() -> None:
-    mock_inst = MagicMock()
-    mock_inst.invoke.return_value = MagicMock(content='{"is_scam": false, "reason": "legitimate"}')
-    with patch("agents.job_guard.ChatOpenAI", return_value=mock_inst):
+    with patch(
+        "agents.job_guard.model_router.generate_json",
+        return_value={"status": "ok", "data": {"is_scam": False, "reason": "legitimate"}},
+    ):
         from agents.job_guard import guard_job_quality
 
         state = {
