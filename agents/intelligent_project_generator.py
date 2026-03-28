@@ -1,12 +1,10 @@
 
 import os
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
-import json
+from services import model_router
 
-def extract_skills_llm(text: str, llm: ChatOpenAI):
+
+def extract_skills_llm(text: str):
     """Dynamically extracts skills from a given text using an LLM."""
     system_prompt = """You are an expert resume analyst. Your task is to extract all technical skills, programming languages, frameworks, and methodologies from the provided text.
 
@@ -17,12 +15,22 @@ Example:
     "skills": ["Python", "TensorFlow", "AWS", "Agile", "CI/CD"]
 }
 """
-    human_prompt = f"Extract the skills from the following text:\n\n---\n{text}"
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+    human_prompt = f"Extract the skills from the following text:\n\n---\n{text[:4000]}"
 
     try:
-        response = llm.invoke(messages)
-        return json.loads(response.content).get("skills", [])
+        out = model_router.generate_json(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="reasoning",
+            temperature=0.0,
+            max_tokens=400,
+            required_keys=("skills",),
+        )
+        data = out.get("data", {}) if out.get("status") == "ok" else {}
+        skills = data.get("skills", []) if isinstance(data, dict) else []
+        if not isinstance(skills, list):
+            return []
+        return [str(s).strip() for s in skills if str(s).strip()]
     except Exception as e:
         print(f"Error extracting skills with LLM: {e}")
         return []
@@ -38,12 +46,10 @@ def intelligent_project_generator(state: AgentState):
 
     job_description = state.get('job_description', '')
     resume_text = state.get('base_resume_text', '')
-    model = os.getenv("CCP_OPENAI_MODEL") or ("gpt-4o-mini" if fast else "gpt-4o")
-    llm = ChatOpenAI(model=model, temperature=0.0)
 
     # 1. Dynamically extract skills from both texts using the LLM
-    jd_skills = set(s.lower() for s in extract_skills_llm(job_description, llm))
-    resume_skills = set(s.lower() for s in extract_skills_llm(resume_text, llm))
+    jd_skills = set(s.lower() for s in extract_skills_llm(job_description))
+    resume_skills = set(s.lower() for s in extract_skills_llm(resume_text))
 
     # 2. Identify the skill gap
     missing_skills = list(jd_skills - resume_skills)
@@ -55,7 +61,6 @@ def intelligent_project_generator(state: AgentState):
     print(f"⚠️ LLM identified skill gaps: {', '.join(missing_skills)}")
 
     # 3. Use an LLM to generate a relevant project idea
-    project_llm = ChatOpenAI(model=model, temperature=0.8)
     system_prompt = """You are a Senior Engineering Manager and Career Mentor for AI/ML professionals.
 Your task is to devise a single, high-impact portfolio project that the candidate can build and complete *before* their first interview (realistically within 1-3 days).
 
@@ -76,9 +81,16 @@ CRITICAL CONSTRAINTS:
 Based on this, generate one specific, fast-to-build project idea.
 """
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-    response = project_llm.invoke(messages)
-    project_idea = response.content
+    out = model_router.generate_text(
+        prompt=human_prompt,
+        system_prompt=system_prompt,
+        task="reasoning",
+        temperature=0.8,
+        max_tokens=700,
+    )
+    project_idea = str(out.get("text") or "").strip()
+    if out.get("status") != "ok" or not project_idea:
+        return {"generated_project_text": ""}
 
     print("💡 Generated project idea to address skill gaps.")
 

@@ -1,6 +1,5 @@
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import AgentState
+from services import model_router
 
 def generate_project(state: AgentState):
     """
@@ -10,8 +9,6 @@ def generate_project(state: AgentState):
     """
     if not state.get("is_eligible", True) or not state.get("missing_skills", []):
         return {"generated_project_text": ""}
-        
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.8)
     
     system_prompt = """You are a strategic career advisor. The candidate is an AI/ML Engineer missing several critical skills required by the Job Description.
     
@@ -27,15 +24,19 @@ CRITICAL CONSTRAINTS:
     
     human_prompt = f"Target Role: {state.get('target_position', 'Engineer')}\nTarget Company: {state.get('target_company', 'Tech Firm')}\nJob Description Context:\n{state['job_description']}"
 
-    messages = [
-        SystemMessage(content=system_prompt.format(
+    out = model_router.generate_text(
+        prompt=human_prompt,
+        system_prompt=system_prompt.format(
             missing_skills=", ".join(state['missing_skills'])
-        )),
-        HumanMessage(content=human_prompt)
-    ]
-    
-    response = llm.invoke(messages)
+        ),
+        task="reasoning",
+        temperature=0.8,
+        max_tokens=900,
+    )
+    generated_text = str(out.get("text") or "").strip()
+    if out.get("status") != "ok" or not generated_text:
+        generated_text = ""
     
     return {
-        "generated_project_text": response.content
+        "generated_project_text": generated_text
     }

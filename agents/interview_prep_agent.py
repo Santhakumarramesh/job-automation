@@ -1,8 +1,6 @@
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 import requests
 from bs4 import BeautifulSoup
+from services import model_router
 
 def get_company_info(company_name: str) -> str:
     """Scrapes Google for a company's 'About Us' page and returns its content."""
@@ -45,8 +43,6 @@ def get_company_info(company_name: str) -> str:
 def generate_interview_prep(job_description: str, resume_text: str, company_name: str):
     """Generates a comprehensive interview prep guide using an LLM."""
     print("🧠 Generating AI-powered interview prep guide...")
-
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.5)
     company_info = get_company_info(company_name)
 
     system_prompt = """You are an elite interview coach. Your task is to create a comprehensive, personalized interview preparation guide based on the provided resume, job description, and company information.
@@ -92,12 +88,19 @@ You must generate the guide in a clean, readable markdown format with the follow
 Please generate the interview prep guide in markdown format.
 """
 
-    messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
-
     try:
-        response = llm.invoke(messages)
+        out = model_router.generate_text(
+            prompt=human_prompt,
+            system_prompt=system_prompt,
+            task="reasoning",
+            temperature=0.5,
+            max_tokens=1600,
+        )
+        response_text = str(out.get("text") or "").strip()
+        if out.get("status") != "ok" or not response_text:
+            raise RuntimeError(out.get("message", "interview_prep_generation_failed"))
         print("✅ Interview prep guide generated successfully.")
-        return response.content
+        return response_text
     except Exception as e:
         print(f"❌ Error generating interview prep guide: {e}")
         return "Failed to generate the interview prep guide. Please try again."
