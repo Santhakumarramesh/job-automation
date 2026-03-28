@@ -718,6 +718,160 @@ def suggest_answer_from_memory(
 
 
 @mcp.tool()
+def get_autonomy_health(
+    user_id: str = "",
+    workspace_id: str = "",
+    include_audit: bool = False,
+) -> dict:
+    """
+    Return autonomy telemetry + gate status (kill switches, pilot-only flags, and Redis metrics).
+    """
+    try:
+        from services.autonomy_control import read_live_submit_pause_state
+        from services.truth_apply_gate import truth_apply_hard_gate_enabled
+        from services.autonomy_submit_gate import linkedin_live_submit_block_reason
+        from services.apply_runner_metrics_redis import (
+            read_apply_runner_metrics_summary,
+            read_linkedin_live_submit_totals,
+            read_linkedin_nonsubmit_pattern_totals,
+        )
+        from services.application_insights import build_application_insights
+
+        pause_state = read_live_submit_pause_state()
+        live_block_reason = linkedin_live_submit_block_reason({})
+        metrics = read_apply_runner_metrics_summary()
+        totals = read_linkedin_live_submit_totals()
+        nonsubmit = read_linkedin_nonsubmit_pattern_totals()
+
+        insights = None
+        if include_audit:
+            insights = build_application_insights(
+                for_user_id=user_id or None,
+                workspace_id=workspace_id or None,
+                include_audit=True,
+            )
+
+        return {
+            "status": "ok",
+            "live_submit_paused": bool(pause_state.get("paused")),
+            "pause_state": pause_state,
+            "live_block_reason": live_block_reason or "",
+            "truth_apply_hard_gate": truth_apply_hard_gate_enabled(),
+            "pilot_only_enabled": os.getenv("AUTONOMY_LINKEDIN_PILOT_SUBMIT_ONLY", "").lower() in ("1", "true", "yes"),
+            "live_submit_disabled_env": os.getenv("AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED", "").lower() in ("1", "true", "yes"),
+            "rollback_thresholds": {
+                "failure_rate_gte": os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_FAILURE_RATE_GTE", ""),
+                "failure_min_attempts": os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_MIN_ATTEMPTS", "10"),
+                "nonsubmit_rate_gte": os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_WHEN_NONSUBMIT_RATE_GTE", ""),
+                "nonsubmit_min_events": os.getenv("AUTONOMY_LINKEDIN_ROLLBACK_NONSUBMIT_MIN_EVENTS", "8"),
+            },
+            "redis_metrics": metrics,
+            "live_submit_totals": {"attempt": totals[0], "success": totals[1]} if totals else None,
+            "nonsubmit_pattern_totals": {"nonsubmit": nonsubmit[0], "denom": nonsubmit[1]} if nonsubmit else None,
+            "insights": insights if include_audit else None,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def get_shadow_vs_live_alignment(
+    user_id: str = "",
+    workspace_id: str = "",
+) -> dict:
+    """
+    Return shadow-mode vs live apply alignment metrics from the tracker.
+    """
+    try:
+        from services.application_tracker import load_applications
+        from services.application_insights import compute_shadow_insights
+
+        df = load_applications(
+            for_user_id=user_id or None,
+            workspace_id=workspace_id or None,
+        )
+        shadow = compute_shadow_insights(df)
+        return {"status": "ok", "shadow": shadow}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def get_recent_submit_failures(
+    limit: int = 20,
+    user_id: str = "",
+    workspace_id: str = "",
+) -> dict:
+    """
+    Return recent failed/blocked submissions from the tracker.
+    """
+    try:
+        import pandas as pd
+        from services.application_tracker import load_applications
+
+        df = load_applications(
+            for_user_id=user_id or None,
+            workspace_id=workspace_id or None,
+        )
+        if df.empty:
+            return {"status": "ok", "count": 0, "items": []}
+
+        df = df.fillna("")
+        sub = df.get("submission_status")
+        runner = df.get("runner_state") if "runner_state" in df.columns else None
+        mask = sub.astype(str).str.contains("Failed|Skipped|Blocked|Error", case=False, regex=True)
+        if runner is not None:
+            mask = mask | runner.astype(str).str.lower().eq("failed")
+        fail_df = df[mask].copy()
+        if "applied_at" in fail_df.columns:
+            fail_df["applied_at_ts"] = pd.to_datetime(fail_df["applied_at"], errors="coerce")
+            fail_df = fail_df.sort_values(by="applied_at_ts", ascending=False)
+        else:
+            fail_df = fail_df.iloc[::-1]
+
+        items = []
+        for _, row in fail_df.head(int(limit)).iterrows():
+            items.append(
+                {
+                    "applied_at": str(row.get("applied_at") or ""),
+                    "company": str(row.get("company") or ""),
+                    "position": str(row.get("position") or ""),
+                    "submission_status": str(row.get("submission_status") or ""),
+                    "policy_reason": str(row.get("policy_reason") or ""),
+                    "job_url": str(row.get("job_url") or ""),
+                    "runner_state": str(row.get("runner_state") or ""),
+                    "final_state": str(row.get("final_state") or ""),
+                }
+            )
+
+        return {"status": "ok", "count": len(items), "items": items}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
+def pause_live_submit(
+    paused: bool = True,
+    reason: str = "",
+    updated_by: str = "operator",
+) -> dict:
+    """
+    Pause or resume live submit via a file-backed override.
+    """
+    try:
+        from services.autonomy_control import set_live_submit_paused
+
+        state = set_live_submit_paused(paused, reason=reason, updated_by=updated_by)
+        if paused:
+            os.environ["AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED"] = "1"
+        else:
+            os.environ["AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED"] = "0"
+        return {"status": "ok", "state": state}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@mcp.tool()
 def generate_tailored_resume_for_job(
     job_title: str,
     company: str,

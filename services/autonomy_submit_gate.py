@@ -153,6 +153,16 @@ def linkedin_live_submit_block_reason(job: Optional[Dict[str, Any]] = None) -> O
     If live LinkedIn submit must be blocked, return a stable error string for RunResult;
     else ``None``.
     """
+    try:
+        from services.autonomy_control import read_live_submit_pause_state
+
+        pause_state = read_live_submit_pause_state()
+        if pause_state.get("paused"):
+            reason = pause_state.get("reason", "")
+            suffix = f" ({reason})" if reason else ""
+            return f"autonomy: live submit paused by operator{suffix}"
+    except Exception:
+        pass
     if _truthy_env("AUTONOMY_LINKEDIN_LIVE_SUBMIT_DISABLED"):
         return (
             "autonomy: live LinkedIn submit disabled "

@@ -54,6 +54,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Phase 12 UI refactor: `ui/streamlit_app.py` now routes by `APP_MODE` to candidate vs operator UIs, and candidate workflow shows one-page resume previews plus runner/queue lifecycle states.
 - Added MCP orchestration tool `evaluate_job_and_prepare_action_plan` to return normalized job, fit, ATS, policy job_state, answer risk summary, package artifacts, and next action.
 - Added approved-answer memory store with MCP tools (get/save/list/suggest/mark-review) and answerer integration that reuses approved answers without bypassing truth/policy gates.
+- Added MCP telemetry/control tools (autonomy health, shadow vs live alignment, recent submit failures, pause live submit) with file-backed kill switch overrides.
 
 ### Documentation
 
